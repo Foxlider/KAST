@@ -7,7 +7,7 @@
     <UseWPF>true</UseWPF>
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <StartupObject>KAST.Desktop.App</StartupObject>
-    <DebugType>none</DebugType>
+    <DebugType>full</DebugType>
     <SignAssembly>True</SignAssembly>
     <Authors>Keelah</Authors>
     <Description>Keelah's Arma Server Tool</Description>
@@ -23,6 +23,7 @@
     <FileVersion>$(PackageVersion)</FileVersion>
     <Version>2.0.0</Version>
     <PackageTags>Arma, Server, Arma 3, Keelah</PackageTags>
+    <AssemblyOriginatorKeyFile>..\KAST.Core\Resources\KastKey.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,6 +37,17 @@
     </None>
   </ItemGroup>
 
-  <Import Project="..\KAST.Core\KAST.Core.projitems" Label="Shared" />
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="6.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="6.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="6.0.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\KAST.Core\KAST.Core.csproj" />
+  </ItemGroup>
 
 </Project>
