@@ -5,9 +5,29 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:KAST.Desktop"
         mc:Ignorable="d"
+        Loaded="Window_Loaded"
         Title="KAST" Height="450" Width="800">
+    <Window.Resources>
+        <CollectionViewSource x:Key="modsViewSource"/>
+    </Window.Resources>
     <Grid>
         <TextBlock HorizontalAlignment="Left" Margin="20,20" TextWrapping="Wrap" Text="{Binding KastTitle}" VerticalAlignment="Top"/>
-
+        <DataGrid x:Name="categoryDataGrid" AutoGenerateColumns="False"
+          EnableRowVirtualization="True" 
+          ItemsSource="{Binding Mods}" 
+          Margin="15,15,15,40" RowDetailsVisibilityMode="VisibleWhenSelected">
+            <DataGrid.Columns>
+                <DataGridTextColumn Binding="{Binding ModID}"
+                            Header="Mod Id" Width="SizeToHeader"
+                            IsReadOnly="True"/>
+                <DataGridTextColumn Binding="{Binding Name}" Header="Name" 
+                            Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+            <TextBox x:Name="modID" MinWidth="250" Margin="15"></TextBox>
+            <Button Click="Button_Click" Content="New" Margin="15"/>
+            <Button Click="Button_Click_1"  Content="Update" Margin="15"/>
+        </StackPanel>
     </Grid>
 </Window>
