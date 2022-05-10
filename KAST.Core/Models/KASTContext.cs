@@ -1,6 +1,4 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using System.Diagnostics;
-using System.Reflection;
 
 namespace KAST.Core.Models
 {
@@ -11,11 +9,22 @@ namespace KAST.Core.Models
         public DbSet<User> Users { get; set; }
         public DbSet<Settings> Settings { get; set; }
 
-        public string DbPath { get; }
+        public string DbPath { get; private set; }
+
 
         public KastContext()
+        { ChangeDbPath(Utilities.GetAppDataPath()); }
+
+        /// <summary>
+        /// Constructor with forced path
+        /// </summary>
+        /// <param name="path"></param>
+        public KastContext(string forcedPath)
+        { ChangeDbPath(forcedPath); }
+
+        public void ChangeDbPath(string path)
         {
-            DbPath = Path.Join(Utilities.GetAppDataPath(), "Kast.db");
+            DbPath = Path.Join(path, "KAST.db");
 
             if (!Directory.Exists(DbPath))
                 Directory.CreateDirectory(Path.GetDirectoryName(DbPath));
@@ -23,8 +32,8 @@ namespace KAST.Core.Models
 
         // The following configures EF to create a Sqlite database file in the
         // special "local" folder for your platform.
-        protected override void OnConfiguring(DbContextOptionsBuilder options)
-            => options.UseSqlite($"Data Source={DbPath}")
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+            => optionsBuilder.UseSqlite($"Data Source={DbPath}")
                       .UseLazyLoadingProxies();
     }
 }

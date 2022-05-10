@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿#pragma warning disable S3925 // "ISerializable" should be implemented correctly
 namespace KAST.Core.Models
 {
     public class KastLogonFailedException : Exception
@@ -25,6 +20,9 @@ namespace KAST.Core.Models
         public KastDataNotFoundException()
         { }
 
+        public KastDataNotFoundException(Type t) : base($"{t.Name} not found.")
+        { }
+
         public KastDataNotFoundException(string message)
             : base(message)
         { }
@@ -34,7 +32,9 @@ namespace KAST.Core.Models
         { }
     }
 
+
     public class KastDataDuplicateException : Exception
+
     {
         public KastDataDuplicateException()
         { }
@@ -48,3 +48,4 @@ namespace KAST.Core.Models
         { }
     }
 }
+#pragma warning restore S3925 // "ISerializable" should be implemented correctly

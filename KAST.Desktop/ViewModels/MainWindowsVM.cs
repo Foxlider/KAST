@@ -1,8 +1,8 @@
-﻿using KAST.Core.Models;
+﻿using KAST.Core.Managers;
+using KAST.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.ObjectModel;
 using System.Timers;
-using System.Windows.Data;
 
 namespace KAST.Desktop.ViewModels
 {
@@ -15,10 +15,7 @@ namespace KAST.Desktop.ViewModels
             myTimer.Interval = 1000; // 1000 ms is one second
             myTimer.Start();
 
-            DbContext.Database.EnsureCreated();
-            DbContext.Mods.Load();
-            Mods = new();
-            Mods = DbContext.Mods.Local.ToObservableCollection();
+            Mods = ModManager.Instance.GetObservableMods();
         }
 
         private string _title = "KAST";
@@ -28,8 +25,6 @@ namespace KAST.Desktop.ViewModels
             get { return _title; }
             set { _title = value; NotifyPropertyChanged(); }
         }
-
-        //public CollectionViewSource Mods { get; set; } = new();
 
         private ObservableCollection<Mod> mods;
 
@@ -44,8 +39,7 @@ namespace KAST.Desktop.ViewModels
             if (!ulong.TryParse(id, out ulong modID))
                 return;
 
-            DbContext.Mods.Add(new Mod {ModID=modID, Name = "a", Url = "b" });
-            DbContext.SaveChanges();
+            ModManager.Instance.AddMod(new Mod(modID) { Name = "a", Url = "b" });
         }
 
         public void DisplayTimeEvent(object source, ElapsedEventArgs e)
