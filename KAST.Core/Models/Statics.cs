@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace KAST.Core.Models
+﻿namespace KAST.Core.Models
 {
     internal static class Statics
     {
@@ -13,6 +7,6 @@ namespace KAST.Core.Models
         /// </summary>
         public const string SteamApiKey = "89B74BCDEF2493AB2774D8A02D9CED0D";
 
-        public const ushort CliWorkers = 10;
+        public const int CliWorkers = 10;
     }
 }

@@ -1,4 +1,5 @@
-﻿using KAST.Desktop.ViewModels;
+﻿using KAST.Core.Managers;
+using KAST.Desktop.ViewModels;
 
 using System.Windows;
 
@@ -30,10 +31,9 @@ namespace KAST.Desktop
         {
             foreach (var item in categoryDataGrid.Items)
             {
-                if(!(item is Core.Models.Mod mod))
+                if(item is not Core.Models.Mod mod)
                     continue;
-
-                mod.UpdateModInfos();
+                ModManager.Instance.UpdateModInfos(mod);
             }
         }
     }

@@ -13,7 +13,7 @@ namespace KAST.Core.Models
         private bool usingClsaDlc;
         private bool usingWsDlc;
         private string? apiKey;
-        private ushort? cliWorkers;
+        private int? cliWorkers;
 
         public string? ArmaPath
         { get { return armaPath; } set { armaPath = value; } }
@@ -39,7 +39,7 @@ namespace KAST.Core.Models
         public string? ApiKey
         { get { return apiKey; } set { apiKey = value; } }
 
-        public ushort? CliWorkers 
+        public int? CliWorkers 
         { get { return cliWorkers; } set { cliWorkers = value; } }
 
     }
