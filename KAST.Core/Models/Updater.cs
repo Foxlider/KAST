@@ -3,6 +3,7 @@ using BytexDigital.Steam.ContentDelivery.Exceptions;
 using BytexDigital.Steam.Core;
 using SteamKit2.Internal;
 using System.Configuration;
+using System.Diagnostics;
 
 namespace KAST.Core.Models
 {
@@ -52,7 +53,7 @@ namespace KAST.Core.Models
 
             if (!SteamClient.IsConnected || SteamClient.IsFaulted)
             {
-                Console.WriteLine($"Connecting to Steam as {(_steamCredentials.IsAnonymous ? "anonymous" : _steamCredentials.Username)}");
+                Debug.WriteLine($"Connecting to Steam as {(_steamCredentials.IsAnonymous ? "anonymous" : _steamCredentials.Username)}");
                 SteamClient.MaximumLogonAttempts = 3;
                 CancellationTokenSource cs = new();
                 cs.CancelAfter(3000);
@@ -61,23 +62,23 @@ namespace KAST.Core.Models
                 { await SteamClient.ConnectAsync(cs.Token); }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"\nFailed! Error: {ex.Message}");
+                    Debug.WriteLine($"\nFailed! Error: {ex.Message}");
                     SteamClient.Shutdown();
                     SteamClient.Dispose();
                     SteamClient = null;
 
                     if (ex.GetBaseException() is SteamLogonException { Result: SteamKit2.EResult.InvalidPassword })
                     {
-                        Console.WriteLine("\nWarning: The logon may have failed due to expired sentry-data."
+                        Debug.WriteLine("\nWarning: The logon may have failed due to expired sentry-data."
                                              + $"\nIf you are sure that the provided username and password are correct, consider deleting the .bin and .key file for the user \"{SteamClient?.Credentials.Username}\" in the sentries directory."
                                              + $"{path}");
                     }
-                    return false;
+                    throw;
                 }
             }
 
             SteamContentClient = new SteamContentClient(SteamClient, Parameters.CliWorkers);
-            Console.WriteLine("\nConnected !");
+            Debug.WriteLine("\nConnected !");
             return SteamClient.IsConnected;
         }
 
@@ -90,23 +91,23 @@ namespace KAST.Core.Models
     {
         public override string GetEmailAuthenticationCode(SteamCredentials steamCredentials)
         {
-            Console.WriteLine("\nPlease enter your email auth code: ");
+            Debug.WriteLine("\nPlease enter your email auth code: ");
 
 
             var input = Console.ReadLine();
 
-            Console.WriteLine("\nRetrying... ");
+            Debug.WriteLine("\nRetrying... ");
 
             return input;
         }
 
         public override string GetTwoFactorAuthenticationCode(SteamCredentials steamCredentials)
         {
-            Console.WriteLine("\nPlease enter your 2FA code: ");
+            Debug.WriteLine("\nPlease enter your 2FA code: ");
 
             var input = Console.ReadLine();
 
-            Console.WriteLine("\nRetrying... ");
+            Debug.WriteLine("\nRetrying... ");
 
             return input;
         }
@@ -114,9 +115,6 @@ namespace KAST.Core.Models
 
     public class SteamUpdaterModel
     {
-        private string _output;
-        private bool _isUpdating;
-        private double _progress;
         private KastContext _context;
 
         private KastContext Context

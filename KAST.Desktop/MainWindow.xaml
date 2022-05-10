@@ -7,15 +7,12 @@
         mc:Ignorable="d"
         Loaded="Window_Loaded"
         Title="KAST" Height="450" Width="800">
-    <Window.Resources>
-        <CollectionViewSource x:Key="modsViewSource"/>
-    </Window.Resources>
     <Grid>
         <TextBlock HorizontalAlignment="Left" Margin="20,20" TextWrapping="Wrap" Text="{Binding KastTitle}" VerticalAlignment="Top"/>
         <DataGrid x:Name="categoryDataGrid" AutoGenerateColumns="False"
           EnableRowVirtualization="True" 
           ItemsSource="{Binding Mods}" 
-          Margin="15,15,15,40" RowDetailsVisibilityMode="VisibleWhenSelected">
+          Margin="15,41,15,55" RowDetailsVisibilityMode="VisibleWhenSelected">
             <DataGrid.Columns>
                 <DataGridTextColumn Binding="{Binding ModID}"
                             Header="Mod Id" Width="SizeToHeader"
