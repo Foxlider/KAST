@@ -1,4 +1,5 @@
 ﻿using SteamKit2.Internal;
+using System.Diagnostics;
 
 namespace KAST.Core.Models
 {
@@ -82,7 +83,17 @@ namespace KAST.Core.Models
         { get { return actualSize; } set { actualSize = value; } }
 
 
+        public bool Exists()
+        {
+            using var c = new KastContext();
+            return c.Mods.FirstOrDefault(m => m.ModID == ModID) != null;
+        }
 
+        public Mod? GetDbItem()
+        {
+            using var c = new KastContext();
+            return c.Mods.FirstOrDefault(m => m.ModID == ModID);
+        }
 
         public async void UpdateModInfos()
         {
@@ -93,7 +104,9 @@ namespace KAST.Core.Models
                 res = await updater.GetModInfo(ModID);
             }
             catch (KastLogonFailedException)
-            { Console.WriteLine("Logon Failed"); return; }
+            { Debug.WriteLine("Logon Failed"); return; }
+            catch (Exception ex)
+            { Debug.WriteLine(ex.ToString()); return; }
             
 
             Name = res.title;

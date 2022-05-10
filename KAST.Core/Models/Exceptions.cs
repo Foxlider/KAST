@@ -19,4 +19,32 @@ namespace KAST.Core.Models
             : base(message, inner)
         { }
     }
+
+    public class KastDataNotFoundException : Exception
+    {
+        public KastDataNotFoundException()
+        { }
+
+        public KastDataNotFoundException(string message)
+            : base(message)
+        { }
+
+        public KastDataNotFoundException(string message, Exception inner)
+            : base(message, inner)
+        { }
+    }
+
+    public class KastDataDuplicateException : Exception
+    {
+        public KastDataDuplicateException()
+        { }
+
+        public KastDataDuplicateException(string message)
+            : base(message)
+        { }
+
+        public KastDataDuplicateException(string message, Exception inner)
+            : base(message, inner)
+        { }
+    }
 }
