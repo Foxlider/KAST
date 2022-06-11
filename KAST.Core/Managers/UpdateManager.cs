@@ -120,15 +120,19 @@ namespace KAST.Core.Managers
 
             SteamClient ??= new SteamClient(_steamCredentials, authProvider, sentryFileProvider);
 
+            SteamClient.InternalClientConnected += () => Debug.WriteLine("Event: Connected");
+            SteamClient.InternalClientDisconnected += () => Debug.WriteLine("Event: Disconnected");
+            SteamClient.InternalClientLoggedOn += () => Debug.WriteLine("Event: Logged on");
+            SteamClient.InternalClientLoggedOff += () => Debug.WriteLine("Event: Logged off");
+
+
             if (!SteamClient.IsConnected || SteamClient.IsFaulted)
             {
                 Debug.WriteLine($"Connecting to Steam as {(_steamCredentials.IsAnonymous ? "anonymous" : _steamCredentials.Username)}");
                 SteamClient.MaximumLogonAttempts = 3;
-                CancellationTokenSource cs = new();
-                cs.CancelAfter(3000);
 
                 try
-                { await SteamClient.ConnectAsync(cs.Token); }
+                { await SteamClient.ConnectAsync(); }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"\nFailed! Error: {ex.Message}");
@@ -148,7 +152,7 @@ namespace KAST.Core.Managers
 
             SteamContentClient = new SteamContentClient(SteamClient, CliWorkers);
             Debug.WriteLine("\nConnected !");
-            return SteamClient.IsConnected;
+            return true;
         }
         /// <summary>
         /// Auth Provider override

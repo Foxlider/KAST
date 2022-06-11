@@ -1,8 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace KAST.Core.Models
 {
-    [Keyless]
     public class Settings
     {
         private string? armaPath;
@@ -14,6 +14,9 @@ namespace KAST.Core.Models
         private bool usingWsDlc;
         private string? apiKey;
         private int? cliWorkers;
+
+        
+        public int id { get; set; }
 
         public string? ArmaPath
         { get { return armaPath; } set { armaPath = value; } }
