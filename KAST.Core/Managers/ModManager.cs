@@ -10,17 +10,7 @@ namespace KAST.Core.Managers
 
         public static ModManager Instance => lazy.Value;
 
-        private KastContext _context;
-
-        private KastContext Context
-        {
-            get
-            {
-                if (_context == null)
-                    _context = new();
-                return _context;
-            }
-        }
+        private KastContext Context => KastContext.Instance;
 
         private ModManager()
         { }

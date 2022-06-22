@@ -4,6 +4,10 @@ namespace KAST.Core.Models
 {
     public class KastContext : DbContext
     {
+        private static readonly Lazy<KastContext> lazy = new(() => new KastContext());
+
+        public static KastContext Instance => lazy.Value;
+
         public DbSet<Mod> Mods { get; set; }
         public DbSet<Author> Authors { get; set; }
         public DbSet<User> Users { get; set; }
@@ -12,14 +16,14 @@ namespace KAST.Core.Models
         public string DbPath { get; private set; }
 
 
-        public KastContext()
+        internal KastContext()
         { ChangeDbPath(Utilities.GetAppDataPath()); }
 
         /// <summary>
         /// Constructor with forced path
         /// </summary>
         /// <param name="path"></param>
-        public KastContext(string forcedPath)
+        internal KastContext(string forcedPath)
         { ChangeDbPath(forcedPath); }
 
         public void ChangeDbPath(string path)

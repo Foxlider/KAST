@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace KAST.Core.Models
 {
-    public class Mod
+    public class Mod : BaseObject
     {
         /// <summary>
         /// Constructor for mods with an ID (Steam Workshop mods)
@@ -56,7 +56,7 @@ namespace KAST.Core.Models
         public ulong ModID
         {
             get { return _ID; }
-            private set { _ID = value; }
+            private set { _ID = value; OnPropertyChanged(); }
         }
 
         /// <summary>
@@ -65,7 +65,7 @@ namespace KAST.Core.Models
         public string? Name
         {
             get { return name; }
-            set { name = value; }
+            set { name = value; OnPropertyChanged(); }
         }
 
         /// <summary>
@@ -74,7 +74,7 @@ namespace KAST.Core.Models
         public string? Url
         {
             get { return url; }
-            set { url = value; }
+            set { url = value; OnPropertyChanged(); }
         }
 
         /// <summary>
@@ -92,7 +92,7 @@ namespace KAST.Core.Models
         public string? Path
         {
             get { return path; }
-            set { path = value; }
+            set { path = value; OnPropertyChanged(); }
         }
 
 
@@ -102,7 +102,7 @@ namespace KAST.Core.Models
         public DateTime? SteamLastUpdated
         {
             get { return steamLastUpdated; }
-            set { steamLastUpdated = value; }
+            internal set { steamLastUpdated = value; OnPropertyChanged(); }
         }
 
         /// <summary>
@@ -111,32 +111,44 @@ namespace KAST.Core.Models
         public DateTime? LocalLastUpdated
         {
             get { return localLastUpdated; }
-            set { localLastUpdated = value; }
+            internal set { localLastUpdated = value; OnPropertyChanged(); }
         }
 
         /// <summary>
         /// Checks if the mod is local or not
         /// </summary>
         public bool? IsLocal
-        { get { return isLocal; } set { isLocal = value; } }
+        { 
+            get { return isLocal; } 
+            internal set { isLocal = value; OnPropertyChanged(); } 
+        }
 
         /// <summary>
         /// Current status of the mod
         /// </summary>
         public string? ModStatus
-        { get { return status; } set { status = value; } }
+        { 
+            get { return status; } 
+            internal set { status = value; OnPropertyChanged(); } 
+        }
 
         /// <summary>
         /// Expected size of the mod on the Disk (Filled from Steam Workshop)
         /// </summary>
         public ulong? ExpectedSize
-        { get { return expectedSize; } set { expectedSize = value; } }
+        { 
+            get { return expectedSize; } 
+            internal set { expectedSize = value; OnPropertyChanged(); } 
+        }
 
         /// <summary>
         /// Actual size of the mod on the Disk
         /// </summary>
         public ulong? ActualSize
-        { get { return actualSize; } set { actualSize = value; } }
+        { 
+            get { return actualSize; } 
+            set { actualSize = value; OnPropertyChanged(); } 
+        }
 
         /// <summary>
         /// Returns whether or not the mod exists in the Database
@@ -144,7 +156,7 @@ namespace KAST.Core.Models
         /// <returns></returns>
         internal bool Exists()
         {
-            using var c = new KastContext();
+            using var c = KastContext.Instance;
             return c.Mods.FirstOrDefault(m => m.ModID == ModID) != null;
         }
 
@@ -154,7 +166,7 @@ namespace KAST.Core.Models
         /// <returns></returns>
         internal Mod? GetDbItem()
         {
-            using var c = new KastContext();
+            using var c = KastContext.Instance;
             return c.Mods.FirstOrDefault(m => m.ModID == ModID);
         }
 
