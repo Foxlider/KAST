@@ -22,8 +22,9 @@ jobs:
     name: Analyze
     runs-on: [self-hosted, windows-latest]
     permissions:
-      issues: write
-      pull-requests: write
+      actions: read
+      contents: read
+      security-events: write
 
     strategy:
       fail-fast: false
@@ -32,8 +33,9 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
+    # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v2
       with:
@@ -50,25 +52,3 @@ jobs:
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
-      
-      
-  test:
-    name: Test
-    runs-on: [self-hosted, windows-latest]
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'csharp' ]
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-      
-    - name: Setup .NET Core SDK
-      uses: actions/setup-dotnet@v2.0.0
-      with:
-        dotnet-version: 6.x
-      
-    - run: dotnet restore
-    - run: dotnet build ./KAST.sln --configuration Debug
-    - run: dotnet test --collect "Code Coverage"
