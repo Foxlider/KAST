@@ -21,6 +21,9 @@ jobs:
   analyze:
     name: Analyze
     runs-on: [self-hosted, windows-latest]
+    permissions:
+      issues: write
+      pull-requests: write
 
     strategy:
       fail-fast: false
