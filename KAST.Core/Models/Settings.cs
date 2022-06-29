@@ -1,7 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-
-namespace KAST.Core.Models
+﻿namespace KAST.Core.Models
 {
     public class Settings
     {

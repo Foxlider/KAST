@@ -130,7 +130,7 @@ namespace KAST.Core.Models
                     pi = exception.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance); // CLR4
                 }
                 if (pi != null)
-                    return (int)pi.GetValue(exception, null);
+                    return (int)(pi.GetValue(exception, null) ?? -1);
             }
             catch (Exception ex)
             { Console.WriteLine(ex.Message); }
