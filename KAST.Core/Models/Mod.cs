@@ -1,8 +1,4 @@
-﻿using KAST.Core.Managers;
-using SteamKit2.Internal;
-using System.Diagnostics;
-
-namespace KAST.Core.Models
+﻿namespace KAST.Core.Models
 {
     public class Mod : BaseObject
     {
