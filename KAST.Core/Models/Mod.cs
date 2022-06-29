@@ -149,58 +149,5 @@ namespace KAST.Core.Models
             get { return actualSize; } 
             set { actualSize = value; OnPropertyChanged(); } 
         }
-
-        /// <summary>
-        /// Returns whether or not the mod exists in the Database
-        /// </summary>
-        /// <returns></returns>
-        internal bool Exists()
-        {
-            using var c = KastContext.Instance;
-            return c.Mods.FirstOrDefault(m => m.ModID == ModID) != null;
-        }
-
-        /// <summary>
-        /// Return the instance of the mod from the Database
-        /// </summary>
-        /// <returns></returns>
-        internal Mod? GetDbItem()
-        {
-            using var c = KastContext.Instance;
-            return c.Mods.FirstOrDefault(m => m.ModID == ModID);
-        }
-
-        /// <summary>
-        /// Update a mod's infos from the UpdateManager
-        /// </summary>
-        /// <returns></returns>
-        internal async Task UpdateModInfos()
-        {
-            UpdateManager updater = new();
-            PublishedFileDetails res;
-            try
-            {
-                res = await updater.GetModInfo(ModID);
-            }
-            catch (KastLogonFailedException)
-            { Debug.WriteLine("Logon Failed"); return; }
-            catch (Exception ex)
-            { Debug.WriteLine(ex.ToString()); return; }
-            
-
-            Name = res.title;
-            SteamLastUpdated = Utilities.UnixTimeStampToDateTime(res.time_updated);
-            ExpectedSize = res.file_size;
-        }
-
-        /// <summary>
-        /// Update a mod using the UpdateManager
-        /// </summary>
-        /// <returns></returns>
-        internal async Task UpdateMod()
-        {
-            UpdateManager updater = new();
-            await updater.UpdateMod(ModID);
-        }
     }
 }

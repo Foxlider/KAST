@@ -6,7 +6,7 @@ namespace KAST.Desktop.ViewModels
 {
     internal partial class KastVM : INotifyPropertyChanged
     {
-        internal KastContext DbContext = KastContext.Instance;
+        internal KastContext DbContext = new();
 
         public event PropertyChangedEventHandler? PropertyChanged;
         internal void NotifyPropertyChanged([CallerMemberName] string propertyName = "")

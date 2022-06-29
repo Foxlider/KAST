@@ -12,10 +12,15 @@ namespace KAST.Core.Managers
     /// </summary>
     public sealed class UpdateManager
     {
-        public static UpdateManager Instance => lazy.Value;
-        private static readonly Lazy<UpdateManager>
-            lazy =
-                new(() => new UpdateManager());
+        internal SteamClient? SteamClient;
+        internal SteamContentClient SteamContentClient;
+        private SteamCredentials _steamCredentials;
+        private SteamAuthenticationCodesProvider authProvider;
+
+        private readonly KastContext context;
+
+        public KastContext Context => context != null ? context : new KastContext();
+
         public UpdateManager()
         {
             if(Context.Settings.FirstOrDefault() == null)
@@ -31,24 +36,10 @@ namespace KAST.Core.Managers
             }
         }
 
-        internal SteamClient? SteamClient;
-        internal SteamContentClient SteamContentClient;
-        private SteamCredentials _steamCredentials;
-        private SteamAuthenticationCodesProvider authProvider;
+        public UpdateManager(KastContext context)
+        { this.context = context; }
 
-        private KastContext _context;
-
-        private KastContext Context
-        {
-            get
-            {
-                if (_context == null)
-                    _context = new();
-                return _context;
-            }
-        }
-
-
+        
         public string Username
         { 
             get { return Context.Users.FirstOrDefault()?.Login ?? "anonymous"; }

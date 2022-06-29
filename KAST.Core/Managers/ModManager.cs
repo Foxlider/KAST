@@ -6,14 +6,15 @@ namespace KAST.Core.Managers
 {
     public sealed class ModManager
     {
-        private static readonly Lazy<ModManager> lazy = new(() => new ModManager());
+        private readonly KastContext context;
 
-        public static ModManager Instance => lazy.Value;
+        public KastContext Context => context != null ? context : new KastContext();
 
-        private KastContext Context => KastContext.Instance;
-
-        private ModManager()
+        public ModManager()
         { }
+
+        public ModManager(KastContext context)
+        { this.context = context; }
 
         /// <summary>
         /// Return a Mod from its ID
@@ -42,7 +43,7 @@ namespace KAST.Core.Managers
         {
             var c = Context;
 
-            if (mod.Exists())
+            if (ModExists(mod))
                 throw new KastDataDuplicateException($"Mod {mod.ModID} already exists");
 
             mod = c.Mods.Add(mod).Entity;
@@ -57,7 +58,7 @@ namespace KAST.Core.Managers
         /// <param name="mod">The mod to check in the database</param>
         /// <returns></returns>
         public bool ModExists(Mod mod)
-        { return mod.Exists(); }
+        { return ModExists(mod.ModID); }
 
         /// <summary>
         /// Checks if a mod exists or not in the Database
@@ -67,8 +68,8 @@ namespace KAST.Core.Managers
         public bool ModExists(ulong id)
         {
             var c = Context;
-            return c.Mods.Any(m => m.ModID == id);
-        }
+
+            return c.Mods.Any(m => m.ModID == id); }
 
 
         /// <summary>
@@ -80,12 +81,12 @@ namespace KAST.Core.Managers
         public Mod UpdateModInfos(Mod? mod)
         {
             var c = Context;
-            mod = mod.GetDbItem();
-
-            if (mod == null)
+            
+            if (!ModExists(mod))
                 throw new KastDataNotFoundException(typeof(Mod));
 
-            mod.UpdateModInfos().Wait();
+            //UpdaterLogic Here
+
             c.SaveChanges();
 
             return mod;
@@ -118,12 +119,13 @@ namespace KAST.Core.Managers
         public async Task<Mod> UpdateModInfosAsync(Mod? mod)
         {
             var c = Context;
-            mod = mod.GetDbItem();
+            mod = GetMod(mod.ModID);
 
             if (mod == null)
                 throw new KastDataNotFoundException(typeof(Mod));
 
-            await mod.UpdateModInfos();
+            //UpdaterLogic here
+
             c.SaveChanges();
 
             return mod;
@@ -156,12 +158,14 @@ namespace KAST.Core.Managers
         public Mod UpdateMod(Mod? mod)
         {
             var c = Context;
-            mod = mod.GetDbItem();
+            mod = GetMod(mod.ModID);
 
             if (mod == null)
                 throw new KastDataNotFoundException(typeof(Mod));
 
-            mod.UpdateMod().Wait();
+            
+            //UpdaterLogic here
+
             c.SaveChanges();
 
             return mod;
@@ -177,12 +181,13 @@ namespace KAST.Core.Managers
         public async Task<Mod> UpdateModAsync(Mod? mod)
         {
             var c = Context;
-            mod = mod.GetDbItem();
+            mod = GetMod(mod.ModID);
 
             if (mod == null)
                 throw new KastDataNotFoundException(typeof(Mod));
 
-            await mod.UpdateMod();
+            //UpdaterLogic here
+
             c.SaveChanges();
 
             return mod;
@@ -197,7 +202,7 @@ namespace KAST.Core.Managers
         public Mod DeleteMod(Mod mod)
         {
             var c = Context;
-            if (!mod.Exists())
+            if (!ModExists(mod.ModID))
                 throw new KastDataNotFoundException($"Mod {mod.ModID} was not found");
 
             mod = c.Mods.Remove(mod).Entity;
