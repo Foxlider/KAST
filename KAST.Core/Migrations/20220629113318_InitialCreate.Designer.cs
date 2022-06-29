@@ -11,13 +11,13 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KAST.Core.Migrations
 {
     [DbContext(typeof(KastContext))]
-    [Migration("20220511151608_Initial")]
-    partial class Initial
+    [Migration("20220629113318_InitialCreate")]
+    partial class InitialCreate
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "6.0.4");
+            modelBuilder.HasAnnotation("ProductVersion", "6.0.6");
 
             modelBuilder.Entity("KAST.Core.Models.Author", b =>
                 {
