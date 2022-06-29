@@ -4,10 +4,6 @@ namespace KAST.Core.Models
 {
     public class KastContext : DbContext
     {
-        private static readonly Lazy<KastContext> lazy = new(() => new KastContext());
-
-        public static KastContext Instance => lazy.Value;
-
         public DbSet<Mod> Mods { get; set; }
         public DbSet<Author> Authors { get; set; }
         public DbSet<User> Users { get; set; }
@@ -16,15 +12,16 @@ namespace KAST.Core.Models
         public string DbPath { get; private set; }
 
 
-        internal KastContext()
+        public KastContext()
         { ChangeDbPath(Utilities.GetAppDataPath()); }
 
+
         /// <summary>
-        /// Constructor with forced path
+        /// Constructor with forced options
         /// </summary>
-        /// <param name="path"></param>
-        internal KastContext(string forcedPath)
-        { ChangeDbPath(forcedPath); }
+        /// <param name="options"></param>
+        public KastContext(DbContextOptions<KastContext> options) : base(options)
+        { }
 
         public void ChangeDbPath(string path)
         {
@@ -37,7 +34,11 @@ namespace KAST.Core.Models
         // The following configures EF to create a Sqlite database file in the
         // special "local" folder for your platform.
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-            => optionsBuilder.UseSqlite($"Data Source={DbPath}")
+        {
+            if (optionsBuilder.IsConfigured)
+                return;
+            optionsBuilder.UseSqlite($"Data Source={DbPath}")
                       .UseLazyLoadingProxies();
+        }
     }
 }

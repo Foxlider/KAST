@@ -1,31 +1,19 @@
-﻿using Xunit;
-using KAST.Core.Managers;
-using KAST.Core.Models;
-using System.IO;
+﻿using KAST.Core.Models;
+using KAST.Tests;
 using System;
+using Xunit;
 
 namespace KAST.Core.Managers.Tests
 {
     public class ModManagerTests : IDisposable
     {
-        private readonly string tempDbPath = Path.Combine("./", "KAST.db");
-        const string templateDbPath = "./template.db";
-        readonly ModManager Manager;
+        private KastContextFactory factory;
+        private KastContext context => factory.CreateContext();
+        private ModManager Manager => new(context);
 
         public ModManagerTests()
         {
-            //Set up db file
-            if (File.Exists(tempDbPath))
-                File.Delete(tempDbPath);
-
-            File.Copy(templateDbPath, tempDbPath);
-
-            //Change DB path for context
-            KastContext.Instance.ChangeDbPath(Path.GetDirectoryName(tempDbPath));
-            KastContext.Instance.Database.EnsureCreated();
-
-            //Get the manager
-            Manager = ModManager.Instance;
+            factory = new KastContextFactory();
         }
 
         public void Dispose()
@@ -34,26 +22,9 @@ namespace KAST.Core.Managers.Tests
             GC.SuppressFinalize(this);
         }
 
-        ~ModManagerTests()
-        { Dispose(false); }
-
         protected virtual void Dispose(bool disposing)
         {
-            //Closing DB
-            Console.WriteLine("Closing DB...");
-            if (KastContext.Instance.Database.CurrentTransaction != null)
-                KastContext.Instance.Database.RollbackTransaction();
-            KastContext.Instance.ChangeTracker.Clear();
-            KastContext.Instance.Database.EnsureCreated();
-            KastContext.Instance.Database.EnsureDeleted();
-            Console.WriteLine("Done...");
-
-
-
-            //Deleting temp file
-            Console.WriteLine("Deleting DB File...");
-            Utilities.WrapSharingViolations(() => File.Delete(tempDbPath));
-            
+            factory.Dispose();
         }
 
 
@@ -64,7 +35,6 @@ namespace KAST.Core.Managers.Tests
             Assert.Equal(m, Manager.AddMod(m));
 
             Assert.Throws<KastDataDuplicateException>(() => Manager.AddMod(new Mod(1)));
-
         }
 
 

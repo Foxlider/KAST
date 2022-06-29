@@ -33,7 +33,8 @@ namespace KAST.Desktop
             {
                 if(item is not Core.Models.Mod mod)
                     continue;
-                ModManager.Instance.UpdateModInfos(mod);
+                var m = new ModManager();
+                m.UpdateModInfos(mod);
             }
         }
     }

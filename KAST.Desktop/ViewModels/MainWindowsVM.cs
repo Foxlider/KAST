@@ -15,7 +15,7 @@ namespace KAST.Desktop.ViewModels
             myTimer.Interval = 1000; // 1000 ms is one second
             myTimer.Start();
 
-            Mods = ModManager.Instance.GetObservableMods();
+            Mods = new ModManager().GetObservableMods();
         }
 
         private string _title = "KAST";
@@ -39,7 +39,7 @@ namespace KAST.Desktop.ViewModels
             if (!ulong.TryParse(id, out ulong modID))
                 return;
 
-            ModManager.Instance.AddMod(new Mod(modID) { Name = "a", Url = "b" });
+            new ModManager().AddMod(new Mod(modID) { Name = "a", Url = "b" });
         }
 
         public void DisplayTimeEvent(object source, ElapsedEventArgs e)
