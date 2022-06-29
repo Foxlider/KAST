@@ -1,4 +1,4 @@
-﻿using KAST.Core.Models;
+using KAST.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.ObjectModel;
 
@@ -81,7 +81,10 @@ namespace KAST.Core.Managers
         public Mod UpdateModInfos(Mod? mod)
         {
             var c = Context;
-            
+
+            if (mod == null)
+                throw new ArgumentNullException(nameof(mod));
+
             if (!ModExists(mod))
                 throw new KastDataNotFoundException(typeof(Mod));
 
@@ -119,6 +122,10 @@ namespace KAST.Core.Managers
         public async Task<Mod> UpdateModInfosAsync(Mod? mod)
         {
             var c = Context;
+
+            if(mod == null)
+                throw new ArgumentNullException(nameof(mod));
+
             mod = GetMod(mod.ModID);
 
             if (mod == null)
@@ -126,7 +133,7 @@ namespace KAST.Core.Managers
 
             //UpdaterLogic here
 
-            c.SaveChanges();
+            await c.SaveChangesAsync();
 
             return mod;
         }
@@ -158,6 +165,10 @@ namespace KAST.Core.Managers
         public Mod UpdateMod(Mod? mod)
         {
             var c = Context;
+
+            if (mod == null)
+                throw new ArgumentNullException(nameof(mod));
+
             mod = GetMod(mod.ModID);
 
             if (mod == null)
@@ -181,6 +192,10 @@ namespace KAST.Core.Managers
         public async Task<Mod> UpdateModAsync(Mod? mod)
         {
             var c = Context;
+
+            if (mod == null)
+                throw new ArgumentNullException(nameof(mod));
+
             mod = GetMod(mod.ModID);
 
             if (mod == null)
@@ -188,7 +203,7 @@ namespace KAST.Core.Managers
 
             //UpdaterLogic here
 
-            c.SaveChanges();
+            await c.SaveChangesAsync();
 
             return mod;
         }

@@ -10,6 +10,14 @@
     <Copyright>Copyright © 2022</Copyright>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <NoWarn>1701;1702;CS8618;CS8625;CS8600;CS8622;CS8612</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <NoWarn>1701;1702;CS8618;CS8625;CS8600;CS8622;CS8612</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="BytexDigital.Steam" Version="0.8.2-preview.1647708363" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="6.0.6">

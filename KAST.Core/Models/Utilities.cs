@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace KAST.Core.Models
@@ -132,9 +132,8 @@ namespace KAST.Core.Models
                 if (pi != null)
                     return (int)pi.GetValue(exception, null);
             }
-            catch
-            {
-            }
+            catch (Exception ex)
+            { Console.WriteLine(ex.Message); }
             return defaultValue;
         }
     }
