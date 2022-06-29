@@ -1,4 +1,4 @@
-﻿using KAST.Core.Models;
+using KAST.Core.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -28,12 +28,10 @@ namespace KAST.Tests
                 _connection.Open();
 
                 var options = CreateOptions();
-                using (var context = new KastContext(options))
-                {
-                    context.Database.EnsureCreated();
-                    context.Add(new Mod(463939058) { Name = "TestName", Url = "TestUrl" });
-                    context.SaveChanges();
-                }
+                using var context = new KastContext(options);
+                context.Database.EnsureCreated();
+                context.Add(new Mod(463939058) { Name = "TestName", Url = "TestUrl" });
+                context.SaveChanges();
             }
 
             return new KastContext(CreateOptions());
@@ -46,6 +44,7 @@ namespace KAST.Tests
                 _connection.Dispose();
                 _connection = null;
             }
+            GC.SuppressFinalize(this);
         }
     }
 }

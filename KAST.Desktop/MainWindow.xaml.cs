@@ -18,13 +18,13 @@ namespace KAST.Desktop
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            (DataContext as MainWindowsVM).DbContext.SaveChanges();
+            (DataContext as MainWindowsVM)?.DbContext.SaveChanges();
         }
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {
             categoryDataGrid.Items.Refresh();
-            (DataContext as MainWindowsVM).AddMod(modID.Text);
+            (DataContext as MainWindowsVM)?.AddMod(modID.Text);
         }
 
         private void Button_Click_1(object sender, RoutedEventArgs e)

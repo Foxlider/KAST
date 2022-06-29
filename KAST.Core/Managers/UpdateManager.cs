@@ -1,4 +1,4 @@
-﻿using BytexDigital.Steam.ContentDelivery;
+using BytexDigital.Steam.ContentDelivery;
 using BytexDigital.Steam.ContentDelivery.Exceptions;
 using BytexDigital.Steam.Core;
 using KAST.Core.Models;
@@ -19,7 +19,7 @@ namespace KAST.Core.Managers
 
         private readonly KastContext context;
 
-        public KastContext Context => context != null ? context : new KastContext();
+        public KastContext Context => context ?? new KastContext();
 
         public UpdateManager()
         {
@@ -43,25 +43,25 @@ namespace KAST.Core.Managers
         public string Username
         { 
             get { return Context.Users.FirstOrDefault()?.Login ?? "anonymous"; }
-            set { Context.Users.FirstOrDefault().Login = value;}
+            set { Context.Users.First().Login = value;}
         }
 
         public string Password
         {
             get { return Context.Users.FirstOrDefault()?.Pass ?? "anonymous"; }
-            set { Context.Users.FirstOrDefault().Pass = value; }
+            set { Context.Users.First().Pass = value; }
         }
 
         public string ApiKey
         {
             get { return Context.Settings.FirstOrDefault()?.ApiKey ?? Statics.SteamApiKey; }
-            set { Context.Settings.FirstOrDefault().ApiKey = value; }
+            set { Context.Settings.First().ApiKey = value; }
         }
 
         public int CliWorkers
         {
             get { return Context.Settings.FirstOrDefault()?.CliWorkers ?? Statics.CliWorkers; }
-            set { Context.Settings.FirstOrDefault().CliWorkers = value; }
+            set { Context.Settings.First().CliWorkers = value; }
         }
 
         /// <summary>
@@ -74,6 +74,9 @@ namespace KAST.Core.Managers
         {
             if (!await SteamLogin())
                 throw new KastLogonFailedException();
+
+            if (SteamContentClient == null)
+                throw new InvalidOperationException("Steam Content Client could not be created");
 
             return await SteamContentClient.GetPublishedFileDetailsAsync(id);
         }
@@ -90,9 +93,6 @@ namespace KAST.Core.Managers
             if (!await SteamLogin())
                 throw new KastLogonFailedException();
 
-
-
-            return;
         }
 
         /// <summary>
@@ -162,7 +162,7 @@ namespace KAST.Core.Managers
             Debug.WriteLine("\nPlease enter your email auth code: ");
 
 
-            var input = Console.ReadLine();
+            var input = Console.ReadLine() ?? "";
 
             Debug.WriteLine("\nRetrying... ");
 
@@ -173,7 +173,7 @@ namespace KAST.Core.Managers
         {
             Debug.WriteLine("\nPlease enter your 2FA code: ");
 
-            var input = Console.ReadLine();
+            var input = Console.ReadLine() ?? "";
 
             Debug.WriteLine("\nRetrying... ");
 
