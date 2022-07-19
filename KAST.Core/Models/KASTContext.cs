@@ -28,7 +28,7 @@ namespace KAST.Core.Models
             DbPath = Path.Join(path, "KAST.db");
 
             if (!Directory.Exists(DbPath))
-                Directory.CreateDirectory(Path.GetDirectoryName(DbPath));
+                Directory.CreateDirectory(Path.GetDirectoryName(DbPath) ?? throw new InvalidOperationException());
         }
 
         // The following configures EF to create a Sqlite database file in the

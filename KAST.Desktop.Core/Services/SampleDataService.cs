@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using KAST.Core.Models;
+﻿using KAST.Core.Models;
 using KAST.Desktop.Core.Contracts.Services;
+
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace KAST.Desktop.Core.Services;
 
