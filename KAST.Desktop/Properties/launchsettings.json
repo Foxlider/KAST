@@ -1,0 +1,10 @@
+﻿{
+    "profiles": {
+      "KAST.Desktop (Unpackaged)": {
+        "commandName": "Project"
+      },
+      "KAST.Desktop (Package)": {
+        "commandName": "MsixPackage"
+      }
+    }
+}

@@ -9,6 +9,7 @@
         public Mod(ulong id)
         {
             ModID = id;
+            ModStatus = ArmaModStatus.Unknown;
         }
 
 
@@ -24,6 +25,7 @@
             do
                 ModID = ulong.MaxValue - (ulong)Random.Shared.Next(ushort.MaxValue);
             while(c.Mods.Any(m => m.ModID == ModID));
+            ModStatus = ArmaModStatus.Local;
         }
         
 
