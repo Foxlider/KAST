@@ -6,6 +6,9 @@ namespace KAST.Desktop.Views;
 
 public sealed partial class ConsolePage
 {
+    //Code for presenter formatting
+    //https://github.com/microsoft/WinUI-Gallery/blob/main/WinUIGallery/Controls/SampleCodePresenter.xaml.cs
+
     public ConsoleViewModel ViewModel
     {
         get;
