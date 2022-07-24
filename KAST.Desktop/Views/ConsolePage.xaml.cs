@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace KAST.Desktop.Views;
 
-public sealed partial class ConsolePage : Page
+public sealed partial class ConsolePage
 {
     public ConsoleViewModel ViewModel
     {

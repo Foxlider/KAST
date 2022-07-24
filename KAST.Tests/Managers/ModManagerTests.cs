@@ -1,9 +1,13 @@
-﻿using KAST.Core.Models;
-using KAST.Tests;
+﻿using KAST.Core.Managers;
+using KAST.Core.Models;
+
+using Microsoft.EntityFrameworkCore;
+
 using System;
+
 using Xunit;
 
-namespace KAST.Core.Managers.Tests
+namespace KAST.Tests.Managers
 {
     public class ModManagerTests : IDisposable
     {
@@ -14,6 +18,7 @@ namespace KAST.Core.Managers.Tests
         public ModManagerTests()
         {
             factory = new KastContextFactory();
+            Assert.Contains(":memory:", context.Database.GetConnectionString());
         }
 
         public void Dispose()
