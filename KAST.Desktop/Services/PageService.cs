@@ -43,7 +43,7 @@ public class PageService : IPageService
         lock (_pages)
         {
             var key = typeof(VM).FullName;
-            if (_pages.ContainsKey(key))
+            if (_pages.ContainsKey(key ?? throw new InvalidOperationException()))
                 throw new ArgumentException($"The key {key} is already configured in PageService");
 
             var type = typeof(V);

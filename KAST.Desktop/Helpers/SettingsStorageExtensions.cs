@@ -45,9 +45,7 @@ public static class SettingsStorageExtensions
 
     public static async Task<T> ReadAsync<T>(this ApplicationDataContainer settings, string key)
     {
-        object obj;
-
-        if (settings.Values.TryGetValue(key, out obj))
+        if (settings.Values.TryGetValue(key, out object obj))
             return await Json.ToObjectAsync<T>((string)obj);
 
         return default;
@@ -70,29 +68,25 @@ public static class SettingsStorageExtensions
     {
         var item = await folder.TryGetItemAsync(fileName).AsTask().ConfigureAwait(false);
 
-        if ((item != null) && item.IsOfType(StorageItemTypes.File))
-        {
-            var storageFile = await folder.GetFileAsync(fileName);
-            var content = await storageFile.ReadBytesAsync();
-            return content;
-        }
+        if ((item == null) || !item.IsOfType(StorageItemTypes.File))
+            return null;
+        var storageFile = await folder.GetFileAsync(fileName);
+        var content     = await storageFile.ReadBytesAsync();
+        return content;
 
-        return null;
     }
 
     public static async Task<byte[]> ReadBytesAsync(this StorageFile file)
     {
-        if (file != null)
-        {
-            using IRandomAccessStream stream = await file.OpenReadAsync();
-            using var reader = new DataReader(stream.GetInputStreamAt(0));
-            await reader.LoadAsync((uint)stream.Size);
-            var bytes = new byte[stream.Size];
-            reader.ReadBytes(bytes);
-            return bytes;
-        }
+        if (file == null)
+            return null;
+        using IRandomAccessStream stream = await file.OpenReadAsync();
+        using var                 reader = new DataReader(stream.GetInputStreamAt(0));
+        await reader.LoadAsync((uint)stream.Size);
+        var bytes = new byte[stream.Size];
+        reader.ReadBytes(bytes);
+        return bytes;
 
-        return null;
     }
 
     private static string GetFileName(string name)

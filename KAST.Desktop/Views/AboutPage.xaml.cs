@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace KAST.Desktop.Views;
 
-public sealed partial class AboutPage : Page
+public sealed partial class AboutPage
 {
     public AboutViewModel ViewModel
     {

@@ -40,9 +40,7 @@ public class LocalSettingsServiceUnpackaged : ILocalSettingsService
     {
         await InitializeAsync();
 
-        object obj;
-
-        if (_settings.TryGetValue(key, out obj))
+        if (_settings.TryGetValue(key, out object obj))
             return await Json.ToObjectAsync<T>((string)obj);
 
         return default;
