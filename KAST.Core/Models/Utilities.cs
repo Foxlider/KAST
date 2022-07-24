@@ -18,7 +18,7 @@ namespace KAST.Core.Models
         public static DateTime UnixTimeStampToDateTime(double unixTimeStamp)
         {
             // Unix timestamp is seconds past epoch
-            System.DateTime dtDateTime = new(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc);
+            DateTime dtDateTime = new(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
             dtDateTime = dtDateTime.AddSeconds(unixTimeStamp).ToLocalTime();
             return dtDateTime;
         }
@@ -29,7 +29,7 @@ namespace KAST.Core.Models
             var assembly = Assembly.GetExecutingAssembly().GetName();
             var versionInfo = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location);
             var path = Environment.GetFolderPath(appdata);
-            return Path.Combine(path, versionInfo.CompanyName, assembly.Name);
+            return Path.Combine(path, versionInfo.CompanyName ?? throw new InvalidOperationException(), assembly.Name ?? throw new InvalidOperationException());
         }
 
 
@@ -49,7 +49,7 @@ namespace KAST.Core.Models
         /// <param name="exceptionsCallback">The exceptions callback. May be null.</param>
         /// <param name="retryCount">The retry count.</param>
         /// <param name="waitTime">The wait time in milliseconds.</param>
-        public static void WrapSharingViolations(WrapSharingViolationsCallback action, WrapSharingViolationsExceptionsCallback exceptionsCallback, int retryCount, int waitTime)
+        public static void WrapSharingViolations(WrapSharingViolationsCallback action, WrapSharingViolationsExceptionsCallback exceptionsCallback = null, int retryCount = 10, int waitTime = 100)
         {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
@@ -72,7 +72,7 @@ namespace KAST.Core.Models
                         }
                         if (wait)
                         {
-                            System.Threading.Thread.Sleep(waitTime);
+                            Thread.Sleep(waitTime);
                         }
                     }
                     else

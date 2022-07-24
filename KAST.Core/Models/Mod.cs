@@ -53,8 +53,8 @@
         /// </remarks>
         public ulong ModID
         {
-            get { return _ID; }
-            private set { _ID = value; OnPropertyChanged(); }
+            get => _ID;
+            private init { _ID = value; OnPropertyChanged(); }
         }
 
         /// <summary>
@@ -62,7 +62,7 @@
         /// </summary>
         public string? Name
         {
-            get { return name; }
+            get => name;
             set { name = value; OnPropertyChanged(); }
         }
 
@@ -71,7 +71,7 @@
         /// </summary>
         public string? Url
         {
-            get { return url; }
+            get => url;
             set { url = value; OnPropertyChanged(); }
         }
 
@@ -89,7 +89,7 @@
         /// </summary>
         public string? Path
         {
-            get { return path; }
+            get => path;
             set { path = value; OnPropertyChanged(); }
         }
 
@@ -99,7 +99,7 @@
         /// </summary>
         public DateTime? SteamLastUpdated
         {
-            get { return steamLastUpdated; }
+            get => steamLastUpdated;
             internal set { steamLastUpdated = value; OnPropertyChanged(); }
         }
 
@@ -108,7 +108,7 @@
         /// </summary>
         public DateTime? LocalLastUpdated
         {
-            get { return localLastUpdated; }
+            get => localLastUpdated;
             internal set { localLastUpdated = value; OnPropertyChanged(); }
         }
 
@@ -117,7 +117,7 @@
         /// </summary>
         public bool? IsLocal
         { 
-            get { return isLocal; } 
+            get => isLocal;
             internal set { isLocal = value; OnPropertyChanged(); } 
         }
 
@@ -126,7 +126,7 @@
         /// </summary>
         public string? ModStatus
         { 
-            get { return status; } 
+            get => status;
             internal set { status = value; OnPropertyChanged(); } 
         }
 
@@ -135,7 +135,7 @@
         /// </summary>
         public ulong? ExpectedSize
         { 
-            get { return expectedSize; } 
+            get => expectedSize;
             internal set { expectedSize = value; OnPropertyChanged(); } 
         }
 
@@ -144,7 +144,7 @@
         /// </summary>
         public ulong? ActualSize
         { 
-            get { return actualSize; } 
+            get => actualSize;
             set { actualSize = value; OnPropertyChanged(); } 
         }
     }

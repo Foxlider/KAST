@@ -6,15 +6,14 @@ namespace KAST.Core.Managers
 {
     public sealed class ModManager
     {
-        private readonly KastContext context;
 
-        public KastContext Context => context != null ? context : new KastContext();
+        public KastContext Context { get; }
 
         public ModManager()
         { }
 
         public ModManager(KastContext context)
-        { this.context = context; }
+        { this.Context = context; }
 
         /// <summary>
         /// Return a Mod from its ID
@@ -78,7 +77,7 @@ namespace KAST.Core.Managers
         /// <param name="mod">The mod to update</param>
         /// <returns></returns>
         /// <exception cref="KastDataNotFoundException">Thrown when the mod was not found in the Database</exception>
-        public Mod UpdateModInfos(Mod? mod)
+        public Mod UpdateModInfos(Mod mod)
         {
             var c = Context;
 
@@ -113,13 +112,13 @@ namespace KAST.Core.Managers
         }
 
         /// <summary>
-        /// Async version of <see cref="UpdateModInfos(Mod?)"/>
+        /// Async version of <see cref="UpdateModInfos(Mod)"/>
         /// Update a mod's informations according to the Steam Workshop
         /// </summary>
         /// <param name="mod">The mod to update</param>
         /// <returns></returns>
         /// <exception cref="KastDataNotFoundException">Thrown whe nthe mod was not found in the Database</exception>
-        public async Task<Mod> UpdateModInfosAsync(Mod? mod)
+        public async Task<Mod> UpdateModInfosAsync(Mod mod)
         {
             var c = Context;
 
@@ -139,7 +138,7 @@ namespace KAST.Core.Managers
         }
 
         /// <summary>
-        /// Async version of <see cref="UpdateModInfos(ulong?)"/>
+        /// Async version of <see cref="UpdateModInfos(ulong)"/>
         /// Update a mod's informations according to the Steam Workshop
         /// </summary>
         /// <param name="id">The ID of the mod to update</param>
@@ -162,7 +161,7 @@ namespace KAST.Core.Managers
         /// <param name="mod">The Mod to update</param>
         /// <returns></returns>
         /// <exception cref="KastDataNotFoundException">Thrown when the mod was not found in the Database</exception>
-        public Mod UpdateMod(Mod? mod)
+        public Mod UpdateMod(Mod mod)
         {
             var c = Context;
 
@@ -183,13 +182,13 @@ namespace KAST.Core.Managers
         }
 
         /// <summary>
-        /// Async version of <see cref="UpdateMod(Mod?)"/>
+        /// Async version of <see cref="UpdateMod(Mod)"/>
         /// Launches the Update process for a mod
         /// </summary>
         /// <param name="mod">The Mod to update</param>
         /// <returns></returns>
         /// <exception cref="KastDataNotFoundException">Thrown when the mod was not found in the Database</exception>
-        public async Task<Mod> UpdateModAsync(Mod? mod)
+        public async Task<Mod> UpdateModAsync(Mod mod)
         {
             var c = Context;
 
@@ -228,7 +227,7 @@ namespace KAST.Core.Managers
         /// <summary>
         /// Delete a mod in the Database
         /// </summary>
-        /// <param name="mod">The ID of the mod to delete</param>
+        /// <param name="id">The ID of the mod to delete</param>
         /// <returns></returns>
         /// <exception cref="KastDataNotFoundException">Thrown when the mod is not found in the Database</exception>
         public Mod DeleteMod(ulong id)

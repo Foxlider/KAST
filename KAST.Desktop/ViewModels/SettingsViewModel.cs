@@ -36,20 +36,14 @@ public class SettingsViewModel : ObservableRecipient
     {
         get
         {
-            if (_switchThemeCommand == null)
-            {
-                _switchThemeCommand = new RelayCommand<ElementTheme>(
-                    async (param) =>
-                    {
-                        if (ElementTheme != param)
-                        {
-                            ElementTheme = param;
-                            await _themeSelectorService.SetThemeAsync(param);
-                        }
-                    });
-            }
-
-            return _switchThemeCommand;
+            return _switchThemeCommand ??= new RelayCommand<ElementTheme>(
+                async (param) =>
+                {
+                    if (ElementTheme == param)
+                        return;
+                    ElementTheme = param;
+                    await _themeSelectorService.SetThemeAsync(param);
+                });
         }
     }
 

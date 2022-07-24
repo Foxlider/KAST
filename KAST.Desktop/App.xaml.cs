@@ -15,7 +15,7 @@ using Microsoft.UI.Xaml;
 // To learn more about WinUI3, see: https://docs.microsoft.com/windows/apps/winui/winui3/.
 namespace KAST.Desktop;
 
-public partial class App : Application
+public partial class App
 {
     // The .NET Generic Host provides dependency injection, configuration, logging, and other services.
     // https://docs.microsoft.com/dotnet/core/extensions/generic-host
@@ -67,7 +67,7 @@ public partial class App : Application
         return _host.Services.GetService(typeof(T)) as T;
     }
 
-    public static Window MainWindow { get; set; } = new Window() { Title = "AppDisplayName".GetLocalized() };
+    public static Window MainWindow { get; } = new() { Title = "AppDisplayName".GetLocalized() };
 
     public App()
     {
@@ -81,7 +81,7 @@ public partial class App : Application
         // For more details, see https://docs.microsoft.com/windows/winui/api/microsoft.ui.xaml.unhandledexceptioneventargs.
     }
 
-    protected async override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
         var activationService = App.GetService<IActivationService>();

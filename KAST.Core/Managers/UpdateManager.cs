@@ -17,9 +17,7 @@ namespace KAST.Core.Managers
         private SteamCredentials _steamCredentials;
         private SteamAuthenticationCodesProvider authProvider;
 
-        private readonly KastContext context;
-
-        public KastContext Context => context ?? new KastContext();
+        public KastContext Context { get; }
 
         public UpdateManager()
         {
@@ -29,39 +27,38 @@ namespace KAST.Core.Managers
                 Context.SaveChanges();
             }
 
-            if (Context.Users.FirstOrDefault() == null)
-            {
-                Context.Users.Add(new User() { Login = "anonymous", Name = "Anonymous", Pass = "anonymous"});
-                Context.SaveChanges();
-            }
+            if (Context.Users.FirstOrDefault() != null)
+                return;
+            Context.Users.Add(new User() { Login = "anonymous", Name = "Anonymous", Pass = "anonymous"});
+            Context.SaveChanges();
         }
 
         public UpdateManager(KastContext context)
-        { this.context = context; }
+        { this.Context = context; }
 
         
         public string Username
         { 
-            get { return Context.Users.FirstOrDefault()?.Login ?? "anonymous"; }
-            set { Context.Users.First().Login = value;}
+            get => Context.Users.FirstOrDefault()?.Login ?? "anonymous";
+            set => Context.Users.First().Login = value;
         }
 
         public string Password
         {
-            get { return Context.Users.FirstOrDefault()?.Pass ?? "anonymous"; }
-            set { Context.Users.First().Pass = value; }
+            get => Context.Users.FirstOrDefault()?.Pass ?? "anonymous";
+            set => Context.Users.First().Pass = value;
         }
 
         public string ApiKey
         {
-            get { return Context.Settings.FirstOrDefault()?.ApiKey ?? Statics.SteamApiKey; }
-            set { Context.Settings.First().ApiKey = value; }
+            get => Context.Settings.FirstOrDefault()?.ApiKey ?? Statics.SteamApiKey;
+            set => Context.Settings.First().ApiKey = value;
         }
 
         public int CliWorkers
         {
-            get { return Context.Settings.FirstOrDefault()?.CliWorkers ?? Statics.CliWorkers; }
-            set { Context.Settings.First().CliWorkers = value; }
+            get => Context.Settings.FirstOrDefault()?.CliWorkers ?? Statics.CliWorkers;
+            set => Context.Settings.First().CliWorkers = value;
         }
 
         /// <summary>
@@ -101,8 +98,10 @@ namespace KAST.Core.Managers
         /// <returns></returns>
         internal async Task<bool> SteamLogin()
         {
-            var path = Path.Combine(Utilities.GetAppDataPath() ?? string.Empty, "sentries");
+            var path = Path.Combine(Utilities.GetAppDataPath(), "sentries");
             SteamAuthenticationFilesProvider sentryFileProvider = new DirectorySteamAuthenticationFilesProvider(path);
+
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
             if (_steamCredentials == null || _steamCredentials.IsAnonymous)
                 _steamCredentials = new SteamCredentials(Username, Password, ApiKey);
 
