@@ -64,47 +64,38 @@ public class NavigationViewHeaderBehavior : Behavior<NavigationView>
     private void OnNavigated(object sender, NavigationEventArgs e)
     {
         var frame = sender as Frame;
-        if (frame.Content is Page page)
-        {
-            _currentPage = page;
+        if (frame?.Content is not Page page)
+            return;
+        _currentPage = page;
 
-            UpdateHeader();
-            UpdateHeaderTemplate();
-        }
+        UpdateHeader();
+        UpdateHeaderTemplate();
     }
 
     private void UpdateHeader()
     {
-        if (_currentPage != null)
+        if (_currentPage == null)
+            return;
+        var headerMode = GetHeaderMode(_currentPage);
+        if (headerMode == NavigationViewHeaderMode.Never)
         {
-            var headerMode = GetHeaderMode(_currentPage);
-            if (headerMode == NavigationViewHeaderMode.Never)
-            {
-                AssociatedObject.Header = null;
-                AssociatedObject.AlwaysShowHeader = false;
-            }
-            else
-            {
-                var headerFromPage = GetHeaderContext(_currentPage);
-                if (headerFromPage != null)
-                    AssociatedObject.Header = headerFromPage;
-                else
-                    AssociatedObject.Header = DefaultHeader;
+            AssociatedObject.Header = null;
+            AssociatedObject.AlwaysShowHeader = false;
+        }
+        else
+        {
+            var headerFromPage = GetHeaderContext(_currentPage);
+            AssociatedObject.Header = headerFromPage ?? DefaultHeader;
 
-                if (headerMode == NavigationViewHeaderMode.Always)
-                    AssociatedObject.AlwaysShowHeader = true;
-                else
-                    AssociatedObject.AlwaysShowHeader = false;
-            }
+            AssociatedObject.AlwaysShowHeader = headerMode == NavigationViewHeaderMode.Always;
         }
     }
 
     private void UpdateHeaderTemplate()
     {
-        if (_currentPage != null)
-        {
-            var headerTemplate = GetHeaderTemplate(_currentPage);
-            AssociatedObject.HeaderTemplate = headerTemplate ?? DefaultHeaderTemplate;
-        }
+        if (_currentPage == null)
+            return;
+        var headerTemplate = GetHeaderTemplate(_currentPage);
+        AssociatedObject.HeaderTemplate = headerTemplate ?? DefaultHeaderTemplate;
     }
 }

@@ -5,7 +5,9 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:CommunityToolkit.WinUI.UI.Controls" 
-    xmlns:helpers="using:KAST.Desktop.Helpers"
+    xmlns:helpers="using:KAST.Desktop.Helpers" 
+    xmlns:models="using:KAST.Core.Models" 
+    d:DataContext="{d:DesignInstance Type=models:Mod}"
     mc:Ignorable="d">
     <Page.Resources>
         <helpers:ModIDConverter x:Key="ModIDConverter" />

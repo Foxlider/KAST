@@ -26,67 +26,67 @@ internal class TitleBarHelper
 
     public static void UpdateTitleBar(ElementTheme theme)
     {
-        if (App.MainWindow.ExtendsContentIntoTitleBar)
+        if (!App.MainWindow.ExtendsContentIntoTitleBar)
+            return;
+
+        if (theme != ElementTheme.Default)
         {
-            if (theme != ElementTheme.Default)
+            Application.Current.Resources["WindowCaptionForeground"] = theme switch
             {
-                Application.Current.Resources["WindowCaptionForeground"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Colors.White),
-                    ElementTheme.Light => new SolidColorBrush(Colors.Black),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
+                ElementTheme.Dark  => new SolidColorBrush(Colors.White),
+                ElementTheme.Light => new SolidColorBrush(Colors.Black),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
 
-                Application.Current.Resources["WindowCaptionForegroundDisabled"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
-                    ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00)),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
-
-                Application.Current.Resources["WindowCaptionButtonBackgroundPointerOver"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
-                    ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0x00, 0x00)),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
-
-                Application.Current.Resources["WindowCaptionButtonBackgroundPressed"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
-                    ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00)),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
-
-                Application.Current.Resources["WindowCaptionButtonStrokePointerOver"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Colors.White),
-                    ElementTheme.Light => new SolidColorBrush(Colors.Black),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
-
-                Application.Current.Resources["WindowCaptionButtonStrokePressed"] = theme switch
-                {
-                    ElementTheme.Dark => new SolidColorBrush(Colors.White),
-                    ElementTheme.Light => new SolidColorBrush(Colors.Black),
-                    _ => new SolidColorBrush(Colors.Transparent)
-                };
-            }
-
-            Application.Current.Resources["WindowCaptionBackground"] = new SolidColorBrush(Colors.Transparent);
-            Application.Current.Resources["WindowCaptionBackgroundDisabled"] = new SolidColorBrush(Colors.Transparent);
-
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
-            if (hwnd == GetActiveWindow())
+            Application.Current.Resources["WindowCaptionForegroundDisabled"] = theme switch
             {
-                SendMessage(hwnd, WMACTIVATE, WAINACTIVE, IntPtr.Zero);
-                SendMessage(hwnd, WMACTIVATE, WAACTIVE, IntPtr.Zero);
-            }
-            else
+                ElementTheme.Dark  => new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00)),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
+
+            Application.Current.Resources["WindowCaptionButtonBackgroundPointerOver"] = theme switch
             {
-                SendMessage(hwnd, WMACTIVATE, WAACTIVE, IntPtr.Zero);
-                SendMessage(hwnd, WMACTIVATE, WAINACTIVE, IntPtr.Zero);
-            }
+                ElementTheme.Dark  => new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
+                ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0x00, 0x00)),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
+
+            Application.Current.Resources["WindowCaptionButtonBackgroundPressed"] = theme switch
+            {
+                ElementTheme.Dark  => new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                ElementTheme.Light => new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00)),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
+
+            Application.Current.Resources["WindowCaptionButtonStrokePointerOver"] = theme switch
+            {
+                ElementTheme.Dark  => new SolidColorBrush(Colors.White),
+                ElementTheme.Light => new SolidColorBrush(Colors.Black),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
+
+            Application.Current.Resources["WindowCaptionButtonStrokePressed"] = theme switch
+            {
+                ElementTheme.Dark  => new SolidColorBrush(Colors.White),
+                ElementTheme.Light => new SolidColorBrush(Colors.Black),
+                _                  => new SolidColorBrush(Colors.Transparent)
+            };
+        }
+
+        Application.Current.Resources["WindowCaptionBackground"] = new SolidColorBrush(Colors.Transparent);
+        Application.Current.Resources["WindowCaptionBackgroundDisabled"] = new SolidColorBrush(Colors.Transparent);
+
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+        if (hwnd == GetActiveWindow())
+        {
+            SendMessage(hwnd, WMACTIVATE, WAINACTIVE, IntPtr.Zero);
+            SendMessage(hwnd, WMACTIVATE, WAACTIVE,   IntPtr.Zero);
+        }
+        else
+        {
+            SendMessage(hwnd, WMACTIVATE, WAACTIVE,   IntPtr.Zero);
+            SendMessage(hwnd, WMACTIVATE, WAINACTIVE, IntPtr.Zero);
         }
     }
 }

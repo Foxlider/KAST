@@ -1,10 +1,10 @@
-﻿using System;
-using System.Threading.Tasks;
-
-using KAST.Desktop.Contracts.Services;
+﻿using KAST.Desktop.Contracts.Services;
 using KAST.Desktop.ViewModels;
 
 using Microsoft.UI.Xaml;
+
+using System;
+using System.Threading.Tasks;
 
 namespace KAST.Desktop.Activation;
 
@@ -21,7 +21,7 @@ public class DefaultActivationHandler : ActivationHandler<LaunchActivatedEventAr
         return _navigationService.Frame.Content == null;
     }
 
-    protected async override Task HandleInternalAsync(LaunchActivatedEventArgs args)
+    protected override async Task HandleInternalAsync(LaunchActivatedEventArgs args)
     {
         _navigationService.NavigateTo(typeof(ConsoleViewModel).FullName, args.Arguments);
 

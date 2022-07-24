@@ -8,6 +8,7 @@ namespace KAST.Core.Models
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null)
         {
+            // ReSharper disable once ConstantConditionalAccessQualifier
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }

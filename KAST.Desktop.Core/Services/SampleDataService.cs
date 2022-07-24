@@ -26,21 +26,21 @@ public class SampleDataService : ISampleDataService
     {
         return new List<Mod>
         {
-            new Mod()
+            new()
             {
                 Name = "ace",
                 Author = new Author(){ AuthorID = 123456, Name="Keelah", URL="http://author"},
                 Url = "http://steam/mods/ace",
                 Path = "C://ace"
             },
-            new Mod(1234)
+            new(1234)
             {
                 Name = "tfar",
                 Author = new Author(){ AuthorID = 123456, Name="Keelah", URL="http://author"},
                 Url = "http://steam/mod/tfar",
                 Path = "C://tfar"
             },
-            new Mod()
+            new()
             {
                 Name = "yeet",
                 Author = new Author(){ AuthorID = 123457, Name="Not Keelah", URL="http://author"},

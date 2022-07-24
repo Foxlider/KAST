@@ -11,7 +11,7 @@ public class ModsViewModel : ObservableRecipient, INavigationAware
 {
     private readonly ISampleDataService _sampleDataService;
 
-    public ObservableCollection<Mod> Source { get; } = new ObservableCollection<Mod>();
+    public ObservableCollection<Mod> Source { get; } = new();
 
     public ModsViewModel(ISampleDataService sampleDataService)
     {
