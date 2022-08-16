@@ -21,10 +21,7 @@
         /// </remarks>
         public Mod()
         {
-            using var c = new KastContext();
-            do
-                ModID = ulong.MaxValue - (ulong)Random.Shared.Next(ushort.MaxValue);
-            while(c.Mods.Any(m => m.ModID == ModID));
+            ModID = ulong.MaxValue - (ulong)Random.Shared.Next(ushort.MaxValue);
             ModStatus = ArmaModStatus.Local;
         }
         
@@ -35,10 +32,10 @@
         private string?     path;
         private DateTime?   steamLastUpdated;
         private DateTime?   localLastUpdated;
-        private bool?       isLocal;
         private string?     status;
         private ulong?      expectedSize;
         private ulong?      actualSize;
+        private bool        isLoading;
 
         /// <summary>
         /// The mod's ID
@@ -115,10 +112,9 @@
         /// <summary>
         /// Checks if the mod is local or not
         /// </summary>
-        public bool? IsLocal
+        public bool IsLocal
         { 
-            get => isLocal;
-            internal set { isLocal = value; OnPropertyChanged(); } 
+            get => ModStatus == ArmaModStatus.Local;
         }
 
         /// <summary>
@@ -146,6 +142,14 @@
         { 
             get => actualSize;
             set { actualSize = value; OnPropertyChanged(); } 
+        }
+
+
+
+        public bool IsLoading
+        {
+            get => isLoading;
+            set { isLoading = value; OnPropertyChanged(); }
         }
     }
 }

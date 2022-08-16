@@ -10,6 +10,8 @@
                 <ResourceDictionary Source="/Styles/Thickness.xaml" />
                 <ResourceDictionary Source="/Styles/TextBlock.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <CornerRadius x:Key="OverlayCornerRadius">0</CornerRadius>
+            <CornerRadius x:Key="ControlCornerRadius">0</CornerRadius>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
