@@ -66,7 +66,7 @@
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="Shell_Mods" helpers:NavigationHelper.NavigateTo="KAST.Desktop.ViewModels.ModsViewModel">
                     <NavigationViewItem.Icon>
-                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xe80a;"/>
+                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xe8fd;"/>
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>

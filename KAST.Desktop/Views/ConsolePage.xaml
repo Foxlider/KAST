@@ -14,66 +14,59 @@
         
         <!--Left Panel-->
         <ScrollViewer>
-            
-        
-        <StackPanel>
-            <!--Installer Settings-->
-            <StackPanel Background="{ThemeResource AcrylicBackgroundFillColorBaseBrush}" Margin="5, 0">
-                <StackPanel Margin="5">
-                    <TextBlock Margin="2" Text="Mod Installer Settings"/>
-                    <NavigationViewItemSeparator/>
-                </StackPanel>
-
-                <Grid HorizontalAlignment="Stretch" Margin="5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition />
-                        <ColumnDefinition Width="auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox Name="tbMSD" Grid.Column="0" Text="{Binding Parameters.ModStagingDirectory}" IsSpellCheckEnabled="False"
-                             Header="Mod Staging Directory" Margin="5"/>
-                    <Button Content="&#xE8B7;" FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            HorizontalAlignment="Stretch"
-                            Grid.Column="1" VerticalAlignment="Bottom" Foreground="{ThemeResource SystemAccentColor}"
-                            Style="{ThemeResource AlternateCloseButtonStyle}"/>
-                </Grid>
-                <TextBox Text="{Binding Path=Parameters.Username, UpdateSourceTrigger=PropertyChanged}" Header="User Name" Margin="10,0"/>
-                <PasswordBox Name="PasswordBox" Header="Password" Margin="10"/>
-            </StackPanel>
-
-            <StackPanel Background="{ThemeResource AcrylicBackgroundFillColorBaseBrush}" Margin="5, 10, 5, 0">
-                <StackPanel Margin="5">
-                    <TextBlock Margin="2" Text="Server Update Settings"/>
-                    <NavigationViewItemSeparator/>
-                </StackPanel>
-                <Grid HorizontalAlignment="Stretch" Margin="5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition />
-                        <ColumnDefinition Width="auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Text="{Binding Parameters.InstallDirectory}" IsSpellCheckEnabled="False"
-                             Header="Install Directory" Margin="5"/>
-                    <Button Content="&#xE8B7;" FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            HorizontalAlignment="Stretch"
-                            Grid.Column="1" VerticalAlignment="Bottom" Foreground="{ThemeResource SystemAccentColor}"
-                            Style="{ThemeResource AlternateCloseButtonStyle}"/>
-                </Grid>
-                <ToggleSwitch Grid.Row="2" Header="Profiling" IsOn="{Binding Parameters.UsingPerfBinaries}" Style="{StaticResource MahApps.Styles.ToggleSwitch}" Margin="10,5"/>
-                <Expander Header="DLCs" Margin="10,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                    <StackPanel Orientation="Vertical" Grid.Row="3" Margin="10">
-                        <CheckBox IsChecked="{Binding Parameters.UsingContactDlc}" Content="Contact DLC"
-                                Margin="10,3" Width="105" HorizontalAlignment="Left" />
-                        <CheckBox IsChecked="{Binding Parameters.UsingGMDlc}" Content="GM DLC" Margin="10,3"
-                                HorizontalAlignment="Left" />
-                        <CheckBox IsChecked="{Binding Parameters.UsingPFDlc}" Content="Prairie Fire DLC"
-                                Margin="10,3" Width="105" HorizontalAlignment="Left" />
-                        <CheckBox IsChecked="{Binding Parameters.UsingCSLADlc}" Content="CSLA DLC" Margin="10,3"
-                                HorizontalAlignment="Left" />
-                        <CheckBox IsChecked="{Binding Parameters.UsingWSDlc}" Content="Western Sahara DLC"
-                                Margin="10,3" HorizontalAlignment="Left" />
+            <StackPanel>
+                <!--Installer Settings-->
+                <StackPanel Background="{ThemeResource AcrylicBackgroundFillColorBaseBrush}" Margin="5, 0">
+                    <StackPanel Margin="5">
+                        <TextBlock Margin="2" Text="Mod Installer Settings"/>
+                        <NavigationViewItemSeparator/>
                     </StackPanel>
-                </Expander>
-                <Button Style="{ThemeResource AccentButtonStyle}" BorderThickness="0" Grid.Row="4" Content="Update" Margin="10" HorizontalAlignment="Stretch" VerticalAlignment="Bottom" Click="Update_Click"/>
-            </StackPanel>
+
+                    <Grid HorizontalAlignment="Stretch" Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Name="tbMSD" Grid.Column="0" Text="" IsSpellCheckEnabled="False"
+                                 Header="Mod Staging Directory" Margin="5"/>
+                        <Button Content="&#xE8B7;" FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                HorizontalAlignment="Stretch"
+                                Grid.Column="1" VerticalAlignment="Bottom" Padding="3" Foreground="{ThemeResource SystemAccentColor}"
+                                Style="{ThemeResource AlternateCloseButtonStyle}"/>
+                    </Grid>
+                    <TextBox Text="" Header="User Name" Margin="10,0"/>
+                    <PasswordBox Name="PasswordBox" Header="Password" Margin="10"/>
+                </StackPanel>
+
+                <StackPanel Background="{ThemeResource AcrylicBackgroundFillColorBaseBrush}" Margin="5, 10, 5, 0">
+                    <StackPanel Margin="5">
+                        <TextBlock Margin="2" Text="Server Update Settings"/>
+                        <NavigationViewItemSeparator/>
+                    </StackPanel>
+                    <Grid HorizontalAlignment="Stretch" Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding Parameters.InstallDirectory}" IsSpellCheckEnabled="False"
+                                 Header="Install Directory" Margin="5"/>
+                        <Button Content="&#xE8B7;" FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                HorizontalAlignment="Stretch"
+                                Grid.Column="1" VerticalAlignment="Bottom" Padding="3" Foreground="{ThemeResource SystemAccentColor}"
+                                Style="{ThemeResource AlternateCloseButtonStyle}"/>
+                    </Grid>
+                    <ToggleSwitch Grid.Row="2" Header="Profiling" IsOn="False" Margin="10,5"/>
+                    <Expander Header="DLCs" Margin="10,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="5">
+                        <StackPanel Orientation="Vertical">
+                            <CheckBox IsChecked="False" Content="Contact DLC" ToolTipService.ToolTip="Download Contact DLC Content" Margin="10,3" Width="105" HorizontalAlignment="Left"/>
+                            <CheckBox IsChecked="False" Content="GM DLC" ToolTipService.ToolTip="Download Global Mobilization DLC content" Margin="10,3" Width="105" HorizontalAlignment="Left"/>
+                            <CheckBox IsChecked="False" Content="PF DLC" ToolTipService.ToolTip="Download Prairie Fire DLC content" Margin="10,3" Width="105" HorizontalAlignment="Left"/>
+                            <CheckBox IsChecked="False" Content="CSLA DLC" ToolTipService.ToolTip="Download CSLA Iron Curtain DLC content" Margin="10,3" Width="105" HorizontalAlignment="Left"/>
+                            <CheckBox IsChecked="False" Content="WS DLC" ToolTipService.ToolTip="Download Western Sahara DLC content" Margin="10,3" Width="105" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Expander>
+                    <Button Style="{ThemeResource AccentButtonStyle}" BorderThickness="0" Grid.Row="4" Content="Update" Margin="10" HorizontalAlignment="Stretch" VerticalAlignment="Bottom"/>
+                </StackPanel>
 
             </StackPanel>
         </ScrollViewer>
@@ -95,9 +88,10 @@
                 <TextBlock Margin="2" Text="Console"/>
                 <NavigationViewItemSeparator/>
             </StackPanel>
-
-            <RichEditBox x:Name="editor" HorizontalAlignment="Stretch" IsEnabled="False" IsReadOnly="True" VerticalAlignment="Stretch" AutomationProperties.Name="Console Output"
-                         Grid.ColumnSpan="2" Grid.Row="1" FontFamily="Courrier New" Margin="5"/>
+            <TextBox IsEnabled="False" IsReadOnly="True" VerticalAlignment="Stretch" AutomationProperties.Name="Console Output"
+                         Grid.ColumnSpan="2" Grid.Row="1" FontFamily="Courrier New" Margin="5" Text="{Binding ConsoleOutput}"/>
+            <!--<RichEditBox x:Name="editor" HorizontalAlignment="Stretch" IsEnabled="False" IsReadOnly="True" VerticalAlignment="Stretch" AutomationProperties.Name="Console Output"
+                         Grid.ColumnSpan="2" Grid.Row="1" FontFamily="Courrier New" Margin="5" />-->
             <ProgressBar Margin="5" IsIndeterminate="False" ShowPaused="False" ShowError="False" Grid.Column="0" Grid.Row="2"/>
             <Button Content="&#xE71A;" FontFamily="{StaticResource SymbolThemeFontFamily}" Grid.Column="1" Grid.Row="2" Margin="5"/>
         </Grid>
