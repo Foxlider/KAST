@@ -19,4 +19,10 @@ public sealed partial class ConsolePage
         ViewModel = App.GetService<ConsoleViewModel>();
         InitializeComponent();
     }
+
+    private void Button_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        var vm = App.GetService<ConsoleViewModel>();
+        vm.ConsoleOutput += "Console\n";
+    }
 }

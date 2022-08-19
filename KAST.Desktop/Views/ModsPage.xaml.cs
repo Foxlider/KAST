@@ -29,6 +29,11 @@ public sealed partial class ModsPage
 
 
         var console = App.GetService<ConsoleViewModel>();
-        console.ConsoleOutput = console.ConsoleOutput + "Test\n";
+        console.ConsoleOutput += "Test\n";
+
+        if (m.IsLoading)
+            console.ProgressStartIndeterminate();
+        else
+            console.ProgressStop();
     }
 }

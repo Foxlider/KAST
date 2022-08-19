@@ -51,7 +51,7 @@ public partial class App
             services.AddTransient<AboutPage>();
             services.AddTransient<ModsViewModel>();
             services.AddTransient<ModsPage>();
-            services.AddTransient<ConsoleViewModel>();
+            services.AddSingleton<ConsoleViewModel>();
             services.AddTransient<ConsolePage>();
             services.AddTransient<ShellPage>();
             services.AddTransient<ShellViewModel>();
