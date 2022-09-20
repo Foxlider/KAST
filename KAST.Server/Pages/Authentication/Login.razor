@@ -1,0 +1,223 @@
+@page "/pages/authentication/login"
+@using System.Text.RegularExpressions
+@using KAST.Server.Pages.Identity.Users
+@using KAST.Application.Common.Security
+@using KAST.Infrastructure.Services.Authentication
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.DataProtection
+@using Microsoft.AspNetCore.Identity
+@using System.Security.Claims
+
+@inject IJSRuntime JS
+@inherits OwningComponentBase
+@implements IDisposable
+@inject IStringLocalizer<Login> L
+<PageTitle>@Title</PageTitle>
+<AuthorizeView>
+    <NotAuthorized Context="Auth">
+        <MudForm Model="@_model" @ref="@_form"  @bind-IsValid="@_success" ValidationDelay="0" Validation="@(_loginValidator.ValidateValue)">
+            <MudText Typo="Typo.h4" GutterBottom="true">@L["Sign In"] @_success </MudText>
+
+            <MudText>@L["Don't have an account?"] <MudLink Href="/pages/authentication/register">@L["Sign Up"]</MudLink></MudText>
+
+            <MudTextField @bind-Value="_model.UserName" For="@(() => _model.UserName)"
+                          Label="@L["User name"]"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          OnlyValidateIfDirty="true"
+                          Immediate="true"
+                          RequiredError="@L["user name is required!"]"
+                          Class="my-6"></MudTextField>
+
+            <MudTextField @bind-Value="_model.Password" For="@(() => _model.Password)"
+                          Label="@L["Password"]"
+                          Variant="Variant.Outlined"
+                          InputType="@PasswordInput"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@PasswordInputIcon"
+                          OnlyValidateIfDirty="true"
+                          Immediate="true"
+                          Required="true"
+                          RequiredError="@L["password is required!"]"
+                          OnAdornmentClick="TogglePasswordVisibility" />
+
+            <div Class="d-flex justify-space-between align-center">
+                <MudCheckBox For="@(() => _model.RememberMe)" @bind-Checked="_model.RememberMe"   Label="@L["Remember me?"]" Color="Color.Primary" Class="ml-n1 my-3"></MudCheckBox>
+                <MudLink Href="/pages/authentication/forgot-password">@L["Forgot password?"]</MudLink>
+            </div>
+
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Size="Size.Large"
+                       Disabled="@(_loading)"
+                       ButtonType="ButtonType.Button"
+                       OnClick="@(() => OnSubmit())"
+                       FullWidth="true">
+                @if (_loading)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                    <MudText Class="ms-2"> @PromptText.LOADING</MudText>
+                }
+                else
+                {
+                    <MudText>@ButtonText.SIGNIN</MudText>
+                }
+
+            </MudButton>
+            <div class="d-flex justify-space-around flex-grow-1 my-4 gap-4">
+                <MudButton Class="flex-grow-1" OnClick="@(()=>SignInExternal("Microsoft"))" Variant="Variant.Filled" StartIcon="@Icons.Custom.Brands.Microsoft" ButtonType="ButtonType.Button"
+                           title="Sign in with Microsoft">
+                    @ButtonText.Microsoft
+                </MudButton>
+                <MudButton Class="flex-grow-1" OnClick="@(()=>SignInExternal("Google"))" Variant="Variant.Filled" StartIcon="@Icons.Custom.Brands.Google" ButtonType="ButtonType.Button"
+                           title="Sign in with Google">
+                    @ButtonText.Google
+                </MudButton>
+            </div>
+        </MudForm>
+    </NotAuthorized>
+    <Authorized>
+        <RedirectToHome></RedirectToHome>
+        <MudAlert Severity="MudBlazor.Severity.Info" Class="mt-8 mud-width-full" Style="max-width:500px;">@L["You are already logged in."]</MudAlert>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    public string Title = "Sign In";
+    private SignInManager<ApplicationUser> _signInManager { get; set; } = default!;
+    private UserManager<ApplicationUser> _userManager { get; set; } = default!;
+    [Inject] private IdentityAuthenticationService _authenticationService { get; set; } = default!;
+    [Inject] private ILogger<Login> _logger { get; set; } = default!;
+    private LoginFormModel _model = new()
+        {
+            UserName = "administrator",
+            Password = "Password123!",
+            RememberMe = true
+        };
+
+    MudForm? _form;
+    bool _success;
+    bool _loading;
+    bool _touched;
+    [Inject] private LoginFormModellFluentValidator _loginValidator { get; set; } = default!;
+    bool PasswordVisibility;
+    InputType PasswordInput = InputType.Password;
+    string PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+
+    protected override Task OnInitializedAsync()
+    {
+        Title = L["Sign In"];
+        _signInManager = ScopedServices.GetRequiredService<SignInManager<ApplicationUser>>();
+        _userManager = ScopedServices.GetRequiredService<UserManager<ApplicationUser>>();
+        return base.OnInitializedAsync();
+    }
+
+
+
+    void TogglePasswordVisibility()
+    {
+        @if (PasswordVisibility)
+        {
+            PasswordVisibility = false;
+            PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+            PasswordInput = InputType.Password;
+        }
+        else
+        {
+            PasswordVisibility = true;
+            PasswordInputIcon = Icons.Material.Filled.Visibility;
+            PasswordInput = InputType.Text;
+        }
+    }
+    private async Task OnSubmit()
+    {
+        try
+        {
+            _loading = true;
+            if (_form is not null)
+            {
+                await _form.Validate();
+                if (_form.IsValid)
+                {
+                    var user = await _userManager.FindByNameAsync(_model.UserName);
+                    if (user is null)
+                    {
+                        Snackbar.Add(L["No user found, or no authorization, please contact the administrator"], MudBlazor.Severity.Error);
+                    }
+                    else
+                    {
+                        if (user.IsActive == false)
+                        {
+                            await OnResetPassword(user);
+                        }
+                        else
+                        {
+                            var result = await _authenticationService.Login(_model);
+                            if (!result)
+                            {
+                                _logger.LogWarning("{@UserName} login fail.", _model.UserName);
+                                Snackbar.Add(L["Please check your username and password. If you are still unable to log in, contact your administrator."], MudBlazor.Severity.Error);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("{@UserName} login successfully.", _model.UserName);
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+    }
+    private async Task OnResetPassword(ApplicationUser item)
+    {
+
+        var model = new ResetPasswordFormModel()
+            { Id = item.Id, DisplayName = item.DisplayName, UserName = item.UserName, ProfilePictureDataUrl = item.ProfilePictureDataUrl };
+        var parameters = new DialogParameters { ["model"] = model };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall };
+        var dialog = DialogService.Show<_ResetPasswordDialog>(L["Set new password"], parameters, options);
+        var result = await dialog.Result;
+        if (!result.Cancelled)
+        {
+            var token = await _userManager.GeneratePasswordResetTokenAsync(item);
+            var state = await _userManager.ResetPasswordAsync(item, token, model.Password);
+            if (state.Succeeded)
+            {
+                item.IsActive = true;
+                await _userManager.UpdateAsync(item);
+                Snackbar.Add($"{L["Password update successfuly"]}", MudBlazor.Severity.Info);
+                _logger.LogInformation("{@UserName} has set a new password", model.UserName);
+                _model.Password = "";
+            }
+            else
+            {
+                Snackbar.Add($"{string.Join(",", (state.Errors.Select(x => x.Description).ToArray()))}", MudBlazor.Severity.Error);
+            }
+        }
+    }
+    private async Task SignInExternal(string provider)
+    {
+        await JS.InvokeVoidAsync("externalLogin", provider, DotNetObjectReference.Create(this));
+    }
+    [JSInvokable]
+    public async Task ConfirmExternal(string provider, string userName, string name, string accesstoken)
+    {
+        var result = await _authenticationService.ExternalLogin(provider, userName, name, accesstoken);
+        if (!result)
+        {
+            _logger.LogWarning("{@UserName} login fail.", userName);
+            Snackbar.Add(L["Please check your username and password. If you are still unable to log in, contact your administrator."], MudBlazor.Severity.Error);
+        }
+        else
+        {
+            _logger.LogInformation("{@UserName} login successfully.", userName);
+        }
+    }
+}
