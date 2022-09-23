@@ -1,4 +1,4 @@
-# Contributing to FASTER
+# Contributing to KAST
 
 A big welcome and thank you for considering contributing to KAST! It’s people like you that make it a reality for users in our community.
 
@@ -45,7 +45,7 @@ While a bit different, it is generally the same idea.
 
 1. Fork the repository to your own Github account
 2. Clone the project to your machine
-3. Create a branch locally with a succinct but descriptive name. It is preferred to branch from the current update branch that should be named feature/Update-X.Y 
+3. Create a branch locally with a succinct but descriptive name. It is preferred to branch from the current update branch that should be named feature/Update-X.Y
 4. Commit changes to the branch
 5. Following any formatting and testing guidelines specific to this repo
 6. Push changes to your fork
