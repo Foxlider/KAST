@@ -11,6 +11,10 @@ namespace KAST.Application.Common.Interfaces
     {
         DbSet<Logger> Loggers { get; set; }
         DbSet<AuditTrail> AuditTrails { get; set; }
+
+        DbSet<Mod> Mods { get; set; }
+        DbSet<Author> Authors { get; set; }
+
         DbSet<Document> Documents { get; set; }
         DbSet<KeyValue> KeyValues { get; set; }
         DbSet<Product> Products { get; set; }

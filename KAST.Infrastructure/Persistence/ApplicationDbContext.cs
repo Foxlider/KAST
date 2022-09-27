@@ -34,6 +34,10 @@ namespace KAST.Infrastructure.Persistence
         public DbSet<KeyValue> KeyValues { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Product> Products { get; set; }
+
+        public DbSet<Mod> Mods { get; set; }
+        public DbSet<Author> Authors { get; set; }
+
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             return base.SaveChangesAsync(cancellationToken);
