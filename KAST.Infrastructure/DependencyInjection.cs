@@ -16,7 +16,7 @@ namespace KAST.Infrastructure
             {
                 services.AddDbContext<ApplicationDbContext>(options =>
                 {
-                    options.UseInMemoryDatabase("BlazorDashboardDb");
+                    options.UseInMemoryDatabase("KAST.Dev");
                     options.EnableSensitiveDataLogging();
                 });
             }
