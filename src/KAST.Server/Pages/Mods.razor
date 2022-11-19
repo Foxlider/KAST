@@ -1,0 +1,71 @@
+﻿@page "/mods"
+@using KAST.Core.Models;
+@using KAST.Core.Services;
+@inject ModsService ModsService
+
+<PageTitle>Mods</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Mods</MudText>
+<MudText Class="mb-8">This component demonstrates fetching data from the server.</MudText>
+@if (localMods == null || steamMods == null)
+{
+    <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="steamMods" Hover="true" SortLabel="Sort By" Elevation="0">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<SteamMod, object>(x=>x.SteamID)">ID</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
+            <MudTh>Path</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="">@context.IsLocal</MudTd>
+            <MudTd DataLabel="ID">@context.SteamID</MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Name">@context.Author</MudTd>
+            <MudTd DataLabel="URL">@context.Path</MudTd>
+                <MudTd DataLabel="Size">@context.ActualSize</MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[]{50, 100}" />
+        </PagerContent>
+    </MudTable>
+
+    <MudTable Items="localMods" Hover="true" SortLabel="Sort By" Elevation="0">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<SteamMod, object>(x=>x.SteamID)">ID</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
+            <MudTh>Path</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="">@context.IsLocal</MudTd>
+            <MudTd DataLabel="ID">@context</MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Name">@context.Author</MudTd>
+            <MudTd DataLabel="URL">@context.Path</MudTd>
+            <MudTd DataLabel="Size">@context.ActualSize</MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[]{50, 100}" />
+        </PagerContent>
+    </MudTable>
+}
+
+
+@code {
+    private SteamMod[]? steamMods;
+    private LocalMod[]? localMods;
+
+    protected override async Task OnInitializedAsync()
+    {
+        steamMods = await ModsService.GetSteamModsAsync();
+        localMods = await ModsService.GetLocalModsAsync();
+    }
+}
