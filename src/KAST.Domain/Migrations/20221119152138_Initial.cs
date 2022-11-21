@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace KAST.Domain.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -30,8 +30,13 @@ namespace KAST.Domain.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Path = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     IsLocal = table.Column<bool>(type: "bit", nullable: false),
+                    Status = table.Column<int>(type: "int", nullable: true),
+                    ActualSize = table.Column<decimal>(type: "decimal(20,0)", nullable: false),
                     AuthorID = table.Column<decimal>(type: "decimal(20,0)", nullable: true),
+                    SteamID = table.Column<decimal>(type: "decimal(20,0)", nullable: true),
                     Url = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     SteamLastUpdated = table.Column<DateTime>(type: "datetime2", nullable: true),
                     LocalLastUpdated = table.Column<DateTime>(type: "datetime2", nullable: true),

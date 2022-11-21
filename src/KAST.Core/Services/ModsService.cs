@@ -14,12 +14,12 @@ namespace KAST.Core.Services
         }
         public Task<SteamMod[]> GetSteamModsAsync()
         {
-            return _context.SteamMods.ToArrayAsync();
+            return _context.SteamMods.Include(m => m.Author).ToArrayAsync();
         }
 
         public Task<LocalMod[]> GetLocalModsAsync()
         {
-            return _context.LocalMods.ToArrayAsync();
+            return _context.LocalMods.Include(m => m.Author).ToArrayAsync();
         }
     }
 }

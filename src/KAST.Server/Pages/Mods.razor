@@ -13,22 +13,30 @@
 }
 else
 {
-    <MudTable Items="steamMods" Hover="true" SortLabel="Sort By" Elevation="0">
+    <MudTable Items="steamMods" Hover="true" FixedHeader="true" SortLabel="Sort By" Elevation="0">
+        <ColGroup>
+            <col style="width: 60px;" />
+            <col style="width: 60px;" />
+            <col />
+            <col />
+            <col style="width: 60px;" />
+            <col style="width: 60px;" />
+        </ColGroup>
         <HeaderContent>
             <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<SteamMod, object>(x=>x.SteamID)">ID</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
             <MudTh>Path</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="">@context.IsLocal</MudTd>
-            <MudTd DataLabel="ID">@context.SteamID</MudTd>
+            <MudTd DataLabel=""><MudLink Href="@context.Url" Target="_blank"><MudIcon Icon="@Icons.Custom.Brands.Steam"></MudIcon></MudLink></MudTd>
+            <MudTd DataLabel="ID"><MudLink Href="@context.Url" Target="_blank">@context.SteamID</MudLink></MudTd>
             <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Name">@context.Author</MudTd>
             <MudTd DataLabel="URL">@context.Path</MudTd>
-                <MudTd DataLabel="Size">@context.ActualSize</MudTd>
+            <MudTd DataLabel="Name">@context.Author?.Name</MudTd>
+            <MudTd DataLabel="Size">@context.ActualSize</MudTd>
         </RowTemplate>
         <PagerContent>
             <MudTablePager PageSizeOptions="new int[]{50, 100}" />
@@ -36,19 +44,21 @@ else
     </MudTable>
 
     <MudTable Items="localMods" Hover="true" SortLabel="Sort By" Elevation="0">
+        <ColGroup>
+            <col style="width: 60px;" />
+            <col />
+            <col />
+            <col style="width: 60px;" />
+        </ColGroup>
         <HeaderContent>
             <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<SteamMod, object>(x=>x.SteamID)">ID</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
             <MudTh>Path</MudTh>
             <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="">@context.IsLocal</MudTd>
-            <MudTd DataLabel="ID">@context</MudTd>
+            <MudTd DataLabel=""><MudIcon Icon="@Icons.Material.Filled.Folder"></MudIcon></MudTd>
             <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Name">@context.Author</MudTd>
             <MudTd DataLabel="URL">@context.Path</MudTd>
             <MudTd DataLabel="Size">@context.ActualSize</MudTd>
         </RowTemplate>
