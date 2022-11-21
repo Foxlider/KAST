@@ -7,7 +7,20 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KAST.Server", "src\KAST.Ser
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KAST.Domain", "src\KAST.Domain\KAST.Domain.csproj", "{B14215C2-E765-4BD5-ACF9-B15A15F77FE9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KAST.Core", "src\KAST.Core\KAST.Core.csproj", "{A2BEC70A-39FA-40D7-A179-5D567B6ADBA6}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KAST.Core", "src\KAST.Core\KAST.Core.csproj", "{A2BEC70A-39FA-40D7-A179-5D567B6ADBA6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{538EBDF4-08BD-4E24-BF5B-180A40B9456A}"
+	ProjectSection(SolutionItems) = preProject
+		.dockerignore = .dockerignore
+		.gitignore = .gitignore
+		CODE_OF_CONDUCT.md = CODE_OF_CONDUCT.md
+		CONTRIBUTING.md = CONTRIBUTING.md
+		global.json = global.json
+		LICENSE.md = LICENSE.md
+		.github\pull_request_template.md = .github\pull_request_template.md
+		README.md = README.md
+		SECURITY.md = SECURITY.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
