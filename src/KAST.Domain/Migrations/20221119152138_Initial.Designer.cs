@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KAST.Domain.Migrations
 {
     [DbContext(typeof(KastDbContext))]
-    [Migration("20221115153344_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20221119152138_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -51,11 +51,23 @@ namespace KAST.Domain.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal>("ActualSize")
+                        .HasColumnType("decimal(20,0)");
+
                     b.Property<decimal?>("AuthorID")
                         .HasColumnType("decimal(20,0)");
 
                     b.Property<bool>("IsLocal")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Path")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("Status")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -84,6 +96,9 @@ namespace KAST.Domain.Migrations
 
                     b.Property<DateTime?>("LocalLastUpdated")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal>("SteamID")
+                        .HasColumnType("decimal(20,0)");
 
                     b.Property<DateTime?>("SteamLastUpdated")
                         .HasColumnType("datetime2");

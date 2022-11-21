@@ -2,6 +2,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using static System.Net.WebRequestMethods;
+
 namespace KAST.Data
 {
     public class KastDbContext : DbContext
@@ -56,15 +58,16 @@ namespace KAST.Data
         {
             try
             {
-                var a1 = Authors.Add(new Author { Name = "acemod" });
-                var a2 = Authors.Add(new Author { Name = "CBATeam" });
+                var a1 = new Author { Name = "acemod" , URL = "https://steamcommunity.com/id/acemod/myworkshopfiles/?appid=107410" };
+                Authors.Add(a1);
+                var a2 = Authors.Add(new Author { Name = "CBATeam", URL = "https://steamcommunity.com/id/CBATeam/myworkshopfiles/?appid=107410" });
                 SaveChanges();
 
-                Mods.Add(new SteamMod { Author = a1.Entity, Name = "ace", Url = "https://steamcommunity.com/workshop/filedetails/?id=463939057"  });
+                SteamMods.Add(new SteamMod {  SteamID = 463939057, Author = a1, Name = "ace", Url = "https://steamcommunity.com/workshop/filedetails/?id=463939057"  });
                 SaveChanges();
-                Mods.Add(new SteamMod { Author = a2.Entity, Name = "CBA_A3", Url = "https://steamcommunity.com/workshop/filedetails/?id=450814997" });
+                SteamMods.Add(new SteamMod { SteamID = 450814997, Author = a2.Entity, Name = "CBA_A3", Url = "https://steamcommunity.com/workshop/filedetails/?id=450814997" });
                 SaveChanges();
-                Mods.Add(new LocalMod { Name = "AUX Mod", Path = "E:\\Mods\\AUX Mod" });
+                LocalMods.Add(new LocalMod { Name = "AUX Mod", Path = "E:\\Mods\\AUX Mod" });
                 SaveChanges();
 
             }
