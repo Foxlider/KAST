@@ -1,6 +1,6 @@
-﻿using KAST.Core.Models;
-using KAST.Core.Interfaces;
+﻿using KAST.Core.Interfaces;
 using KAST.Data;
+using KAST.Data.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace KAST.Core.Services
@@ -20,6 +20,11 @@ namespace KAST.Core.Services
         public Task<LocalMod[]> GetLocalModsAsync()
         {
             return _context.LocalMods.Include(m => m.Author).ToArrayAsync();
+        }
+
+        public async Task<int> Save()
+        {
+            return await _context.SaveChangesAsync();
         }
     }
 }

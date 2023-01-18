@@ -1,6 +1,7 @@
-﻿using KAST.Core.Enums;
+﻿
+using KAST.Data.Enums;
 
-namespace KAST.Core.Models
+namespace KAST.Data.Models
 {
     public class LocalMod : Mod
     {

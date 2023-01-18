@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace KAST.Core.Models
+namespace KAST.Data.Models
 {
     public class Author
     {

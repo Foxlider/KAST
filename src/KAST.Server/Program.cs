@@ -4,6 +4,7 @@ using KAST.Server.Data;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
+using MudBlazor;
 using MudBlazor.Services;
 using Serilog;
 using Serilog.Events;
@@ -48,8 +49,10 @@ builder.Services.AddDbContext<KastDbContext>(options => options
 );
 
 
-builder.Services.AddSingleton<WeatherForecastService>();
 builder.Services.AddScoped<ModsService>();
+builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<SteamService>();
+
 builder.Services.AddMudServices();
 
 var app = builder.Build();
@@ -78,6 +81,8 @@ using (IServiceScope serviceScope = app.Services.CreateScope())
     try
     {
         KastDbContext context = serviceScope.ServiceProvider.GetService<KastDbContext>();
+        SettingsService settings = serviceScope.ServiceProvider.GetService<SettingsService>();
+
         context.Database.SetCommandTimeout(2400);
 
         if (app.Environment.IsDevelopment())
@@ -89,10 +94,40 @@ using (IServiceScope serviceScope = app.Services.CreateScope())
             context.Database.Migrate();
 
         context.EnsureSeedData();
+
+        //Set default login details
+        if (string.IsNullOrEmpty(settings.Account.AccountName)) 
+        {
+            settings.Account.AccountName = "anonymous";
+            settings.Account.AccountPassword = "anonymous";
+        }
+        //Set Default Mod Staging Dir
+        if(string.IsNullOrEmpty(settings.Mods.ModStatingDir)) 
+        {
+            settings.Mods.ModStatingDir = "./Mods";
+        }
+
+        if (string.IsNullOrEmpty(settings.Theme.PalettePrimary))
+        {
+            var provider = new MudThemeProvider();
+            
+            provider.Theme = new MudTheme();
+            provider.GetSystemPreference();
+            settings.Theme.PalettePrimary = provider.Theme.Palette.Primary.Value;
+            settings.Theme.PaletteSecondary = provider.Theme.Palette.Secondary.Value;
+            settings.Theme.PaletteBackground = provider.Theme.Palette.AppbarBackground.Value;
+            settings.Theme.DarkTheme = provider.IsDarkMode;
+        }
+
+
+        settings.Save();
+
+
+        settings.Save();
         if (app.Environment.IsDevelopment()) 
             context.DebugSeedData();
     } 
-    catch (Exception e) { throw; }
+    catch (Exception) { throw; }
 }
 
 app.UseHttpsRedirection();
