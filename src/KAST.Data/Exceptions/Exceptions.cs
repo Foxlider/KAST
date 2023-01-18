@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace KAST.Core.Exceptions
+namespace KAST.Data.Exceptions
 {
     public class KastLogonFailedException : Exception
     {

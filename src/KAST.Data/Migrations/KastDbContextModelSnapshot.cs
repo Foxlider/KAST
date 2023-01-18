@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace KAST.Domain.Migrations
+namespace KAST.Data.Migrations
 {
     [DbContext(typeof(KastDbContext))]
     partial class KastDbContextModelSnapshot : ModelSnapshot

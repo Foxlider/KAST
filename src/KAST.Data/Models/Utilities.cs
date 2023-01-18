@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
 
-namespace KAST.Core.Models
+namespace KAST.Data.Models
 {
     public static class Utilities
     {

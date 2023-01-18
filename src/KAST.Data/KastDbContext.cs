@@ -1,4 +1,5 @@
-﻿using KAST.Core.Models;
+﻿using KAST.Data.Enums;
+using KAST.Data.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +13,9 @@ namespace KAST.Data
         public DbSet<SteamMod> SteamMods { get; set; }
         public DbSet<LocalMod> LocalMods { get; set; }
         public DbSet<Author> Authors { get; set; }
+
+
+        public DbSet<Setting> Settings { get; set; }
 
         public static readonly ILoggerFactory loggerFactory = LoggerFactory.Create(builder => { builder.AddDebug(); });
 
@@ -38,6 +42,10 @@ namespace KAST.Data
                 .HasDiscriminator<bool>("IsLocal")
                 .HasValue<LocalMod>(true)
                 .HasValue<SteamMod>(false);
+
+            modelBuilder.Entity<Setting>()
+                    .HasKey(x => new { x.Name, x.Type });
+
         }
 
         public void EnsureSeedData()
@@ -51,6 +59,7 @@ namespace KAST.Data
                 }
             }
             catch (Exception) { throw; }
+
         }
 
 
@@ -63,9 +72,9 @@ namespace KAST.Data
                 var a2 = Authors.Add(new Author { Name = "CBATeam", URL = "https://steamcommunity.com/id/CBATeam/myworkshopfiles/?appid=107410" });
                 SaveChanges();
 
-                SteamMods.Add(new SteamMod {  SteamID = 463939057, Author = a1, Name = "ace", Url = "https://steamcommunity.com/workshop/filedetails/?id=463939057"  });
+                SteamMods.Add(new SteamMod {  SteamID = 463939057, Author = a1, Name = "ace", Status = ModStatus.UpdateRequired, Url = "https://steamcommunity.com/workshop/filedetails/?id=463939057"  });
                 SaveChanges();
-                SteamMods.Add(new SteamMod { SteamID = 450814997, Author = a2.Entity, Name = "CBA_A3", Url = "https://steamcommunity.com/workshop/filedetails/?id=450814997" });
+                SteamMods.Add(new SteamMod { SteamID = 450814997, Author = a2.Entity, Name = "CBA_A3", Status = ModStatus.UpdateRequired, Url = "https://steamcommunity.com/workshop/filedetails/?id=450814997" });
                 SaveChanges();
                 LocalMods.Add(new LocalMod { Name = "AUX Mod", Path = "E:\\Mods\\AUX Mod" });
                 SaveChanges();

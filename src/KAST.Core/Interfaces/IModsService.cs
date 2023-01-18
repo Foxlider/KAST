@@ -1,4 +1,4 @@
-﻿using KAST.Core.Models;
+﻿using KAST.Data.Models;
 
 namespace KAST.Core.Interfaces
 {
@@ -6,6 +6,5 @@ namespace KAST.Core.Interfaces
     {
         Task<SteamMod[]> GetSteamModsAsync();
         Task<LocalMod[]> GetLocalModsAsync();
-
     }
 }

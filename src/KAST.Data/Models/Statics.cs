@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace KAST.Core.Models
+namespace KAST.Data.Models
 {
     internal static class Statics
     {

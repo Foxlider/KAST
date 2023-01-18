@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace KAST.Domain.Migrations
+namespace KAST.Data.Migrations
 {
     [DbContext(typeof(KastDbContext))]
     [Migration("20221119152138_Initial")]
