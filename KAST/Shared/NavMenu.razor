@@ -1,0 +1,40 @@
+﻿@using KAST.Data.Models;
+<MudNavMenu>
+
+@*     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Sharp.Home">Home</MudNavLink>
+    <MudNavLink Href="counter" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Add">Counter</MudNavLink>
+    <MudNavLink Href="fetchdata" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.List">Fetch data</MudNavLink>
+ *@
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Custom.Brands.Steam">Mods</MudNavLink>
+    @if (servers != null && servers.Count > 0)
+    {
+        <MudNavGroup Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Storage" Title="Servers" Expanded=true>
+            @foreach (var server in servers)
+            {
+                <MudNavLink Href="@("/server/" + server.Id)" Icon="@Icons.Sharp.Terminal">@server.Name</MudNavLink>
+            }
+        </MudNavGroup>
+    }
+    
+</MudNavMenu>
+
+<MudSpacer />
+
+<MudNavMenu>
+    <MudNavLink Href="infos" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Info">Informations</MudNavLink>
+    <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Settings">Settings</MudNavLink>
+</MudNavMenu>
+
+@code
+{
+    private List<Server> servers = new();
+
+    protected override void OnInitialized()
+    {
+        for (int i = 0; i <= 5; i++)
+        {
+            servers.Add(new Server{ Name=$"Server {i}", Id = Guid.NewGuid()});
+        }
+    }
+}

@@ -1,0 +1,12 @@
+﻿@page "/server/{guid}"
+
+<PageTitle>Server</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Server</MudText>
+
+<MudText Class="mb-4">@Guid</MudText>
+
+@code {
+    [Parameter]
+    public string? Guid { get; set; }
+}
