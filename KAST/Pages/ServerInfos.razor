@@ -65,11 +65,11 @@
         {
             var cpuVal = ServerInfoService.GetCpuUsage();
             // var cpuData = CpuSeries.First().Data;
-            if (cpuVal != float.NaN)
+            if (float.IsNaN(cpuVal))
                 CpuSeries.First().Data = CpuSeries.First().Data.Concat(new double[] { cpuVal }).ToArray(); // Why on EARTH do they use arrays ?
 
             var ramVal = ServerInfoService.GetMemUsage();
-            if (ramVal != float.NaN)
+            if (float.IsNaN(ramVal))
                 RamSeries.First().Data = RamSeries.First().Data.Concat(new double[] { ramVal }).ToArray();
 
 
