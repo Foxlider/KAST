@@ -1,4 +1,5 @@
 using KAST.Core;
+using KAST.Core.Services;
 using KAST.Data;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,8 @@ StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configurat
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
-builder.Services.AddSingleton<WeatherForecastService>();
+builder.Services.AddSingleton<WeatherForecastService>(); 
+builder.Services.AddSingleton<ServerInfoService>();
 builder.Services.AddMudServices();
 
 
@@ -37,7 +39,6 @@ using (IServiceScope serviceScope = app.Services.CreateScope())
     try
     {
         ApplicationDbContext context = serviceScope.ServiceProvider.GetService<ApplicationDbContext>();
-
 
         if (app.Environment.IsDevelopment())
         {

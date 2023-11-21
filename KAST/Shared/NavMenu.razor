@@ -9,10 +9,10 @@
     <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Custom.Brands.Steam">Mods</MudNavLink>
     @if (servers != null && servers.Count > 0)
     {
-        <MudNavGroup Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Storage" Title="Servers" Expanded=true>
+        <MudNavGroup Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Sharp.Storage" Title="Servers" Expanded=true>
             @foreach (var server in servers)
             {
-                <MudNavLink Href="@("/server/" + server.Id)" Icon="@Icons.Sharp.Terminal">@server.Name</MudNavLink>
+                <MudNavLink Href="@("/server/" + server.Id)" Icon="@Icons.Material.Sharp.Terminal">@server.Name</MudNavLink>
             }
         </MudNavGroup>
     }
@@ -22,8 +22,9 @@
 <MudSpacer />
 
 <MudNavMenu>
-    <MudNavLink Href="infos" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Info">Informations</MudNavLink>
-    <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Settings">Settings</MudNavLink>
+    <MudNavLink Href="serverinfos" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Sharp.Computer">Server Status</MudNavLink>
+    <MudNavLink Href="infos" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Sharp.Info">Informations</MudNavLink>
+    <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Sharp.Settings">Settings</MudNavLink>
 </MudNavMenu>
 
 @code
