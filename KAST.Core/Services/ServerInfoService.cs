@@ -5,8 +5,8 @@ namespace KAST.Core.Services
 {
     public class ServerInfoService
     {
-        private PerformanceCounter _cpuCounter;
-        private PerformanceCounter _ramCounter;
+        private readonly PerformanceCounter _cpuCounter;
+        private readonly PerformanceCounter _ramCounter;
 
         [SupportedOSPlatform("windows")]
         public ServerInfoService()
