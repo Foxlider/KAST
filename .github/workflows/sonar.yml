@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   Analysis:
-    runs-on: [self-hosted, windows-latest]
+    runs-on: [windows-latest]
 
     steps:
       - name: Set up JDK 17
