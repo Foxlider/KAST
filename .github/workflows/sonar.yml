@@ -30,7 +30,7 @@ name: SonarCloud analysis
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   Analysis:
-    runs-on: [windows-latest]
+    runs-on: [self-hosted, windows-latest]
 
     steps:
       - name: Set up JDK 17
