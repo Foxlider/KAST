@@ -1,0 +1,91 @@
+﻿@page "/serverinfos"
+
+@using KAST.Core.Services
+@implements IDisposable
+
+@inject ServerInfoService ServerInfoService
+<MudContainer Class="" MaxWidth="MaxWidth.ExtraExtraLarge">
+
+    <MudGrid Spacing="4">
+        <MudItem xs="6">
+            <MudCard Elevation="25" Class="mud-width-full">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5" Align="Align.Center">CPU USAGE</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudChart ChartType="ChartType.Line" ChartSeries="@CpuSeries" Width="100%" ChartOptions="cpuOptions"></MudChart>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6">
+            <MudCard Elevation="25" Class="mud-width-full">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5" Align="Align.Center">RAM USAGE</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudChart ChartType="ChartType.Line" ChartSeries="@RamSeries" Width="100%" ChartOptions="ramOptions"></MudChart>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+
+
+
+
+@code {
+    private System.Threading.Timer? timer;
+
+    private ChartOptions cpuOptions = new ChartOptions();
+    private ChartSeries cpuData = new ChartSeries() { Name = "CPU", Data = new double[20] };
+    public List<ChartSeries> CpuSeries = new List<ChartSeries>();
+
+    private ChartOptions ramOptions = new ChartOptions();
+    private ChartSeries ramData = new ChartSeries() { Name = "RAM", Data = new double[20] };
+    public List<ChartSeries> RamSeries = new List<ChartSeries>();
+
+    protected override void OnInitialized()
+    {
+        cpuOptions.YAxisTicks = 10;
+        cpuOptions.MaxNumYAxisTicks = 100;
+        cpuOptions.DisableLegend = true;
+        ramOptions.DisableLegend = true;
+        ramOptions.YAxisFormat = "{0}Mb";
+
+
+        CpuSeries.Add(cpuData);
+        RamSeries.Add(ramData);
+
+        timer = new System.Threading.Timer(async (object? stateInfo) =>
+        {
+            var cpuVal = ServerInfoService.GetCpuUsage();
+            // var cpuData = CpuSeries.First().Data;
+            if (cpuVal != float.NaN)
+                CpuSeries.First().Data = CpuSeries.First().Data.Concat(new double[] { cpuVal }).ToArray(); // Why on EARTH do they use arrays ?
+
+            var ramVal = ServerInfoService.GetMemUsage();
+            if (ramVal != float.NaN)
+                RamSeries.First().Data = RamSeries.First().Data.Concat(new double[] { ramVal }).ToArray();
+
+
+            await InvokeAsync(() =>// NOTE: MUST CALL StateHasChanged() BECAUSE THIS IS TRIGGERED BY A TIMER INSTEAD OF A USER EVENT
+            {
+                StateHasChanged();
+            });
+        }, new System.Threading.AutoResetEvent(false), 1000, 1000); // fire every second
+    }
+
+    void OnClickMenu(InterpolationOption interpolationOption)
+    {
+        cpuOptions.InterpolationOption = interpolationOption;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    { timer?.Dispose(); }
+}
