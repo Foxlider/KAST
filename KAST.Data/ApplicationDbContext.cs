@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext
     {
         var folder = Environment.SpecialFolder.LocalApplicationData;
         var path = Path.Combine(Environment.GetFolderPath(folder), "KAST");
+        Directory.CreateDirectory(path);
         if(HostEnvironment != null && HostEnvironment.IsDevelopment())
             DbPath = Path.Join(path, "KAST-dev.db");
         else
@@ -31,6 +32,7 @@ public class ApplicationDbContext : DbContext
         HostEnvironment = env;
         var folder = Environment.SpecialFolder.LocalApplicationData;
         var path = Path.Combine(Environment.GetFolderPath(folder), "KAST");
+        Directory.CreateDirectory(path);
         if (HostEnvironment.IsDevelopment())
             DbPath = Path.Join(path, "KAST-dev.db");
         else
