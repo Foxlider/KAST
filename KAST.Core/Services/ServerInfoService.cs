@@ -5,8 +5,8 @@ namespace KAST.Core.Services
 {
     public class ServerInfoService
     {
-        private readonly PerformanceCounter _cpuCounter;
-        private readonly PerformanceCounter _ramCounter;
+        private readonly PerformanceCounter? _cpuCounter;
+        private readonly PerformanceCounter? _ramCounter;
 
         [SupportedOSPlatform("windows")]
         public ServerInfoService()
@@ -36,7 +36,7 @@ namespace KAST.Core.Services
         [SupportedOSPlatform("windows")]
         public float GetMemUsage()
         {
-            if (_cpuCounter == null)
+            if (_ramCounter == null)
                 return float.NaN;
             var val = _ramCounter.NextValue();
             return val;
