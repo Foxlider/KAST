@@ -1,12 +1,81 @@
-﻿@page "/server/{guid}"
+﻿@page "/server/{serverGuid}"
+@inject InstanceManagerService InstanceService
+<PageTitle>Server @server.Server.Name</PageTitle>
 
-<PageTitle>Server</PageTitle>
+<MudText Typo="Typo.h3" GutterBottom="true">@server.Server.Name</MudText>
 
-<MudText Typo="Typo.h3" GutterBottom="true">Server</MudText>
+<MudText Class="mb-4">@serverGuid</MudText>
 
-<MudText Class="mb-4">@Guid</MudText>
+<MudPaper Class="pa-4 ma-4" Elevation="4">
+    <MudText Typo="Typo.h5">@server.Server.Name</MudText>
+
+    <MudGrid>
+        <MudItem xs="6">
+            <MudTextField T="int" Label="MinBandwidth"
+                          @bind-Value="server.BasicCfg.MinBandwidth"
+                          Immediate="true"
+                          OnBlur="() => Save(server)" />
+        </MudItem>
+        <MudItem xs="6">
+            <MudTextField T="long" Label="MaxBandwidth"
+                          @bind-Value="server.BasicCfg.MaxBandwidth"
+                          Immediate="true"
+                          OnBlur="() => Save(server)" />
+        </MudItem>
+        <!-- Add more fields here -->
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+
+    <MudTextField T="string"
+                  Label="Raw Config (basic.cfg)"
+                  Lines="20"
+                  FullWidth="true"
+                  @bind-Value="server.BasicCfgService.RawFileContent"
+                  Immediate="true"
+                  OnBlur="() => Save(server)" />
+</MudPaper>
+@* <h3>@server.Server.Name</h3>
+<div class="server-settings">
+    <label>MinBandwidth: </label>
+    <input type="number" @bind="server.BasicCfg.MinBandwidth" />
+    <br />
+    <label>MaxBandwidth: </label>
+    <input type="number" @bind="server.BasicCfg.MaxBandwidth" />
+    <br />
+    <label>MaxMsgSend: </label>
+    <input type="number" @bind="server.BasicCfg.MaxMsgSend" />
+    <br />
+    <!-- Add other fields similarly -->
+
+    <button @onclick="() => SaveServer(server)">Save</button>
+</div> *@
+
 
 @code {
     [Parameter]
-    public string? Guid { get; set; }
+    public string? ServerGuid { get; set; }
+
+    public Guid serverGuid;
+    ServerInstance server;
+
+    protected override void OnInitialized()
+    {
+        serverGuid = Guid.Parse(ServerGuid);
+        server = InstanceService.Servers.FirstOrDefault(s => s.Server.Id == serverGuid);
+        server.BasicCfgService.OnUpdated += () =>
+        {
+            InvokeAsync(StateHasChanged);
+        };
+    }
+
+    private void SaveServer(ServerInstance server)
+    {
+        server.BasicCfgService.UpdateFileFromSettings();
+    }
+
+    private void Save(ServerInstance server)
+    {
+        server.BasicCfgService.UpdateFileFromSettings();
+    }
 }

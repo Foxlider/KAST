@@ -1,4 +1,4 @@
-using KAST.Core;
+﻿using KAST.Core;
 using KAST.Core.Services;
 using KAST.Data;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
@@ -14,6 +14,7 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddSingleton<WeatherForecastService>(); 
 builder.Services.AddSingleton<ServerInfoService>();
+builder.Services.AddSingleton<InstanceManagerService>();
 builder.Services.AddMudServices();
 
 

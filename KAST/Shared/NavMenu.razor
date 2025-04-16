@@ -1,4 +1,6 @@
 ﻿@using KAST.Data.Models;
+@using KAST.Core.Services;
+@inject InstanceManagerService InstanceService
 <MudNavMenu>
 
 @*     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Sharp.Home">Home</MudNavLink>
@@ -7,10 +9,10 @@
  *@
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
     <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Custom.Brands.Steam">Mods</MudNavLink>
-    @if (servers != null && servers.Count > 0)
+    @if (InstanceService.Servers != null && InstanceService.Servers.Count > 0)
     {
         <MudNavGroup Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Sharp.Storage" Title="Servers" Expanded=true>
-            @foreach (var server in servers)
+            @foreach (var server in InstanceService.Servers.Select(s => s.Server))
             {
                 <MudNavLink Href="@("/server/" + server.Id)" Icon="@Icons.Material.Sharp.Terminal">@server.Name</MudNavLink>
             }
@@ -29,13 +31,22 @@
 
 @code
 {
-    private List<Server> servers = new();
+    private void SaveServer(ServerInstance server)
+    {
+        server.BasicCfgService.UpdateFileFromSettings();
+    }
+
 
     protected override void OnInitialized()
     {
-        for (int i = 0; i <= 5; i++)
+        if (!InstanceService.Servers.Any())
         {
-            servers.Add(new Server{ Name=$"Server {i}", Id = Guid.NewGuid()});
+            InstanceService.AddServer("Alpha Server");
+            InstanceService.AddServer("Beta Server");
         }
+        // for (int i = 0; i <= 5; i++)
+        // {
+        //     servers.Add(new Server{ Name=$"Server {i}", Id = Guid.NewGuid()});
+        // }
     }
 }
