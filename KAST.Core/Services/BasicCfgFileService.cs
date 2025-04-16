@@ -9,7 +9,7 @@ namespace KAST.Core.Services
         private readonly Dictionary<string, (string originalLine, string comment)> _lines = new();
         private FileSystemWatcher _watcher;
         private bool _suppressWatcher = false;
-        public CfgSettings Settings { get; private set; } = new();
+        public BasicConfig Settings { get; private set; } = new();
         public event Action OnUpdated;
 
         public BasicCfgFileService(string filePath)
@@ -42,10 +42,10 @@ namespace KAST.Core.Services
 
             if (!File.Exists(_filePath))
             {
-                var defaultSettings = new CfgSettings();
+                var defaultSettings = new BasicConfig();
                 var lines = new List<string>();
 
-                foreach (var prop in typeof(CfgSettings).GetProperties())
+                foreach (var prop in typeof(BasicConfig).GetProperties())
                 {
                     var value = prop.GetValue(defaultSettings);
                     var formattedValue = value switch
@@ -89,7 +89,7 @@ namespace KAST.Core.Services
         {
             try
             {
-                var prop = typeof(CfgSettings).GetProperty(key);
+                var prop = typeof(BasicConfig).GetProperty(key);
                 if (prop == null) return;
 
                 object converted = Convert.ChangeType(value, prop.PropertyType);
@@ -100,7 +100,7 @@ namespace KAST.Core.Services
 
         private string ConvertSettingValue(string key)
         {
-            var prop = typeof(CfgSettings).GetProperty(key);
+            var prop = typeof(BasicConfig).GetProperty(key);
             if (prop == null) return null;
 
             var val = prop.GetValue(Settings);
