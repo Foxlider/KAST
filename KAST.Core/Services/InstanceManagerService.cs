@@ -11,7 +11,6 @@ namespace KAST.Core.Services
         {
             var guid = GuidHelper.NewGuid(name);
             string cfgFilePath = Path.Combine(guid.ToString(), "Basic.cfg");
-            var cfgFile = new BasicCfgFileService(cfgFilePath);
             Servers.Add(new ServerInstance
             {
                 Server = new Server
@@ -35,8 +34,8 @@ namespace KAST.Core.Services
 
     public class ServerInstance
     {
-        public Server Server { get; set; }
-        public BasicCfgFileService BasicCfgService { get; set; }
+        public required Server Server { get; set; }
+        public required BasicCfgFileService BasicCfgService { get; set; }
         public CfgSettings BasicCfg => BasicCfgService.Settings;
     }
 }
