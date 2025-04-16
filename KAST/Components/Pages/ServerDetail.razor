@@ -1,10 +1,10 @@
-﻿@page "/server/{serverGuid}"
+﻿@page "/server/{serverGuid:guid}"
 @inject InstanceManagerService InstanceService
 <PageTitle>Server @server.Server.Name</PageTitle>
 
 <MudText Typo="Typo.h3" GutterBottom="true">@server.Server.Name</MudText>
 
-<MudText Class="mb-4">@serverGuid</MudText>
+<MudText Class="mb-4">@server.Server.Id</MudText>
 
 <MudPaper Class="pa-4 ma-4" Elevation="4">
     <MudText Typo="Typo.h5">@server.Server.Name</MudText>
@@ -35,43 +35,21 @@
                   Immediate="true"
                   OnBlur="() => Save(server)" />
 </MudPaper>
-@* <h3>@server.Server.Name</h3>
-<div class="server-settings">
-    <label>MinBandwidth: </label>
-    <input type="number" @bind="server.BasicCfg.MinBandwidth" />
-    <br />
-    <label>MaxBandwidth: </label>
-    <input type="number" @bind="server.BasicCfg.MaxBandwidth" />
-    <br />
-    <label>MaxMsgSend: </label>
-    <input type="number" @bind="server.BasicCfg.MaxMsgSend" />
-    <br />
-    <!-- Add other fields similarly -->
-
-    <button @onclick="() => SaveServer(server)">Save</button>
-</div> *@
 
 
 @code {
     [Parameter]
-    public string? ServerGuid { get; set; }
+    public Guid? ServerGuid { get; set; }
 
-    public Guid serverGuid;
     ServerInstance server;
 
-    protected override void OnInitialized()
+    protected override async Task OnParametersSetAsync()
     {
-        serverGuid = Guid.Parse(ServerGuid);
-        server = InstanceService.Servers.FirstOrDefault(s => s.Server.Id == serverGuid);
+        server = InstanceService.Servers.FirstOrDefault(s => s.Server.Id == ServerGuid);
         server.BasicCfgService.OnUpdated += () =>
         {
             InvokeAsync(StateHasChanged);
         };
-    }
-
-    private void SaveServer(ServerInstance server)
-    {
-        server.BasicCfgService.UpdateFileFromSettings();
     }
 
     private void Save(ServerInstance server)

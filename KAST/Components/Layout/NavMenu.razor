@@ -1,12 +1,8 @@
 ﻿@using KAST.Data.Models;
 @using KAST.Core.Services;
 @inject InstanceManagerService InstanceService
-<MudNavMenu>
 
-@*     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Sharp.Home">Home</MudNavLink>
-    <MudNavLink Href="counter" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.Add">Counter</MudNavLink>
-    <MudNavLink Href="fetchdata" Match="NavLinkMatch.Prefix" Icon="@Icons.Sharp.List">Fetch data</MudNavLink>
- *@
+<MudNavMenu>
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
     <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Custom.Brands.Steam">Mods</MudNavLink>
     @if (InstanceService.Servers != null && InstanceService.Servers.Count > 0)
@@ -44,9 +40,5 @@
             InstanceService.AddServer("Alpha Server");
             InstanceService.AddServer("Beta Server");
         }
-        // for (int i = 0; i <= 5; i++)
-        // {
-        //     servers.Add(new Server{ Name=$"Server {i}", Id = Guid.NewGuid()});
-        // }
     }
 }

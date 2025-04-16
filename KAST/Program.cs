@@ -1,65 +1,68 @@
-﻿using KAST.Core;
+﻿using KAST.Components;
 using KAST.Core.Services;
 using KAST.Data;
-using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 
-var builder = WebApplication.CreateBuilder(args);
-
-StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
-
-// Add services to the container.
-builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
-builder.Services.AddSingleton<ServerInfoService>();
-builder.Services.AddSingleton<InstanceManagerService>();
-builder.Services.AddMudServices();
-
-
-builder.Services.AddDbContext<ApplicationDbContext>();
-
-
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+namespace KAST
 {
-    app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
-}
-
-
-
-using (IServiceScope serviceScope = app.Services.CreateScope())
-{
-    //Apply last Entity Framework migration
-    try
+    public class Program
     {
-        ApplicationDbContext context = serviceScope.ServiceProvider.GetService<ApplicationDbContext>();
-
-        if (app.Environment.IsDevelopment())
+        public static async Task Main(string[] args)
         {
-            context.Database.EnsureDeleted();
-            context.Database.EnsureCreated();
+            var builder = WebApplication.CreateBuilder(args);
+
+            // Add MudBlazor services
+            builder.Services.AddMudServices();
+
+            // Add services to the container.
+            builder.Services.AddRazorComponents()
+                .AddInteractiveServerComponents();
+
+            builder.Services.AddDbContext<ApplicationDbContext>();
+
+            builder.Services.AddSingleton<ServerInfoService>();
+            builder.Services.AddScoped<InstanceManagerService>();
+
+            var app = builder.Build();
+
+            // Configure the HTTP request pipeline.
+            if (!app.Environment.IsDevelopment())
+            {
+                app.UseExceptionHandler("/Error");
+                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+                app.UseHsts();
+            }
+
+            using (IServiceScope serviceScope = app.Services.CreateScope())
+            {
+                //Apply last Entity Framework migration
+                try
+                {
+                    ApplicationDbContext context = serviceScope.ServiceProvider.GetService<ApplicationDbContext>();
+
+                    if (app.Environment.IsDevelopment())
+                    {
+                        context.Database.EnsureDeleted();
+                        context.Database.EnsureCreated();
+                    }
+                    else
+                        context.Database.Migrate();
+
+                    context.EnsureSeedData();
+                }
+                catch (Exception) { throw; }
+            }
+
+            app.UseHttpsRedirection();
+
+            app.UseAntiforgery();
+
+            app.MapStaticAssets();
+            app.MapRazorComponents<App>()
+                .AddInteractiveServerRenderMode();
+
+            await app.RunAsync();
         }
-        else
-            context.Database.Migrate();
-
-        context.EnsureSeedData();
     }
-    catch (Exception) { throw; }
 }
-
-app.UseHttpsRedirection();
-
-app.UseStaticFiles();
-
-app.UseRouting();
-
-app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
-
-await app.RunAsync();
