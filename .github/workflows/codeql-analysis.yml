@@ -1,4 +1,4 @@
-# For most projects, this workflow file will not need changing; you simply need
+﻿# For most projects, this workflow file will not need changing; you simply need
 # to commit it to your repository.
 #
 # You may wish to alter this file to override the set of languages analyzed,
@@ -13,42 +13,67 @@ name: "CodeQL"
 
 on:
   push:
+    branches: [ "main", "dev" ]
   pull_request:
+    branches: [ "main", "dev" ]
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 jobs:
   analyze:
-    name: Analyze
-    runs-on: [self-hosted, windows-latest]
+    name: Analyze (${{ matrix.language }})
+    # Runner size impacts CodeQL analysis time. To learn more, please see:
+    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
+    #   - https://gh.io/supported-runners-and-hardware-resources
+    #   - https://gh.io/using-larger-runners (GitHub.com only)
+    # Consider using larger runners or machines with greater resources for possible analysis time improvements.
+    runs-on: [ubuntu-latest]
     permissions:
+      # required for all workflows
+      security-events: write
+
+      # required to fetch internal or private CodeQL packs
+      packages: read
+
+      # only required for workflows in private repositories
       actions: read
       contents: read
-      security-events: write
 
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'csharp' ]
+        include:
+        - language: actions
+          build-mode: none
+        - language: csharp
+          build-mode: none
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+
+    # Add any setup steps before running the `github/codeql-action/init` action.
+    # This includes steps like installing compilers or runtimes (`actions/setup-node`
+    # or others). This is typically only required for manual builds.
+    - name: Setup .NET Core SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.x
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
+        build-mode: ${{ matrix.build-mode }}
     
-    - name: Setup .NET Core SDK
-      uses: actions/setup-dotnet@v2.0.0
-      with:
-        dotnet-version: 6.x
-      
-    - run: dotnet restore
-    - run: msbuild /p:AppxPackageDir="Packages" /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundle=Never
+    - if: matrix.build-mode == 'manual'
+      run: dotnet restore
+    - if: matrix.build-mode == 'manual'
+      run: msbuild /p:AppxPackageDir="Packages" /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundle=Never
     
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
