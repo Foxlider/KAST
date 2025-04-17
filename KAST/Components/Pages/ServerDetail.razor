@@ -9,31 +9,94 @@
 <MudPaper Class="pa-4 ma-4" Elevation="4">
     <MudText Typo="Typo.h5">@server.Server.Name</MudText>
 
-    <MudGrid>
-        <MudItem xs="6">
-            <MudTextField T="int" Label="MinBandwidth"
-                          @bind-Value="server.BasicCfg.MinBandwidth"
-                          Immediate="true"
-                          OnBlur="() => Save(server)" />
-        </MudItem>
-        <MudItem xs="6">
-            <MudTextField T="long" Label="MaxBandwidth"
-                          @bind-Value="server.BasicCfg.MaxBandwidth"
-                          Immediate="true"
-                          OnBlur="() => Save(server)" />
-        </MudItem>
-        <!-- Add more fields here -->
-    </MudGrid>
+    <MudTabs >
+        <MudTabPanel Text="Server Config" Icon="@Icons.Material.Filled.Settings">
+            <MudText Typo="Typo.body1">Server configuration.</MudText>
 
-    <MudDivider Class="my-4" />
+            <MudGrid>
+                <MudItem xs="6">
+                    <MudTextField T="string" Label="Hostname"
+                                  @bind-Value="server.ServerCfg.Hostname"
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField T="int" Label="MaxBandwidth"
+                                  @bind-Value="server.ServerCfg.MaxPlayers"
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem>
+                <!-- Add more fields here -->
+            </MudGrid>
 
-    <MudTextField T="string"
-                  Label="Raw Config (basic.cfg)"
-                  Lines="20"
-                  FullWidth="true"
-                  @bind-Value="server.BasicCfgService.RawFileContent"
-                  Immediate="true"
-                  OnBlur="() => Save(server)" />
+            <MudDivider Class="my-4" />
+
+            <MudTextField T="string"
+                          Label="Raw Config (server.cfg)"
+                          Lines="20"
+                          FullWidth="true"
+                          @bind-Value="server.ServerCfgService.RawFileContent"
+                          Immediate="true"/>
+        </MudTabPanel>
+        <MudTabPanel Text="Performance" Icon="@Icons.Material.Filled.Speed">
+            <MudText Typo="Typo.body1">Basic configuration for the server.</MudText>
+
+            <MudGrid>
+                <MudItem xs="6">
+                    <MudTextField T="int" Label="MinBandwidth"
+                                  @bind-Value="server.BasicCfg.MinBandwidth"
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField T="long" Label="MaxBandwidth"
+                                  @bind-Value="server.BasicCfg.MaxBandwidth"
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem>
+                <!-- Add more fields here -->
+            </MudGrid>
+
+            <MudDivider Class="my-4" />
+
+            <MudTextField T="string"
+                          Label="Raw Config (basic.cfg)"
+                          Lines="20"
+                          FullWidth="true"
+                          @bind-Value="server.BasicCfgService.RawFileContent"
+                          Immediate="true"/>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Missions" Icon="@Icons.Material.Filled.List">
+            <MudText Typo="Typo.body1">Missions configuration.</MudText>
+            <MudGrid>
+                @* <MudItem xs="6">
+                    <MudTextField T="string" Label="Mission Name"
+                                  @bind-Value="server.ServerProfile."
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField T="int" Label="MaxPlayers"
+                                  @bind-Value="server.MissionCfg.MaxPlayers"
+                                  Immediate="true"
+                                  OnBlur="() => Save(server)" />
+                </MudItem> *@
+                <!-- Add more fields here -->
+            </MudGrid>
+            <MudDivider Class="my-4" />
+            <MudTextField T="string"
+                          Label="Raw Config (mission.cfg)"
+                          Lines="20"
+                          FullWidth="true"
+                          @bind-Value="server.ServerProfileService.RawFileContent"
+                          Immediate="true"/>
+
+        </MudTabPanel>
+
+
+
+    </MudTabs>
 </MudPaper>
 
 
@@ -50,10 +113,20 @@
         {
             InvokeAsync(StateHasChanged);
         };
+        server.ServerCfgService.OnUpdated += () =>
+        {
+            InvokeAsync(StateHasChanged);
+        };
+        // server.ServerProfileService.OnUpdated += () =>
+        // {
+        //     InvokeAsync(StateHasChanged);
+        // };
     }
 
     private void Save(ServerInstance server)
     {
-        server.BasicCfgService.UpdateFileFromSettings();
+        server.BasicCfgService.SaveFile();
+        server.ServerCfgService.SaveFile();
+        // server.ServerProfileService.SaveFile();
     }
 }

@@ -27,7 +27,7 @@ namespace KAST.Core.Services
         {
             foreach (var server in Servers)
             {
-                server.BasicCfgService.UpdateFileFromSettings();
+                server.BasicCfgService.SaveFile();
             }
         }
     }
@@ -35,8 +35,15 @@ namespace KAST.Core.Services
     public class ServerInstance
     {
         public Server Server { get; set; }
-        public BasicCfgFileService BasicCfgService { get; set; }
-        public BasicConfig BasicCfg => BasicCfgService.Settings;
+
+        public ConfigFileService<BasicConfig> BasicCfgService { get; set; }
+        public BasicConfig BasicCfg => BasicCfgService.Config;
+
+        public ConfigFileService<ServerConfig> ServerCfgService { get; set; }
+        public ServerConfig ServerCfg => ServerCfgService.Config;
+
+        public ConfigFileService<ServerProfile> ServerProfileService { get; set; }
+        public ServerProfile ServerProfile => ServerProfileService.Config;
 
         public ServerInstance(string name)
         {
@@ -47,13 +54,39 @@ namespace KAST.Core.Services
                 Name = name,
                 InstallPath = Path.Combine(Directory.GetCurrentDirectory(), id.ToString()) // TODO Use Server Default Install path from Settings later
             };
-            BasicCfgService = new BasicCfgFileService(Path.Combine(Server.InstallPath, BasicConfig.FILENAME));
+            BasicCfgService = new ConfigFileService<BasicConfig>(
+                Path.Combine(Server.InstallPath, BasicConfig.FILENAME),
+                new KeyValueConfigFormat<BasicConfig>()
+            );
+
+            ServerCfgService = new ConfigFileService<ServerConfig>(
+                Path.Combine(Server.InstallPath, ServerConfig.FILENAME),
+                new KeyValueConfigFormat<ServerConfig>()
+            );
+
+            ServerProfileService = new ConfigFileService<ServerProfile>(
+                Path.Combine(Server.InstallPath, ServerProfile.FILENAME),
+                new ClassHierarchyConfigFormat<ServerProfile>()
+            );
         }
 
         public ServerInstance(Server server)
         {
             Server = server;
-            BasicCfgService = new BasicCfgFileService(Path.Combine(Server.InstallPath, BasicConfig.FILENAME));
+            BasicCfgService = new ConfigFileService<BasicConfig>(
+                Path.Combine(Server.InstallPath, BasicConfig.FILENAME),
+                new KeyValueConfigFormat<BasicConfig>()
+            );
+
+            ServerCfgService = new ConfigFileService<ServerConfig>(
+                Path.Combine(Server.InstallPath, ServerConfig.FILENAME),
+                new KeyValueConfigFormat<ServerConfig>()
+            );
+
+            ServerProfileService = new ConfigFileService<ServerProfile>(
+                Path.Combine(Server.InstallPath, ServerProfile.FILENAME),
+                new ClassHierarchyConfigFormat<ServerProfile>()
+            );
         }
     }
 }

@@ -2,6 +2,8 @@
 {
     public class ServerConfig
     {
+        public const string FILENAME = "server.cfg";
+
         public string Hostname { get; set; } = "My Arma 3 Server";
         public string Password { get; set; } = "";
         public string PasswordAdmin { get; set; } = "adminpass";
