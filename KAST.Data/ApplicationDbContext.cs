@@ -13,6 +13,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Server> Servers { get; set; }
     public DbSet<Settings> Settings { get; set; }
     #endregion
+
+
     protected readonly IHostEnvironment HostEnvironment;
     public static readonly ILoggerFactory loggerFactory = LoggerFactory.Create(builder => { /*builder.AddDebug();*/ });
 
@@ -48,9 +50,9 @@ public class ApplicationDbContext : DbContext
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
-    { }
+    { /* So far we have nothing to do here */ }
 
     public void EnsureSeedData()
-    { }
+    { /* So far we have no need to seed the DB as the models are not ready for production yet */ }
 
 }

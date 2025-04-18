@@ -27,7 +27,7 @@ namespace KAST.Core.Services
         {
             foreach (var server in Servers)
             {
-                server.BasicCfgService.SaveFile();
+                server.PerfCfgService.SaveFile();
             }
         }
     }
@@ -36,8 +36,8 @@ namespace KAST.Core.Services
     {
         public Server Server { get; set; }
 
-        public ConfigFileService<BasicConfig> BasicCfgService { get; set; }
-        public BasicConfig BasicCfg => BasicCfgService.Config;
+        public ConfigFileService<PerfConf> PerfCfgService { get; set; }
+        public PerfConf PerfCfg => PerfCfgService.Config;
 
         public ConfigFileService<ServerConfig> ServerCfgService { get; set; }
         public ServerConfig ServerCfg => ServerCfgService.Config;
@@ -54,9 +54,9 @@ namespace KAST.Core.Services
                 Name = name,
                 InstallPath = Path.Combine(Directory.GetCurrentDirectory(), id.ToString()) // TODO Use Server Default Install path from Settings later
             };
-            BasicCfgService = new ConfigFileService<BasicConfig>(
-                Path.Combine(Server.InstallPath, BasicConfig.FILENAME),
-                new KeyValueConfigFormat<BasicConfig>()
+            PerfCfgService = new ConfigFileService<PerfConf>(
+                Path.Combine(Server.InstallPath, PerfConf.FILENAME),
+                new KeyValueConfigFormat<PerfConf>()
             );
 
             ServerCfgService = new ConfigFileService<ServerConfig>(
@@ -73,9 +73,9 @@ namespace KAST.Core.Services
         public ServerInstance(Server server)
         {
             Server = server;
-            BasicCfgService = new ConfigFileService<BasicConfig>(
-                Path.Combine(Server.InstallPath, BasicConfig.FILENAME),
-                new KeyValueConfigFormat<BasicConfig>()
+            PerfCfgService = new ConfigFileService<PerfConf>(
+                Path.Combine(Server.InstallPath, PerfConf.FILENAME),
+                new KeyValueConfigFormat<PerfConf>()
             );
 
             ServerCfgService = new ConfigFileService<ServerConfig>(

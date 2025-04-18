@@ -27,12 +27,6 @@
 
 @code
 {
-    private void SaveServer(ServerInstance server)
-    {
-        server.BasicCfgService.SaveFile();
-    }
-
-
     protected override void OnInitialized()
     {
         if (!InstanceService.Servers.Any())

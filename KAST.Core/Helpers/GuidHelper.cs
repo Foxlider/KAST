@@ -7,8 +7,7 @@ namespace KAST.Core.Helpers
     {
         public static Guid NewGuid(string name)
         {
-            using var sha1 = SHA1.Create();
-            byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(name));
+            byte[] hash = SHA1.HashData(Encoding.UTF8.GetBytes(name));
 
             byte[] guidBytes = new byte[16];
             Array.Copy(hash, guidBytes, 16);
