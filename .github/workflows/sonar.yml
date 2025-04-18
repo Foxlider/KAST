@@ -69,7 +69,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-          .\.sonar\scanner\dotnet-sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /v:"$(Get-Date -Format yyyyMMdd)"
+          .\.sonar\scanner\dotnet-sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /v:"$(Get-Date -Format yyyy.MM.dd.HHmm)-$(git rev-parse --short HEAD)" /d:sonar.exclusions="**/bin/**,**/obj/**,**/Properties/**,**/*.csproj,**/*.sln,**/*.config,**/*.json,**/*.xml,**/*.md,**/*.yml,**/*.yaml" /d:sonar.cs.vstest.reportsPaths=".\TestResults\*.trx" /d:sonar.cs.vstest.reportsPathsEncoding="UTF-8" /d:sonar.verbose=true
           dotnet build
           dotnet test --collect "Code Coverage" --no-build
           .\.sonar\scanner\dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
