@@ -1,0 +1,72 @@
+﻿@using KAST.Data.Models
+<GenericConfigPanel TabDescription="Server configuration."
+                    ShowRawConfig="true"
+                    RawConfigLabel="@($"Raw Config ({PerfConf.FILENAME})")"
+                    RawConfigContent="@PerfCfgService.RawFileContent"
+                    RawConfigContentChanged="@(value => PerfCfgService.RawFileContent = value)">
+    <!-- Bandwidth Settings -->
+    <MudItem xs="3">
+        <MudTextField T="uint" Label="MinBandwidth"
+                      @bind-Value="PerfCfg.MinBandwidth"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="uint" Label="MaxBandwidth"
+                      @bind-Value="PerfCfg.MaxBandwidth"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+
+    <!-- Message Settings -->
+    <MudItem xs="3">
+        <MudTextField T="ushort" Label="MaxMsgSend"
+                      @bind-Value="PerfCfg.MaxMsgSend"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="ushort" Label="MaxSizeGuaranteed"
+                      @bind-Value="PerfCfg.MaxSizeGuaranteed"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="ushort" Label="MaxSizeNonguaranteed"
+                      @bind-Value="PerfCfg.MaxSizeNonguaranteed"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+
+    <!-- Error Settings -->
+    <MudItem xs="3">
+        <MudTextField T="double" Label="MinErrorToSend"
+                      @bind-Value="PerfCfg.MinErrorToSend"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="double" Label="MinErrorToSendNear"
+                      @bind-Value="PerfCfg.MinErrorToSendNear"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+
+    <!-- File Size Settings -->
+    <MudItem xs="3">
+        <MudTextField T="ushort" Label="MaxCustomFileSize"
+                      @bind-Value="PerfCfg.MaxCustomFileSize"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(PerfCfgService)" />
+    </MudItem>
+</GenericConfigPanel>
+
+@code {
+    [Parameter]
+    public PerfConf PerfCfg { get; set; }
+
+    [Parameter]
+    public ConfigFileService<PerfConf> PerfCfgService { get; set; }
+
+    private void Save<T>(ConfigFileService<T> service) where T : class => service.SaveFile();
+}

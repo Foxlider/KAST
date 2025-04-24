@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace KAST.Core.Services
 {
@@ -10,6 +11,8 @@ namespace KAST.Core.Services
 
     public class ConfigFileService<T>
     {
+        private static readonly ActivitySource ActivitySource = new("ConfigFileService");
+
         private readonly string _filePath;
         private readonly IConfigFormat<T> _format;
         private FileSystemWatcher _watcher;
@@ -43,23 +46,47 @@ namespace KAST.Core.Services
 
         private void EnsureFileExists()
         {
+            using var activity = ActivitySource.StartActivity("EnsureFileExists");
+            activity?.AddTag("filePath", _filePath);
+
             var dir = Path.GetDirectoryName(_filePath);
             if (!Directory.Exists(dir))
+            {
                 Directory.CreateDirectory(dir);
+                activity?.AddEvent(new ActivityEvent("DirectoryCreated"));
+            }
 
             if (!File.Exists(_filePath))
+            {
                 File.WriteAllText(_filePath, _format.Serialize(Activator.CreateInstance<T>()));
+                activity?.AddEvent(new ActivityEvent("FileCreated"));
+            }
         }
 
         private void LoadFile()
         {
-            var content = File.ReadAllText(_filePath);
-            Config = _format.Parse(content);
-            OnUpdated?.Invoke();
+            using var activity = ActivitySource.StartActivity("LoadFile");
+            activity?.AddTag("filePath", _filePath);
+
+            try
+            {
+                var content = File.ReadAllText(_filePath);
+                Config = _format.Parse(content);
+                activity?.AddEvent(new ActivityEvent("FileLoaded"));
+                OnUpdated?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
+            }
         }
 
         public void SaveFile()
         {
+            using var activity = ActivitySource.StartActivity("SaveFile");
+            activity?.AddTag("filePath", _filePath);
+
             _suppressWatcher = true;
             fileLock.Enter();
             //File.WriteAllText(_filePath, _format.Serialize(Config));
@@ -108,6 +135,7 @@ namespace KAST.Core.Services
                 }
 
                 File.WriteAllLines(_filePath, updatedLines);
+                activity?.AddEvent(new ActivityEvent("FileSaved"));
             }
             finally
             {
@@ -118,6 +146,9 @@ namespace KAST.Core.Services
 
         private void WatchFile()
         {
+            using var activity = ActivitySource.StartActivity("WatchFile");
+            activity?.AddTag("filePath", _filePath);
+
             _watcher = new FileSystemWatcher(Path.GetDirectoryName(_filePath))
             {
                 Filter = Path.GetFileName(_filePath),
@@ -126,24 +157,46 @@ namespace KAST.Core.Services
 
             _watcher.Changed += (s, e) =>
             {
+                using var changeActivity = new Activity("FileChanged").Start();
+                changeActivity?.AddTag("filePath", _filePath);
+
                 if (_suppressWatcher || fileLock.IsHeldByCurrentThread) return;
+
                 fileLock.Enter();
-                Thread.Sleep(100);
-                LoadFile();
-                fileLock.Exit();
+                try
+                {
+                    Thread.Sleep(100);
+                    LoadFile();
+                    changeActivity?.AddEvent(new ActivityEvent("FileReloaded"));
+                }
+                catch (Exception ex)
+                {
+                    changeActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    throw;
+                }
+                finally
+                {
+                    fileLock.Exit();
+                }
             };
 
             _watcher.EnableRaisingEvents = true;
+            activity?.AddEvent(new ActivityEvent("FileWatcherStarted"));
         }
     }
 
 
     public class KeyValueConfigFormat<T> : IConfigFormat<T> where T : new()
     {
+        private static readonly ActivitySource ActivitySource = new("KeyValueConfigFormat");
         private readonly Regex regex = new Regex(@"^(\w+)\s*=\s*(.*?);(?:\s*\/\/\s*(.*))?$", RegexOptions.Compiled);
 
         public T Parse(string content)
         {
+            using var activity = ActivitySource.StartActivity("Parse");
+            activity?.AddTag("content", content);
+            activity?.AddTag("type", typeof(T).Name);
+
             var result = new T();
             var lines = content.Split("\n");
 
@@ -164,6 +217,12 @@ namespace KAST.Core.Services
                     {
                         object converted = Convert.ChangeType(val, prop.PropertyType);
                         prop.SetValue(result, converted);
+                        activity?.AddEvent(new ActivityEvent("PropertySet", default, new ActivityTagsCollection
+                        {
+                            { "key", key },
+                            { "value", val },
+                            { "comment", comment }
+                        }));
                     }
                     catch { /* ignore parse errors */ }
                 }
@@ -173,6 +232,9 @@ namespace KAST.Core.Services
 
         public string Serialize(T config)
         {
+            using var activity = ActivitySource.StartActivity("Serialize");
+            activity?.AddTag("type", typeof(T).Name);
+            activity?.AddTag("config", config.ToString());
             var lines = new List<string>();
             foreach (var prop in typeof(T).GetProperties())
             {
@@ -191,16 +253,22 @@ namespace KAST.Core.Services
 
     public class ClassHierarchyConfigFormat<T> : IConfigFormat<T> where T : new()
     {
+        private static readonly ActivitySource ActivitySource = new("ClassHierarchyConfigFormat");
+
         private static readonly Regex ClassRegex = new(@"class\s+(\w+)\s*\{([\s\S]*?)\};", RegexOptions.Compiled);
         private static readonly Regex PropRegex = new(@"(\w+)\s*=\s*([^;]+);(?:\s*\/\/\s*(.*))?", RegexOptions.Compiled);
 
         public T Parse(string content)
         {
+            using var activity = ActivitySource.StartActivity("Parse");
+            activity?.AddTag("content", content);
             return (T)ParseClass(typeof(T), content);
         }
 
         private object ParseClass(Type type, string content)
         {
+            using var activity = ActivitySource.StartActivity("ParseClass");
+            activity?.AddTag("type", type.Name);
             var instance = Activator.CreateInstance(type);
 
             // Properties
@@ -238,11 +306,14 @@ namespace KAST.Core.Services
 
         public string Serialize(T config)
         {
+            using var activity = ActivitySource.StartActivity("Serialize");
             return SerializeClass(config, typeof(T), 0);
         }
 
         private string SerializeClass(object obj, Type type, int indentLevel)
         {
+            using var activity = ActivitySource.StartActivity("SerializeClass");
+            activity?.AddTag("type", type.Name);
             var indent = new string('\t', indentLevel);
             var lines = new List<string>();
 

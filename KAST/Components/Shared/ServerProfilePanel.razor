@@ -1,0 +1,23 @@
+﻿@using KAST.Data.Models
+<GenericConfigPanel TabDescription="Server configuration."
+                    ShowRawConfig="true"
+                    RawConfigLabel="@($"Raw Config ({ServerProfile.FILENAME})")"
+                    RawConfigContent="@ServerProfileService.RawFileContent"
+                    RawConfigContentChanged="@(value => ServerProfileService.RawFileContent = value)">
+    <MudItem xs="3">
+        <MudTextField T="float" Label="AI Skill"
+                      @bind-Value="ServerProfile.CustomAILevel.skillAI"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(ServerProfileService)" />
+    </MudItem>
+</GenericConfigPanel>
+
+@code {
+    [Parameter]
+    public ServerProfile ServerProfile { get; set; }
+
+    [Parameter]
+    public ConfigFileService<ServerProfile> ServerProfileService { get; set; }
+
+    private void Save<T>(ConfigFileService<T> service) where T : class => service.SaveFile();
+}

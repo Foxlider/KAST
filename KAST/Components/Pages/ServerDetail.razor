@@ -1,4 +1,5 @@
 ﻿@page "/server/{serverGuid:guid}"
+@using KAST.Components.Shared
 @inject InstanceManagerService InstanceService
 <PageTitle>Server @server.Server.Name</PageTitle>
 
@@ -9,112 +10,21 @@
 <MudPaper Class="pa-4 ma-4" Elevation="4">
     <MudText Typo="Typo.h5">@server.Server.Name</MudText>
 
-    <MudTabs >
+    <MudTabs>
         <MudTabPanel Text="Server Config" Icon="@Icons.Material.Filled.Settings">
-            <MudText Class="ma-2" Typo="Typo.body1">Server configuration.</MudText>
-
-            <MudGrid>
-                <MudItem xs="3">
-                    <MudTextField T="string" Label="Hostname"
-                    @bind-Value="server.ServerCfg.Hostname"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.ServerCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="string" Label="Password"
-                    @bind-Value="server.ServerCfg.Password"
-                    Immediate="true" Margin="Margin.Dense"
-                    InputType="@PasswordInput" Adornment="Adornment.End" AdornmentIcon="@PasswordInputIcon" OnAdornmentClick="ButtonTestclick" AdornmentAriaLabel="Show Password"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.ServerCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="string" Label="Password Admin"
-                    @bind-Value="server.ServerCfg.PasswordAdmin"
-                    Immediate="true" Margin="Margin.Dense"
-                    InputType="@PasswordInput" Adornment="Adornment.End" AdornmentIcon="@PasswordInputIcon" OnAdornmentClick="ButtonTestclick" AdornmentAriaLabel="Show Password"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.ServerCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="int" Label="MaxPlayers"
-                    @bind-Value="server.ServerCfg.MaxPlayers"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.ServerCfgService)" />
-                </MudItem>
-                <!-- Add more fields here -->
-            </MudGrid>
-
-            <MudDivider Class="my-4" />
-            <MudExpansionPanel Text="Raw File (Optional)">
-                <MudTextField T="string"
-                Label="Raw Config (server.cfg)"
-                Lines="10"
-                FullWidth="true"
-                @bind-Value="server.ServerCfgService.RawFileContent"
-                Immediate="true" />
-            </MudExpansionPanel>
+            <ServerConfigPanel ServerCfg="server.ServerCfg"
+                               ServerCfgService="server.ServerCfgService" />
         </MudTabPanel>
         <MudTabPanel Text="Performance" Icon="@Icons.Material.Filled.Speed">
-            <MudText Class="ma-2" Typo="Typo.body1">
+            <PerfConfigPanel PerfCfg="server.PerfCfg"
+                             PerfCfgService="server.PerfCfgService" />
+            @* <MudText Class="ma-2" Typo="Typo.body1">
                 Performance Tuning Options.
                 <MudLink Href="https://community.bistudio.com/wiki/Arma_3:_Basic_Server_Config_File#Performance_Tuning_Options">Learn more</MudLink>
             </MudText>
 
             <MudGrid>
-                <!-- Bandwidth Settings -->
-                <MudItem xs="3">
-                    <MudTextField T="uint" Label="MinBandwidth"
-                    @bind-Value="server.PerfCfg.MinBandwidth"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="uint" Label="MaxBandwidth"
-                    @bind-Value="server.PerfCfg.MaxBandwidth"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
 
-                <!-- Message Settings -->
-                <MudItem xs="3">
-                    <MudTextField T="ushort" Label="MaxMsgSend"
-                    @bind-Value="server.PerfCfg.MaxMsgSend"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="ushort" Label="MaxSizeGuaranteed"
-                    @bind-Value="server.PerfCfg.MaxSizeGuaranteed"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="ushort" Label="MaxSizeNonguaranteed"
-                    @bind-Value="server.PerfCfg.MaxSizeNonguaranteed"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-
-                <!-- Error Settings -->
-                <MudItem xs="3">
-                    <MudTextField T="double" Label="MinErrorToSend"
-                    @bind-Value="server.PerfCfg.MinErrorToSend"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-                <MudItem xs="3">
-                    <MudTextField T="double" Label="MinErrorToSendNear"
-                    @bind-Value="server.PerfCfg.MinErrorToSendNear"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
-
-                <!-- File Size Settings -->
-                <MudItem xs="3">
-                    <MudTextField T="ushort" Label="MaxCustomFileSize"
-                    @bind-Value="server.PerfCfg.MaxCustomFileSize"
-                    Immediate="true" Margin="Margin.Dense"
-                    DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(server.PerfCfgService)" />
-                </MudItem>
             </MudGrid>
 
             <MudDivider Class="my-4" />
@@ -125,25 +35,14 @@
                 Label="Raw Performance Config (perf.cfg)"
                 @bind-Value="server.PerfCfgService.RawFileContent"
                 Immediate="true" />
-            </MudExpansionPanel>
+            </MudExpansionPanel> *@
         </MudTabPanel>
 
         <MudTabPanel Text="Missions" Icon="@Icons.Material.Filled.List">
-            <MudText Class="ma-2" Typo="Typo.body1">Missions configuration.</MudText>
+            @* <MudText Class="ma-2" Typo="Typo.body1">Missions configuration.</MudText>
             <MudGrid>
-                @* <MudItem xs="6">
-                    <MudTextField T="string" Label="Mission Name"
-                                  @bind-Value="server.ServerProfile."
-                                  Immediate="true"
-                                  OnBlur="() => Save(server)" />
-                </MudItem>
-                <MudItem xs="6">
-                    <MudTextField T="int" Label="MaxPlayers"
-                                  @bind-Value="server.MissionCfg.MaxPlayers"
-                                  Immediate="true"
-                                  OnBlur="() => Save(server)" />
-                </MudItem> *@
-                <!-- Add more fields here -->
+                <ServerProfilePanel ServerProfile="server.ServerProfile"
+                                    ServerProfileService="server.ServerProfileService" />
             </MudGrid>
 
             <MudDivider Class="my-4" />
@@ -153,7 +52,9 @@
             FullWidth="true"
             @bind-Value="server.ServerProfileService.RawFileContent"
             Immediate="true" />
-
+ *@
+            <ServerProfilePanel ServerProfile="@server.ServerProfile"
+                                ServerProfileService="@server.ServerProfileService" />
         </MudTabPanel>
 
 
@@ -187,27 +88,4 @@
         //     InvokeAsync(StateHasChanged);
         // };
     }
-
-
-    // Password Handling
-    bool isShow;
-    InputType PasswordInput = InputType.Password;
-    string PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
-    void ButtonTestclick()
-    {
-        @if (isShow)
-        {
-            isShow = false;
-            PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
-            PasswordInput = InputType.Password;
-        }
-        else
-        {
-            isShow = true;
-            PasswordInputIcon = Icons.Material.Filled.Visibility;
-            PasswordInput = InputType.Text;
-        }
-    }
-
-    private void Save<T>(ConfigFileService<T> service) where T : class => service.SaveFile();
 }

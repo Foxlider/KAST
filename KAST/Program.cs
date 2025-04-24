@@ -3,11 +3,17 @@ using KAST.Core.Services;
 using KAST.Data;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace KAST
 {
     public class Program
     {
+        const string serviceName = "KAST";
+
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +24,30 @@ namespace KAST
             // Add services to the container.
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
+
+            builder.Logging.AddOpenTelemetry(options =>
+            {
+                options
+                    .SetResourceBuilder(
+                        ResourceBuilder.CreateDefault()
+                            .AddService(serviceName))
+                    .AddOtlpExporter();
+            });
+            builder.Services.AddOpenTelemetry()
+                  .ConfigureResource(resource => resource.AddService(serviceName))
+                  .WithTracing(tracing => tracing
+                        .AddSource("ConfigFileService")
+                        .AddSource("KeyValueConfigFormat")
+                        .AddSource("ClassHierarchyConfigFormat")
+                        //.AddAspNetCoreInstrumentation()
+                        .AddEntityFrameworkCoreInstrumentation()
+                        //.AddHttpClientInstrumentation()
+                        .AddOtlpExporter())
+                  .WithMetrics(metrics => metrics
+                        .AddMeter("*")
+                        //.AddHttpClientInstrumentation()
+                        //.AddAspNetCoreInstrumentation()
+                        .AddOtlpExporter());
 
             builder.Services.AddDbContext<ApplicationDbContext>();
 

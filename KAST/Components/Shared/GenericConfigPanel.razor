@@ -1,0 +1,42 @@
+﻿
+<MudText Class="ma-2" Typo="Typo.body1">@TabDescription</MudText>
+
+<MudGrid>
+    @ChildContent
+</MudGrid>
+
+<MudDivider Class="my-4" />
+
+<MudExpansionPanel Text="Raw Config (Optional)" Expanded="@ShowRawConfig">
+    <MudTextField T="string"
+                  Label="@RawConfigLabel"
+                  Lines="10"
+                  FullWidth="true"
+                  DebounceInterval="500"
+                  @bind-Value="RawConfigContent"
+                  @bind-Value:after="RawConfigContentAfter"
+                  Immediate="true" />
+</MudExpansionPanel>
+
+@code {
+    [Parameter]
+    public string TabDescription { get; set; }
+
+
+    [Parameter]
+    public RenderFragment ChildContent { get; set; }
+
+    [Parameter]
+    public bool ShowRawConfig { get; set; } = false;
+
+    [Parameter]
+    public string RawConfigLabel { get; set; }
+
+    [Parameter]
+    public string RawConfigContent { get; set; }
+
+    [Parameter]
+    public EventCallback<string> RawConfigContentChanged { get; set; }
+
+    private async Task RawConfigContentAfter() { await RawConfigContentChanged.InvokeAsync(RawConfigContent); }
+}

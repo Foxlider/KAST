@@ -1,0 +1,63 @@
+﻿@using KAST.Data.Models
+<GenericConfigPanel TabDescription="Server configuration."
+                    ShowRawConfig="true"
+                    RawConfigLabel="@($"Raw Config ({ServerConfig.FILENAME})")"
+                    RawConfigContent="@ServerCfgService.RawFileContent"
+                    RawConfigContentChanged="@(value => ServerCfgService.RawFileContent = value)">
+    <MudItem xs="3">
+        <MudTextField T="string" Label="Hostname"
+                      @bind-Value="ServerCfg.Hostname"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(ServerCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="string" Label="Password"
+                      @bind-Value="ServerCfg.Password"
+                      Immediate="true" Margin="Margin.Dense"
+                      InputType="@PasswordInput" Adornment="Adornment.End" AdornmentIcon="@PasswordInputIcon" OnAdornmentClick="TogglePasswordVisibility" AdornmentAriaLabel="Show Password"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(ServerCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="string" Label="Password Admin"
+                      @bind-Value="ServerCfg.PasswordAdmin"
+                      Immediate="true" Margin="Margin.Dense"
+                      InputType="@PasswordInput" Adornment="Adornment.End" AdornmentIcon="@PasswordInputIcon" OnAdornmentClick="TogglePasswordVisibility" AdornmentAriaLabel="Show Password"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(ServerCfgService)" />
+    </MudItem>
+    <MudItem xs="3">
+        <MudTextField T="int" Label="MaxPlayers"
+                      @bind-Value="ServerCfg.MaxPlayers"
+                      Immediate="true" Margin="Margin.Dense"
+                      DebounceInterval="500" OnDebounceIntervalElapsed="() => Save(ServerCfgService)" />
+    </MudItem>
+</GenericConfigPanel>
+
+@code {
+    [Parameter]
+    public ServerConfig ServerCfg { get; set; }
+
+    [Parameter]
+    public ConfigFileService<ServerConfig> ServerCfgService { get; set; }
+
+    private void Save<T>(ConfigFileService<T> service) where T : class => service.SaveFile();
+
+    // Password Handling
+    bool isShow;
+    InputType PasswordInput = InputType.Password;
+    string PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+    void TogglePasswordVisibility()
+    {
+        @if (isShow)
+        {
+            isShow = false;
+            PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+            PasswordInput = InputType.Password;
+        }
+        else
+        {
+            isShow = true;
+            PasswordInputIcon = Icons.Material.Filled.Visibility;
+            PasswordInput = InputType.Text;
+        }
+    }
+}

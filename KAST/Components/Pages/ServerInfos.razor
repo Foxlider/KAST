@@ -5,6 +5,12 @@
 
 @inject ServerInfoService ServerInfoService
 
+@if (!ready)
+{
+    <MudProgressCircular Indeterminate="true" Class="mud-mx-auto" Style="margin-top: 20px;" />
+}
+else
+{
     <MudGrid Spacing="2">
         <MudItem xs="6">
             <MudCard Elevation="25" Class="mud-width-full">
@@ -31,14 +37,11 @@
             </MudCard>
         </MudItem>
     </MudGrid>
-
-
-
-
+}
 
 @code {
     private Timer? timer;
-
+    private bool ready;
     private const int MaxData = 180;
 
     private readonly ChartOptions      cpuOptions = new();
@@ -54,36 +57,35 @@
         cpuOptions.YAxisTicks = 10;
         cpuOptions.MaxNumYAxisTicks = 100;
         cpuOptions.ShowLegend = false;
-        
+
         ramOptions.ShowLegend = false;
         ramOptions.YAxisFormat = "0 Mb";
+        ramOptions.YAxisTicks = 512;
 
+       CpuSeries.Add(cpuData);
+       RamSeries.Add(ramData);
 
-        CpuSeries.Add(cpuData);
-        RamSeries.Add(ramData);
+       timer = new Timer(Callback, new AutoResetEvent(false), 100, 1000); // fire every second
+       ready = true;
+   }
+   
+   private async void Callback(object? stateInfo)
+   {
+       var cpuVal = ServerInfoService.GetCpuUsage();
+       if (!float.IsNaN(cpuVal))
+           CpuSeries.First().Data = CpuSeries.First().Data.Concat(new double[] { cpuVal }).ToArray();
+       if (CpuSeries.First().Data.Length > MaxData)
+           CpuSeries.First().Data = CpuSeries.First().Data.Skip(1).ToArray();
 
-        timer = new Timer(Callback, new AutoResetEvent(false), 100, 1000); // fire every second
-    }
-    
-    private async void Callback(object? stateInfo)
-    {
-        var cpuVal = ServerInfoService.GetCpuUsage();
-        // var cpuData = CpuSeries.First().Data;
-        if (!float.IsNaN(cpuVal))
-            CpuSeries.First().Data = CpuSeries.First().Data.Concat(new double[] { cpuVal }).ToArray(); // Why on EARTH do they use arrays ?
-        if (CpuSeries.First().Data.Length > MaxData)
-            CpuSeries.First().Data = CpuSeries.First().Data.Skip(1).ToArray();
+       var ramVal = ServerInfoService.GetMemUsage();
+       if (!float.IsNaN(ramVal))
+           RamSeries.First().Data = RamSeries.First().Data.Concat(new double[] { ramVal }).ToArray();
+       if (RamSeries.First().Data.Length > MaxData)
+           RamSeries.First().Data = RamSeries.First().Data.Skip(1).ToArray();
 
-        var ramVal = ServerInfoService.GetMemUsage();
-        if (!float.IsNaN(ramVal))
-            RamSeries.First().Data = RamSeries.First().Data.Concat(new double[] { ramVal }).ToArray();
-        if (RamSeries.First().Data.Length > MaxData)
-            RamSeries.First().Data = RamSeries.First().Data.Skip(1).ToArray();
+       await InvokeAsync(StateHasChanged);
+   }
 
-
-        await InvokeAsync(StateHasChanged);
-    }
-
-    public void Dispose()
-    { timer?.Dispose(); }
+   public void Dispose()
+   { timer?.Dispose(); }
 }
