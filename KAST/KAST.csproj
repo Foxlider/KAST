@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\KAST.Core\KAST.Core.csproj" />
+    <ProjectReference Include="..\KAST.ServiceDefaults\KAST.ServiceDefaults.csproj" />
   </ItemGroup>
 </Project>

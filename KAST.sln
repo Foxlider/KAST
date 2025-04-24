@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KAST.Data", "KAST.Data\KAST
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KAST.Core", "KAST.Core\KAST.Core.csproj", "{1D345557-1031-4D21-922E-0DB3DC2379BA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KAST.AppHost", "KAST.AppHost\KAST.AppHost.csproj", "{FDA034EE-8DCB-43AC-BD86-02F7F4C9A864}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KAST.ServiceDefaults", "KAST.ServiceDefaults\KAST.ServiceDefaults.csproj", "{8959970A-B764-B2C6-1ACA-B25DCCEE4BEE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +43,14 @@ Global
 		{1D345557-1031-4D21-922E-0DB3DC2379BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1D345557-1031-4D21-922E-0DB3DC2379BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1D345557-1031-4D21-922E-0DB3DC2379BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FDA034EE-8DCB-43AC-BD86-02F7F4C9A864}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDA034EE-8DCB-43AC-BD86-02F7F4C9A864}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDA034EE-8DCB-43AC-BD86-02F7F4C9A864}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDA034EE-8DCB-43AC-BD86-02F7F4C9A864}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8959970A-B764-B2C6-1ACA-B25DCCEE4BEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8959970A-B764-B2C6-1ACA-B25DCCEE4BEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8959970A-B764-B2C6-1ACA-B25DCCEE4BEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8959970A-B764-B2C6-1ACA-B25DCCEE4BEE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

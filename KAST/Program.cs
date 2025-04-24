@@ -18,6 +18,8 @@ namespace KAST
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            builder.AddServiceDefaults();
+
             // Add MudBlazor services
             builder.Services.AddMudServices();
 
@@ -25,36 +27,14 @@ namespace KAST
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
 
-            builder.Logging.AddOpenTelemetry(options =>
-            {
-                options
-                    .SetResourceBuilder(
-                        ResourceBuilder.CreateDefault()
-                            .AddService(serviceName))
-                    .AddOtlpExporter();
-            });
-            builder.Services.AddOpenTelemetry()
-                  .ConfigureResource(resource => resource.AddService(serviceName))
-                  .WithTracing(tracing => tracing
-                        .AddSource("ConfigFileService")
-                        .AddSource("KeyValueConfigFormat")
-                        .AddSource("ClassHierarchyConfigFormat")
-                        //.AddAspNetCoreInstrumentation()
-                        .AddEntityFrameworkCoreInstrumentation()
-                        //.AddHttpClientInstrumentation()
-                        .AddOtlpExporter())
-                  .WithMetrics(metrics => metrics
-                        .AddMeter("*")
-                        //.AddHttpClientInstrumentation()
-                        //.AddAspNetCoreInstrumentation()
-                        .AddOtlpExporter());
-
             builder.Services.AddDbContext<ApplicationDbContext>();
 
             builder.Services.AddSingleton<ServerInfoService>();
             builder.Services.AddScoped<InstanceManagerService>();
 
             var app = builder.Build();
+
+            app.MapDefaultEndpoints();
 
             // Configure the HTTP request pipeline.
             if (!app.Environment.IsDevelopment())
