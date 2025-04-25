@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using KAST.Core.Helpers;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace KAST.Core.Services
@@ -11,7 +12,7 @@ namespace KAST.Core.Services
 
     public class ConfigFileService<T>
     {
-        private static readonly ActivitySource ActivitySource = new("ConfigFileService");
+        private static readonly ActivitySource ActivitySource = Telemetry.Source;
 
         private readonly string _filePath;
         private readonly IConfigFormat<T> _format;
@@ -188,7 +189,7 @@ namespace KAST.Core.Services
 
     public class KeyValueConfigFormat<T> : IConfigFormat<T> where T : new()
     {
-        private static readonly ActivitySource ActivitySource = new("KeyValueConfigFormat");
+        private static readonly ActivitySource ActivitySource = Telemetry.Source;
         private readonly Regex regex = new Regex(@"^(\w+)\s*=\s*(.*?);(?:\s*\/\/\s*(.*))?$", RegexOptions.Compiled);
 
         public T Parse(string content)

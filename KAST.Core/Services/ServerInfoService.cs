@@ -1,15 +1,16 @@
-﻿using System.Diagnostics;
+﻿using KAST.Core.Helpers;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 
 namespace KAST.Core.Services
 {
-    public class ServerInfoService
+    public class ServerInfoService : TracedServiceBase
     {
         private readonly PerformanceCounter? _cpuCounter;
         private readonly PerformanceCounter? _ramCounter;
 
         [SupportedOSPlatform("windows")]
-        public ServerInfoService()
+        public ServerInfoService(ITracingNamingProvider namingProvider) : base(namingProvider)
         {
             if (PerformanceCounterCategory.Exists("Processor") && PerformanceCounterCategory.CounterExists("% Processor Time", "Processor"))
             {

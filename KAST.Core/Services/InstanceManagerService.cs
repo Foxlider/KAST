@@ -4,13 +4,13 @@ using KAST.Data.Models;
 
 namespace KAST.Core.Services
 {
-    public class InstanceManagerService
+    public class InstanceManagerService : TracedServiceBase
     {
         public List<ServerInstance> Servers { get; } = new();
 
         private readonly ApplicationDbContext _dbContext;
 
-        public InstanceManagerService(ApplicationDbContext context)
+        public InstanceManagerService(ITracingNamingProvider namingProvider, ApplicationDbContext context) : base(namingProvider)
         {
             _dbContext = context;
             Servers.AddRange(_dbContext.Servers.Select(s => new ServerInstance(s)));
@@ -47,6 +47,7 @@ namespace KAST.Core.Services
 
         public ServerInstance(string name)
         {
+            
             var id = GuidHelper.NewGuid(name);
             Server = new Server
             {

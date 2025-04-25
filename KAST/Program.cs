@@ -1,19 +1,15 @@
 ﻿using KAST.Components;
+using KAST.Core.Helpers;
 using KAST.Core.Services;
 using KAST.Data;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
+using System.Diagnostics;
 
 namespace KAST
 {
     public class Program
     {
-        const string serviceName = "KAST";
-
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +25,9 @@ namespace KAST
 
             builder.Services.AddDbContext<ApplicationDbContext>();
 
+            builder.Services.AddSingleton<ITracingNamingProvider, TracingNamingProvider>();
+            builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
+            builder.Services.AddSingleton(new ActivitySource(builder.Environment.ApplicationName));
             builder.Services.AddSingleton<ServerInfoService>();
             builder.Services.AddScoped<InstanceManagerService>();
 

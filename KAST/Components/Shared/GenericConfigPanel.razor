@@ -1,4 +1,4 @@
-﻿
+﻿@inject ITelemetryService Telemetry
 <MudText Class="ma-2" Typo="Typo.body1">@TabDescription</MudText>
 
 <MudGrid>
@@ -38,5 +38,10 @@
     [Parameter]
     public EventCallback<string> RawConfigContentChanged { get; set; }
 
-    private async Task RawConfigContentAfter() { await RawConfigContentChanged.InvokeAsync(RawConfigContent); }
+    private async Task RawConfigContentAfter()
+    {
+        using var activity = Telemetry.StartActivity("RawConfigContentAfter", this);
+        activity?.AddTag("Tab", TabDescription);
+        await RawConfigContentChanged.InvokeAsync(RawConfigContent);
+    }
 }

@@ -1,6 +1,7 @@
 ﻿@page "/server/{serverGuid:guid}"
 @using KAST.Components.Shared
 @inject InstanceManagerService InstanceService
+@inject ITelemetryService Telemetry
 <PageTitle>Server @server.Server.Name</PageTitle>
 
 <MudText Typo="Typo.h3" GutterBottom="true">@server.Server.Name</MudText>
@@ -13,11 +14,11 @@
     <MudTabs>
         <MudTabPanel Text="Server Config" Icon="@Icons.Material.Filled.Settings">
             <ServerConfigPanel ServerCfg="server.ServerCfg"
-                               ServerCfgService="server.ServerCfgService" />
+            ServerCfgService="server.ServerCfgService" />
         </MudTabPanel>
         <MudTabPanel Text="Performance" Icon="@Icons.Material.Filled.Speed">
             <PerfConfigPanel PerfCfg="server.PerfCfg"
-                             PerfCfgService="server.PerfCfgService" />
+            PerfCfgService="server.PerfCfgService" />
             @* <MudText Class="ma-2" Typo="Typo.body1">
                 Performance Tuning Options.
                 <MudLink Href="https://community.bistudio.com/wiki/Arma_3:_Basic_Server_Config_File#Performance_Tuning_Options">Learn more</MudLink>
@@ -54,7 +55,7 @@
             Immediate="true" />
  *@
             <ServerProfilePanel ServerProfile="@server.ServerProfile"
-                                ServerProfileService="@server.ServerProfileService" />
+            ServerProfileService="@server.ServerProfileService" />
         </MudTabPanel>
 
 
@@ -71,21 +72,33 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        using var activity = Telemetry.StartActivity("OnParametersSetAsync", this);
         server = InstanceService.Servers.FirstOrDefault(s => s.Server.Id == ServerGuid);
 
         if (server == null) return;
 
-        server.PerfCfgService.OnUpdated += () =>
+        activity?.AddTag("server_guid", server.Server.Id);
+
+        server.PerfCfgService.OnUpdated += async() =>
         {
-            InvokeAsync(StateHasChanged);
+            using var activity = Telemetry.StartActivity("OnUpdated", this);
+            activity?.AddTag("server_guid", server.Server.Id);
+            activity?.AddTag("conf", "PerfCfgService");
+            await InvokeAsync(StateHasChanged);
         };
-        server.ServerCfgService.OnUpdated += () =>
+        server.ServerCfgService.OnUpdated += async() =>
         {
-            InvokeAsync(StateHasChanged);
+            using var activity = Telemetry.StartActivity("OnUpdated", this);
+            activity?.AddTag("server_guid", server.Server.Id);
+            activity?.AddTag("conf", "ServerCfgService");
+            await InvokeAsync(StateHasChanged);
         };
-        server.ServerProfileService.OnUpdated += () =>
+        server.ServerProfileService.OnUpdated += async() =>
         {
-            InvokeAsync(StateHasChanged);
+            using var activity = Telemetry.StartActivity("OnUpdated", this);
+            activity?.AddTag("server_guid", server.Server.Id);
+            activity?.AddTag("conf", "ServerProfileService");
+            await InvokeAsync(StateHasChanged);
         };
     }
 }

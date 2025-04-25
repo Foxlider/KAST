@@ -1,4 +1,5 @@
 ﻿@using KAST.Data.Models
+@inject ITelemetryService Telemetry
 <GenericConfigPanel TabDescription="Server configuration."
                     ShowRawConfig="true"
                     RawConfigLabel="@($"Raw Config ({ServerProfile.FILENAME})")"
@@ -19,5 +20,10 @@
     [Parameter]
     public ConfigFileService<ServerProfile> ServerProfileService { get; set; }
 
-    private void Save<T>(ConfigFileService<T> service) where T : class => service.SaveFile();
+    private void Save<T>(ConfigFileService<T> service) where T : class
+    {
+        using var activity = Telemetry.StartActivity("Save<T>", this);
+        activity?.AddTag("service", typeof(T).FullName);
+        service.SaveFile();
+    }
 }
