@@ -40,7 +40,7 @@
     [Parameter]
     public ConfigFileService<ServerConfig> ServerCfgService { get; set; }
 
-    private void Save<T>(ConfigFileService<T> service) where T : class
+    private void Save<T>(ConfigFileService<T> service) where T : class, new()
     {
         using var activity = Telemetry.StartActivity("Save<T>", this);
         activity?.AddTag("service", typeof(T).FullName);

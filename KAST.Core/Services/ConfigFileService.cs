@@ -1,5 +1,4 @@
-﻿using KAST.Core.Helpers;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace KAST.Core.Services
@@ -10,15 +9,15 @@ namespace KAST.Core.Services
         string Serialize(T config);
     }
 
-    public class ConfigFileService<T>
+    #region Config File Service
+    public class ConfigFileService<T> where T : new()
     {
-        private static readonly ActivitySource ActivitySource = Telemetry.Source;
-
         private readonly string _filePath;
         private readonly IConfigFormat<T> _format;
         private FileSystemWatcher _watcher;
-        private bool _suppressWatcher = false;
-        private readonly Lock fileLock = new();
+        private bool _suppressWatcher;
+        private Timer _debounceTimer;
+        private readonly object _lock = new();
 
         public T Config { get; private set; }
         public event Action OnUpdated;
@@ -38,118 +37,52 @@ namespace KAST.Core.Services
             get => File.ReadAllText(_filePath);
             set
             {
-                fileLock.Enter();
-                File.WriteAllText(_filePath, value);
-                fileLock.Exit();
+                lock (_lock)
+                {
+                    File.WriteAllText(_filePath, value);
+                }
                 LoadFile();
             }
         }
 
         private void EnsureFileExists()
         {
-            using var activity = ActivitySource.StartActivity("EnsureFileExists");
-            activity?.AddTag("filePath", _filePath);
-
             var dir = Path.GetDirectoryName(_filePath);
-            if (!Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-                activity?.AddEvent(new ActivityEvent("DirectoryCreated"));
-            }
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
             if (!File.Exists(_filePath))
             {
-                File.WriteAllText(_filePath, _format.Serialize(Activator.CreateInstance<T>()));
-                activity?.AddEvent(new ActivityEvent("FileCreated"));
+                File.WriteAllText(_filePath, _format.Serialize(new T()));
             }
         }
 
         private void LoadFile()
         {
-            using var activity = ActivitySource.StartActivity("LoadFile");
-            activity?.AddTag("filePath", _filePath);
-
             try
             {
                 var content = File.ReadAllText(_filePath);
                 Config = _format.Parse(content);
-                activity?.AddEvent(new ActivityEvent("FileLoaded"));
                 OnUpdated?.Invoke();
             }
             catch (Exception ex)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                Debug.WriteLine($"Config load failed: {ex.Message}");
                 throw;
             }
         }
 
         public void SaveFile()
         {
-            using var activity = ActivitySource.StartActivity("SaveFile");
-            activity?.AddTag("filePath", _filePath);
-
             _suppressWatcher = true;
-            fileLock.Enter();
-            //File.WriteAllText(_filePath, _format.Serialize(Config));
-            try
+            lock (_lock)
             {
-                var lines = File.ReadAllLines(_filePath);
-                var updatedLines = new List<string>();
-                var regex = new Regex(@"^(\w+)\s*=\s*(.*?);(?:\s*//\s*(.*))?$");
-
-                foreach (var line in lines)
-                {
-                    var trimmedLine = line.Trim();
-
-                    if (regex.IsMatch(trimmedLine))
-                    {
-                        var match = regex.Match(trimmedLine);
-                        var key = match.Groups[1].Value;
-                        var currentValue = match.Groups[2].Value;
-                        var comment = match.Groups[3].Success ? match.Groups[3].Value : null;
-
-                        var prop = typeof(T).GetProperty(key);
-                        if (prop != null)
-                        {
-                            var configValue = prop.GetValue(Config);
-                            var formattedValue = configValue switch
-                            {
-                                float f => f.ToString("0.#####"),
-                                double d => d.ToString("0.#####"),
-                                _ => configValue?.ToString()
-                            };
-
-                            if (formattedValue != currentValue)
-                            {
-                                var newLine = $"{key} = {formattedValue};";
-                                if (!string.IsNullOrEmpty(comment))
-                                {
-                                    newLine += $" // {comment}";
-                                }
-                                updatedLines.Add(newLine);
-                                continue;
-                            }
-                        }
-                    }
-
-                    updatedLines.Add(line);
-                }
-
-                File.WriteAllLines(_filePath, updatedLines);
-                activity?.AddEvent(new ActivityEvent("FileSaved"));
+                File.WriteAllText(_filePath, _format.Serialize(Config));
             }
-            finally
-            {
-                fileLock.Exit();
-                _suppressWatcher = false;
-            }
+            _suppressWatcher = false;
         }
 
         private void WatchFile()
         {
-            using var activity = ActivitySource.StartActivity("WatchFile");
-            activity?.AddTag("filePath", _filePath);
-
             _watcher = new FileSystemWatcher(Path.GetDirectoryName(_filePath))
             {
                 Filter = Path.GetFileName(_filePath),
@@ -158,191 +91,291 @@ namespace KAST.Core.Services
 
             _watcher.Changed += (s, e) =>
             {
-                using var changeActivity = new Activity("FileChanged").Start();
-                changeActivity?.AddTag("filePath", _filePath);
-
-                if (_suppressWatcher || fileLock.IsHeldByCurrentThread) return;
-
-                fileLock.Enter();
-                try
+                if (_suppressWatcher) return;
+                _debounceTimer?.Dispose();
+                _debounceTimer = new Timer(_ =>
                 {
-                    Thread.Sleep(100);
-                    LoadFile();
-                    changeActivity?.AddEvent(new ActivityEvent("FileReloaded"));
-                }
-                catch (Exception ex)
-                {
-                    changeActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    throw;
-                }
-                finally
-                {
-                    fileLock.Exit();
-                }
+                    lock (_lock)
+                    {
+                        LoadFile();
+                    }
+                }, null, 200, Timeout.Infinite);
             };
 
             _watcher.EnableRaisingEvents = true;
-            activity?.AddEvent(new ActivityEvent("FileWatcherStarted"));
         }
     }
+    #endregion
 
+    #region Syntax Tree
+    public abstract class ConfigNode 
+    { 
+        public string RawText; 
+    }
 
-    public class KeyValueConfigFormat<T> : IConfigFormat<T> where T : new()
+    class KeyValueNode : ConfigNode 
+    { 
+        public string Key; 
+        public string Value; 
+        public string Comment; 
+    }
+
+    class ClassNode : ConfigNode 
+    { 
+        public string Name; 
+        public List<ConfigNode> Children = new(); 
+    }
+
+    class CommentNode : ConfigNode { }
+    class WhitespaceNode : ConfigNode { }
+    #endregion
+
+    #region Parser
+    public static class ConfigParser
     {
-        private static readonly ActivitySource ActivitySource = Telemetry.Source;
-        private readonly Regex regex = new Regex(@"^(\w+)\s*=\s*(.*?);(?:\s*\/\/\s*(.*))?$", RegexOptions.Compiled);
+        private static readonly Regex KeyValueRegex = new(@"^(\w+)\s*=\s*(.*?)\s*;\s*(?:\/\/\s*(.*))?$", RegexOptions.Compiled);
+        private static readonly Regex ClassNameRegex = new(@"^class\s+(\w+)", RegexOptions.Compiled);
+        private static readonly Regex ClassEndRegex = new(@"^\s*\};\s*$", RegexOptions.Compiled);
+
+        public static List<ConfigNode> Parse(string content)
+        {
+            var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            int idx = 0;
+            return ParseLines(lines, ref idx);
+        }
+
+        private static List<ConfigNode> ParseLines(string[] lines, ref int index)
+        {
+            var nodes = new List<ConfigNode>();
+
+
+            while (index < lines.Length)
+            {
+                var rawLine = lines[index];
+                var line = rawLine.Trim();
+
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    nodes.Add(new WhitespaceNode { RawText = rawLine });
+                    index++;
+                    continue;
+                }
+
+
+                if (line.StartsWith("//"))
+                {
+                    nodes.Add(new CommentNode { RawText = rawLine });
+                    index++;
+                    continue;
+                }
+
+
+                var kvMatch = KeyValueRegex.Match(line);
+                if (kvMatch.Success)
+                {
+                    var kvNode = new KeyValueNode
+                    {
+                        RawText = rawLine,
+                        Key = kvMatch.Groups[1].Value,
+                        Value = kvMatch.Groups[2].Value.Trim(),
+                        Comment = kvMatch.Groups[3].Success ? kvMatch.Groups[3].Value.Trim() : null
+                    };
+
+
+                    nodes.Add(kvNode);
+                    index++;
+                    continue;
+                }
+
+
+                var clsMatch = ClassNameRegex.Match(line);
+                if (clsMatch.Success)
+                {
+                    var clsNode = new ClassNode { Name = clsMatch.Groups[1].Value, RawText = rawLine };
+                    index++;
+
+
+                    // Skip lines until opening brace
+                    while (index < lines.Length && lines[index].Trim() != "{")
+                    {
+                        if (!string.IsNullOrWhiteSpace(lines[index]))
+                            clsNode.Children.Add(new WhitespaceNode { RawText = lines[index] });
+                        index++;
+                    }
+
+
+                    // Skip the brace itself
+                    if (index < lines.Length && lines[index].Trim() == "{") index++;
+                    clsNode.Children.AddRange(ParseLines(lines, ref index));
+                    nodes.Add(clsNode);
+                    continue;
+                }
+
+
+                if (ClassEndRegex.IsMatch(line))
+                {
+                    index++;
+                    break;
+                }
+
+
+                nodes.Add(new WhitespaceNode { RawText = rawLine });
+                index++;
+            }
+
+
+            return nodes;
+        }
+
+        public static string Serialize(List<ConfigNode> nodes, int indentLevel = 0)
+        {
+            var lines = new List<string>();
+            var indent = new string('\t', indentLevel);
+
+
+            foreach (var node in nodes)
+            {
+                switch (node)
+                {
+                    case KeyValueNode kv:
+                        var line = $"{indent}{kv.Key} = {kv.Value};";
+                        if (!string.IsNullOrEmpty(kv.Comment))
+                            line += $" // {kv.Comment}";
+                        lines.Add(line);
+                        break;
+                    case ClassNode cls:
+                        lines.Add($"{indent}class {cls.Name}");
+                        lines.Add($"{indent}{{");
+                        lines.Add(Serialize(cls.Children, indentLevel + 1));
+                        lines.Add($"{indent}}};");
+                        break;
+                    default:
+                        lines.Add(indent + node.RawText);
+                        break;
+                }
+            }
+            return string.Join("\n", lines);
+        }
+    }
+    #endregion
+
+    #region Config Format
+    public class Arma3ConfigFormat<T> : IConfigFormat<T> where T : new()
+    {
+        private List<ConfigNode> _nodes = new();
 
         public T Parse(string content)
         {
-            using var activity = ActivitySource.StartActivity("Parse");
-            activity?.AddTag("content", content);
-            activity?.AddTag("type", typeof(T).Name);
-
+            _nodes = ConfigParser.Parse(content);
             var result = new T();
-            var lines = content.Split("\n");
 
-            foreach (var line in lines)
+
+            foreach (var node in _nodes)
             {
-                var trimmed = line.Trim();
-                if (!regex.IsMatch(trimmed)) continue;
-
-                var match = regex.Match(trimmed);
-                var key = match.Groups[1].Value;
-                var val = match.Groups[2].Value;
-                var comment = match.Groups[3].Success ? match.Groups[3].Value : null;
-
-                var prop = typeof(T).GetProperty(key);
-                if (prop != null)
-                {
-                    try
-                    {
-                        object converted = Convert.ChangeType(val, prop.PropertyType);
-                        prop.SetValue(result, converted);
-                        activity?.AddEvent(new ActivityEvent("PropertySet", default, new ActivityTagsCollection
-                        {
-                            { "key", key },
-                            { "value", val },
-                            { "comment", comment }
-                        }));
-                    }
-                    catch { /* ignore parse errors */ }
-                }
+                ApplyNodeToObject(node, result);
             }
             return result;
         }
 
-        public string Serialize(T config)
+        private void ApplyNodeToObject(ConfigNode node, object obj)
         {
-            using var activity = ActivitySource.StartActivity("Serialize");
-            activity?.AddTag("type", typeof(T).Name);
-            activity?.AddTag("config", config.ToString());
-            var lines = new List<string>();
-            foreach (var prop in typeof(T).GetProperties())
+            if (node is KeyValueNode kv)
             {
-                var value = prop.GetValue(config);
-                var formatted = value switch
+                var prop = obj.GetType().GetProperty(kv.Key);
+                if (prop != null)
                 {
-                    float f => f.ToString("0.#####"),
-                    double d => d.ToString("0.#####"),
-                    _ => value?.ToString()
-                };
-                lines.Add($"{prop.Name} = {formatted};");
-            }
-            return string.Join(Environment.NewLine, lines);
-        }
-    }
-
-    public class ClassHierarchyConfigFormat<T> : IConfigFormat<T> where T : new()
-    {
-        private static readonly ActivitySource ActivitySource = new("ClassHierarchyConfigFormat");
-
-        private static readonly Regex ClassRegex = new(@"class\s+(\w+)\s*\{([\s\S]*?)\};", RegexOptions.Compiled);
-        private static readonly Regex PropRegex = new(@"(\w+)\s*=\s*([^;]+);(?:\s*\/\/\s*(.*))?", RegexOptions.Compiled);
-
-        public T Parse(string content)
-        {
-            using var activity = ActivitySource.StartActivity("Parse");
-            activity?.AddTag("content", content);
-            return (T)ParseClass(typeof(T), content);
-        }
-
-        private object ParseClass(Type type, string content)
-        {
-            using var activity = ActivitySource.StartActivity("ParseClass");
-            activity?.AddTag("type", type.Name);
-            var instance = Activator.CreateInstance(type);
-
-            // Properties
-            foreach (Match match in PropRegex.Matches(content))
-            {
-                var propName = match.Groups[1].Value;
-                var rawValue = match.Groups[2].Value.Trim();
-
-                var prop = type.GetProperty(propName);
-                if (prop == null) continue;
-
-                try
-                {
-                    object value = Convert.ChangeType(rawValue, prop.PropertyType);
-                    prop.SetValue(instance, value);
+                    try
+                    {
+                        var converted = Convert.ChangeType(kv.Value, prop.PropertyType);
+                        prop.SetValue(obj, converted);
+                    }
+                    catch { }
                 }
-                catch { }
             }
-
-            // Nested Classes
-            foreach (Match classMatch in ClassRegex.Matches(content))
+            else if (node is ClassNode cls)
             {
-                var nestedName = classMatch.Groups[1].Value;
-                var nestedBody = classMatch.Groups[2].Value;
+                var prop = obj.GetType().GetProperty(cls.Name);
+                if (prop != null)
+                {
+                    var nestedObj = Activator.CreateInstance(prop.PropertyType);
+                    foreach (var child in cls.Children)
+                    {
+                        ApplyNodeToObject(child, nestedObj);
+                    }
+                    prop.SetValue(obj, nestedObj);
 
-                var prop = type.GetProperty(nestedName);
-                if (prop == null) continue;
 
-                var nestedValue = ParseClass(prop.PropertyType, nestedBody);
-                prop.SetValue(instance, nestedValue);
+                    // update node children from nested object so UI sees changes
+                    UpdateNodesFromObject(nestedObj, cls.Children);
+                }
             }
-
-            return instance;
         }
 
         public string Serialize(T config)
         {
-            using var activity = ActivitySource.StartActivity("Serialize");
-            return SerializeClass(config, typeof(T), 0);
+            if (_nodes == null || _nodes.Count == 0)
+            {
+                // first init: generate nodes recursively from object
+                _nodes = GenerateNodesFromObject(config);
+            }
+            else
+            {
+                UpdateNodesFromObject(config, _nodes);
+            }
+            return ConfigParser.Serialize(_nodes);
         }
 
-        private string SerializeClass(object obj, Type type, int indentLevel)
-        {
-            using var activity = ActivitySource.StartActivity("SerializeClass");
-            activity?.AddTag("type", type.Name);
-            var indent = new string('\t', indentLevel);
-            var lines = new List<string>();
 
-            foreach (var prop in type.GetProperties())
+        private List<ConfigNode> GenerateNodesFromObject(object obj)
+        {
+            var nodes = new List<ConfigNode>();
+            foreach (var prop in obj.GetType().GetProperties())
             {
                 var value = prop.GetValue(obj);
                 if (value == null) continue;
 
+
                 if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
                 {
-                    lines.Add($"{indent}class {prop.Name}");
-                    lines.Add($"{indent}{{");
-                    lines.Add(SerializeClass(value, prop.PropertyType, indentLevel + 1));
-                    lines.Add($"{indent}}};");
+                    nodes.Add(new ClassNode { Name = prop.Name, Children = GenerateNodesFromObject(value) });
                 }
                 else
                 {
-                    var formatted = value switch
-                    {
-                        float f => f.ToString("0.#####"),
-                        double d => d.ToString("0.#####"),
-                        _ => value.ToString()
-                    };
-                    lines.Add($"{indent}{prop.Name} = {formatted};");
+                    nodes.Add(new KeyValueNode { Key = prop.Name, Value = value.ToString() });
                 }
             }
+            return nodes;
+        }
 
-            return string.Join(Environment.NewLine, lines);
+
+        private void UpdateNodesFromObject(object obj, List<ConfigNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                if (node is KeyValueNode kv)
+                {
+                    var prop = obj.GetType().GetProperty(kv.Key);
+                    if (prop != null)
+                    {
+                        var value = prop.GetValue(obj);
+                        if (value != null) kv.Value = value.ToString();
+                    }
+                }
+                else if (node is ClassNode cls)
+                {
+                    var prop = obj.GetType().GetProperty(cls.Name);
+                    if (prop != null)
+                    {
+                        var nestedObj = prop.GetValue(obj);
+                        if (nestedObj != null)
+                            UpdateNodesFromObject(nestedObj, cls.Children);
+                    }
+                }
+            }
         }
     }
+    #endregion
+
+
 }

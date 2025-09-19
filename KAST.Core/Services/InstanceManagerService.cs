@@ -57,17 +57,17 @@ namespace KAST.Core.Services
             };
             PerfCfgService = new ConfigFileService<PerfConf>(
                 Path.Combine(Server.InstallPath, PerfConf.FILENAME),
-                new KeyValueConfigFormat<PerfConf>()
+                new Arma3ConfigFormat<PerfConf>()
             );
 
             ServerCfgService = new ConfigFileService<ServerConfig>(
                 Path.Combine(Server.InstallPath, ServerConfig.FILENAME),
-                new KeyValueConfigFormat<ServerConfig>()
+                new Arma3ConfigFormat<ServerConfig>()
             );
 
             ServerProfileService = new ConfigFileService<ServerProfile>(
                 Path.Combine(Server.InstallPath, ServerProfile.FILENAME),
-                new ClassHierarchyConfigFormat<ServerProfile>()
+                new Arma3ConfigFormat<ServerProfile>()
             );
         }
 
@@ -76,17 +76,17 @@ namespace KAST.Core.Services
             Server = server;
             PerfCfgService = new ConfigFileService<PerfConf>(
                 Path.Combine(Server.InstallPath, PerfConf.FILENAME),
-                new KeyValueConfigFormat<PerfConf>()
+                new Arma3ConfigFormat<PerfConf>()
             );
 
             ServerCfgService = new ConfigFileService<ServerConfig>(
                 Path.Combine(Server.InstallPath, ServerConfig.FILENAME),
-                new KeyValueConfigFormat<ServerConfig>()
+                new Arma3ConfigFormat<ServerConfig>()
             );
 
             ServerProfileService = new ConfigFileService<ServerProfile>(
                 Path.Combine(Server.InstallPath, ServerProfile.FILENAME),
-                new ClassHierarchyConfigFormat<ServerProfile>()
+                new Arma3ConfigFormat<ServerProfile>()
             );
         }
     }

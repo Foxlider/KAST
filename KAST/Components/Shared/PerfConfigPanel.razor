@@ -62,17 +62,17 @@
     </MudItem>
 </GenericConfigPanel>
 
-@code {
-    [Parameter]
-    public PerfConf PerfCfg { get; set; }
+@code {  
+    [Parameter]  
+    public PerfConf PerfCfg { get; set; }  
 
-    [Parameter]
-    public ConfigFileService<PerfConf> PerfCfgService { get; set; }
+    [Parameter]  
+    public ConfigFileService<PerfConf> PerfCfgService { get; set; }  
 
-    private void Save<T>(ConfigFileService<T> service) where T : class
-    {
-        using var activity = Telemetry.StartActivity("Save<T>", this);
-        activity?.AddTag("service", typeof(T).FullName);
-        service.SaveFile();
-    }
+    private void Save<T>(ConfigFileService<T> service) where T : class, new()  
+    {  
+        using var activity = Telemetry.StartActivity("Save<T>", this);  
+        activity?.AddTag("service", typeof(T).FullName);  
+        service.SaveFile();  
+    }  
 }
