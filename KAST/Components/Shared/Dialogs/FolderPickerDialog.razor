@@ -1,0 +1,415 @@
+﻿@using KAST.Core.Services
+@using System.Linq
+@inject FileSystemService FileSystemService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<MudDialog Style="min-width:50vw;">
+    <DialogContent>
+        <MudPaper Elevation="0">
+            <MudTreeView ServerData="@LoadServerData" Items="@InitialTreeItems" @bind-SelectedValue="SelectedValue" SelectionMode="@SelectionMode">
+                <ItemTemplate>
+                    <div @oncontextmenu="(e) => OpenContextMenu(e, context)" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+                        <MudTreeViewItem Value="@context.Value"
+                                         Text="@context.Text"
+                                         Items="@context.Children"
+                                         ItemsChanged="@(new Action<IReadOnlyCollection<TreeItemData<string>>>(items => OnItemsLoaded(context, items)))"
+                                         @bind-Expanded="@context.Expanded"
+                                         CanExpand="@context.Expandable"
+                                         Icon="@context.Icon"
+                                         IconExpanded="@Icons.Custom.Uncategorized.FolderOpen"
+                                         LoadingIconColor="Color.Info">
+                        </MudTreeViewItem>
+                    </div>
+                </ItemTemplate>
+            </MudTreeView>
+        </MudPaper>
+        @* <MudPaper>
+            <MudTextField T="string"
+                          Value="@SelectedValue"
+                          ReadOnly="true"
+                          FullWidth="true"
+                          Variant="Variant.Outlined"
+                          Label="Selected Path"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                          OnAdornmentClick="CopySelectedPath" />
+        </MudPaper> *@
+        @* Context menu overlay and menu *@
+        <MudMenu PositionAtCursor @ref="_contextMenu">
+            <MudMenuItem OnClick="AddFolder" Label="Create Folder" />
+            <MudMenuItem OnClick="RenameFolder" Label="Rename" Disabled="@IsRootSelected" />
+            <MudMenuItem OnClick="DeleteFolder" Label="Delete Folder" Disabled="@IsRootSelected" />
+        </MudMenu>
+    </DialogContent>
+    <DialogActions>
+        <MudItem>
+            <MudTextField T="string"
+                            Value="@SelectedValue"
+                            ReadOnly="true"
+                            FullWidth="true"
+                            Variant="Variant.Outlined"
+                            Label="Selected Path"
+                            Adornment="Adornment.End"
+                            AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                            OnAdornmentClick="CopySelectedPath" />
+        </MudItem>
+        <MudButton OnClick="() => MudDialog.Close(DialogResult.Cancel())">Cancel</MudButton>
+        <MudButton OnClick="SelectFolder" Disabled="@string.IsNullOrEmpty(SelectedValue)">Select</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+    private MudMenu _contextMenu = null!;
+
+    const string ICON_FOLDER = Icons.Custom.Uncategorized.Folder;
+    const string ICON_FILE = Icons.Custom.FileFormats.FileDocument;
+    const string ICON_FOPLDER_OPEN = Icons.Custom.Uncategorized.FolderOpen;
+
+    public SelectionMode SelectionMode = SelectionMode.SingleSelection;
+    private int _idCounter = 1; // <- the counter makes sure the generated items are unique
+
+    private List<TreeItemData<string>> InitialTreeItems { get; set; } = new();
+
+    // Context menu state
+    private bool _contextMenuVisible;
+    private TreeItemData<string>? _contextItem;
+    private bool IsRootSelected => string.IsNullOrEmpty(_contextItem?.Value);
+
+    private string _selectedValue = "";
+    private string? _previousFolderValue = "";
+    public string SelectedValue
+    {
+        get => _selectedValue;
+        set
+        {
+            // avoid re-entrancy / needless updates
+            if (string.Equals(_selectedValue, value, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // If value is empty or root, accept it as folder
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                _selectedValue = value ?? "";
+                _previousFolderValue = _selectedValue;
+                return;
+            }
+
+            // Try to find the node and determine whether it's a file
+            var node = FindNodeByValue(InitialTreeItems, value!);
+
+            var isFile = node != null && string.Equals(node.Icon, ICON_FILE, StringComparison.OrdinalIgnoreCase);
+
+            if (isFile)
+            {
+                // If a file was selected, select its parent folder node instead.
+                var parentValue = System.IO.Path.GetDirectoryName(value!) ?? "";
+                node = FindNodeByValue(InitialTreeItems, parentValue);
+
+                if (node == null)
+                {
+                    // This should not happen, but if it does, revert to previous valid folder selection.
+                    _selectedValue = _previousFolderValue ?? "";
+                    _ = InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                _selectedValue = parentValue;
+                _previousFolderValue = _selectedValue;
+
+                // Ensure UI updates to the new folder selection.
+                _ = InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            // Accept folder selection
+            _selectedValue = value ?? "";
+            _previousFolderValue = _selectedValue;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        // Populate top-level tree items from the filesystem root folders.
+        InitialTreeItems.Add(new TreeItemData<string>
+        {
+            // Use the folder's relative path as the tree value so selection can return it
+            Value = "",
+            Text = "/",
+            Icon = Icons.Custom.Uncategorized.Folder,
+            // Expandable if there are children; let the tree request children lazily via ServerData
+            Expandable = true
+        });
+    }
+
+    public async Task<IReadOnlyCollection<TreeItemData<string>>> LoadServerData(string parentValue)
+    {
+        var items = new List<TreeItemData<string>>();
+
+        await foreach (FileSystemItem node in FileSystemService.GetFolders(parentValue))
+        {
+            items.Add(new TreeItemData<string>
+            {
+                Value = node.RelativePath,
+                Text = node.Name,
+                Icon = node.ItemType == FileSystemItemType.Folder
+                    ? Icons.Custom.Uncategorized.Folder
+                    : Icons.Custom.FileFormats.FileDocument,
+                Expandable = node.HasChildren
+            });
+        }
+
+        // simulated server work for user experience
+        await Task.Delay(250);
+
+        return items;
+    }
+
+    private async Task OpenContextMenu(MouseEventArgs args, TreeItemData<string> item)
+    {
+        _contextItem = item;
+        await _contextMenu.OpenMenuAsync(args);
+    }
+
+    private async Task CopySelectedPath()
+    {
+        if (string.IsNullOrEmpty(SelectedValue))
+        {
+            Snackbar.Add("Nothing to copy", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", SelectedValue);
+            Snackbar.Add("Path copied to clipboard", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Copy failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AddFolder()
+    {
+        if (_contextItem == null)
+            return;
+
+        var parent = _contextItem.Value ?? "";
+        var name = $"NewFolder{_idCounter++}";
+
+        try
+        {
+            await FileSystemService.CreateFolder(parent, name);
+            // refresh the node's children
+            var items = await LoadServerData(parent);
+            _contextItem.Children = items.ToList();
+            _contextItem.Expandable = true;
+
+            Snackbar.Add($"Folder '{name}' created under '{parent}'", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create folder: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RenameFolder()
+    {
+        if (_contextItem == null)
+            return;
+
+        var oldRelative = _contextItem.Value ?? "";
+        if (string.IsNullOrWhiteSpace(oldRelative))
+        {
+            Snackbar.Add("Cannot rename root folder", Severity.Warning);
+            return;
+        }
+
+        var currentName = System.IO.Path.GetFileName(oldRelative);
+
+        var parameters = new DialogParameters { ["CurrentName"] = currentName };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, NoHeader = true };
+
+        var dialog = await DialogService.ShowAsync<FolderRenameDialog>(string.Empty, parameters, options);
+        var result = await dialog.Result;
+
+        if (result == null || result.Canceled || result.Data is not string newName)
+            return;
+
+        newName = newName.Trim();
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            Snackbar.Add("Folder name cannot be empty", Severity.Warning);
+            return;
+        }
+
+        if (newName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+        {
+            Snackbar.Add("Folder name contains invalid characters", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            await FileSystemService.RenameFolder(oldRelative, newName);
+
+            // Compute new relative path
+            var parentRelative = System.IO.Path.GetDirectoryName(oldRelative) ?? string.Empty;
+            var newRelative = string.IsNullOrEmpty(parentRelative) ? newName : System.IO.Path.Combine(parentRelative, newName);
+
+            // Find the original node so we can copy its metadata
+            var oldNode = FindNodeByValue(InitialTreeItems, oldRelative);
+            if (oldNode != null)
+            {
+                // Create a new node instance (do not copy children)
+                var newNode = new TreeItemData<string>
+                {
+                    Value = newRelative,
+                    Text = newName,
+                    Icon = Icons.Custom.Uncategorized.Folder,
+                    Expandable = true
+                };
+
+                // Replace the old node in its parent's collection
+                ReplaceNodeWithNew(InitialTreeItems, oldRelative, newNode);
+
+                // If the selected value pointed to the old path, update it to the new path
+                if (string.Equals(SelectedValue, oldRelative, StringComparison.OrdinalIgnoreCase))
+                    SelectedValue = newRelative;
+            }
+
+            StateHasChanged();
+
+            Snackbar.Add($"Folder renamed to '{newRelative}'", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to rename folder: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteFolder()
+    {
+        if (_contextItem == null)
+            return;
+
+        var value = _contextItem.Value ?? "";
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            Snackbar.Add("Cannot delete root folder", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            await FileSystemService.DeleteFolder(value);
+
+            // remove node from the tree data
+            RemoveNodeByValue(InitialTreeItems, value);
+
+            Snackbar.Add($"Folder '{value}' deleted", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete folder: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private TreeItemData<string>? FindNodeByValue(List<TreeItemData<string>> nodes, string value)
+    {
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.Value, value, StringComparison.OrdinalIgnoreCase))
+                return node;
+
+            if (node.Children != null)
+            {
+                var found = FindNodeByValue(node.Children, value);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    // Replaces the node with the specified oldValue by newNode instance.
+    // This creates a brand new node in the parent's collection (children of the old node are discarded).
+    private bool ReplaceNodeWithNew(List<TreeItemData<string>> nodes, string oldValue, TreeItemData<string> newNode)
+    {
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            var node = nodes[i];
+            if (string.Equals(node.Value, oldValue, StringComparison.OrdinalIgnoreCase))
+            {
+                // 1) Add new node first so MudBlazor can observe the addition (clears client cache for that item)
+                nodes.Add(newNode);
+
+                var originalIndex = i;
+
+                // 2) Remove the old node at originalIndex (shifts elements left, moving appended node from end to end-1)
+                nodes.RemoveAt(originalIndex);
+
+                // 3) Move the appended node (now at end) into the originalIndex position
+                var lastIndex = nodes.Count - 1;
+                if (lastIndex > originalIndex)
+                {
+                    var appended = nodes[lastIndex];
+                    nodes.RemoveAt(lastIndex);
+                    nodes.Insert(originalIndex, appended);
+                }
+                // if lastIndex == originalIndex it is already in the right place
+
+                return true;
+            }
+
+            if (node.Children != null && node.Children.Count > 0)
+            {
+                if (ReplaceNodeWithNew(node.Children, oldValue, newNode))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool RemoveNodeByValue(List<TreeItemData<string>> nodes, string value)
+    {
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            var node = nodes[i];
+            if (string.Equals(node.Value, value, StringComparison.OrdinalIgnoreCase))
+            {
+                nodes.RemoveAt(i);
+                return true;
+            }
+
+            if (node.Children != null && node.Children.Count > 0)
+            {
+                if (RemoveNodeByValue(node.Children, value))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void OnItemsLoaded(TreeItemData<string> treeItemData, IReadOnlyCollection<TreeItemData<string>> children)
+    {
+        // here we store the server-loaded children in the treeItemData so that they are available in the InitialTreeItems
+        // if you don't do this you loose already loaded children on next render update
+        treeItemData.Children = children?.ToList();
+    }
+
+    private void SelectFolder()
+    {
+        MudDialog.Close(DialogResult.Ok(SelectedValue));
+    }
+}

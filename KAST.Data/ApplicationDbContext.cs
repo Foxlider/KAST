@@ -11,7 +11,7 @@ public class ApplicationDbContext : DbContext
 
     #region DbSets
     public DbSet<Server> Servers { get; set; }
-    public DbSet<Settings> Settings { get; set; }
+    public DbSet<KastSettings> Settings { get; set; }
     #endregion
 
 

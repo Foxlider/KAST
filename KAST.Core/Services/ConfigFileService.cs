@@ -10,14 +10,14 @@ namespace KAST.Core.Services
     }
 
     #region Config File Service
-    public class ConfigFileService<T> where T : new()
+    public class ConfigFileService<T> : IDisposable where T : new()
     {
         private readonly string _filePath;
         private readonly IConfigFormat<T> _format;
         private FileSystemWatcher _watcher;
         private bool _suppressWatcher;
         private Timer _debounceTimer;
-        private readonly object _lock = new();
+        private readonly Lock _lock = new();
 
         public T Config { get; private set; }
         public event Action OnUpdated;
@@ -78,7 +78,9 @@ namespace KAST.Core.Services
             {
                 File.WriteAllText(_filePath, _format.Serialize(Config));
             }
-            _suppressWatcher = false;
+
+            // Delay un-suppress to let FS settle
+            Task.Delay(300).ContinueWith(_ => _suppressWatcher = false);
         }
 
         private void WatchFile()
@@ -103,6 +105,13 @@ namespace KAST.Core.Services
             };
 
             _watcher.EnableRaisingEvents = true;
+        }
+
+        public void Dispose()
+        {
+            _watcher?.Dispose();
+            _debounceTimer?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
     #endregion

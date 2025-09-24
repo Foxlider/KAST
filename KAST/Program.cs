@@ -2,6 +2,7 @@
 using KAST.Core.Helpers;
 using KAST.Core.Services;
 using KAST.Data;
+using KAST.Data.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using System.Diagnostics;
@@ -13,7 +14,6 @@ namespace KAST
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
-
             builder.AddServiceDefaults();
 
             // Add MudBlazor services
@@ -30,6 +30,12 @@ namespace KAST
             builder.Services.AddSingleton(new ActivitySource(builder.Environment.ApplicationName));
             builder.Services.AddSingleton<ServerInfoService>();
             builder.Services.AddScoped<InstanceManagerService>();
+            builder.Services.AddScoped<ConfigService>();
+            builder.Services.AddScoped<FileSystemService>(sp =>
+            {
+                var env = sp.GetRequiredService<IWebHostEnvironment>(); // Get environment
+                return new FileSystemService(env.ContentRootPath);
+            });
 
             var app = builder.Build();
 

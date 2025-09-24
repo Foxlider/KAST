@@ -1,0 +1,34 @@
+﻿@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Rename folder</MudText>
+        <MudTextField @bind-Value="NewName" Label="Folder name" Immediate="true" For="@(() => NewName)" AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton OnClick="Save" Disabled="@string.IsNullOrWhiteSpace(NewName)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string CurrentName { get; set; } = string.Empty;
+
+    private string NewName = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        NewName = CurrentName ?? string.Empty;
+    }
+
+    private void Save()
+    {
+        MudDialog.Close(DialogResult.Ok(NewName?.Trim()));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

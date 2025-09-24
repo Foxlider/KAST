@@ -1,37 +1,79 @@
 ﻿@page "/settings"
-@* @using KAST.Core.Services;
-@inject SettingsService SettingsService *@
+@using KAST.Components.Shared.Dialogs
+@using KAST.Core.Services
+@using KAST.Data.Models
+@using KAST.Core.Extensions
+@inject ConfigService ConfigService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Settings</PageTitle>
 <MudText Typo="Typo.h3" GutterBottom="true">Settings</MudText>
-@* @if (ColorPrimary == null)
-{
-    <MudProgressCircular Color="MudBlazor.Color.Default" Indeterminate="true" />
-}
-else
-{
-    <MudText Class="mb-8">These settings are just for demo purposes and are non-functionnal.</MudText>
-    <MudSwitch @bind-Checked="@UseDarkTheme" Color="MudBlazor.Color.Primary" Class="ma-4" T="bool" Label="Toggle Light/Dark Mode" />
-    <MudColorPicker Label="Primary Color" @bind-Text="ColorPrimary" Style="@($"color: {ColorPrimary};")" Placeholder="Primary Color" />
-} *@
 
+<EditForm Model="@config" OnValidSubmit="SaveConfig">
+    <div class="mb-3">
+        <label>API Key</label>
+        <MudInputString @bind-Value="config.ApiKey"
+                        disabled="@config.IsEnvLocked(nameof(KastSettings.ApiKey))" />
+    </div>
+
+    <div class="mb-3">
+        <label>Mod Folder Path</label>
+        <MudTextField @bind-Value="config.ModFolderPath"
+                      ReadOnly="true"
+                      Disabled="@config.IsEnvLocked(nameof(KastSettings.ModFolderPath))" />
+        <MudButton Disabled="@config.IsEnvLocked(nameof(KastSettings.ModFolderPath))"
+                   OnClick="() => PickFolder(nameof(KastSettings.ModFolderPath))">
+            Browse…
+        </MudButton>
+    </div>
+
+    <div class="mb-3">
+        <label>Server Folder Path</label>
+        <MudTextField @bind-Value="config.ServerDefaultPath"
+                      ReadOnly="true"
+                      Disabled="@config.IsEnvLocked(nameof(KastSettings.ServerDefaultPath))" />
+        <MudButton Disabled="@config.IsEnvLocked(nameof(KastSettings.ServerDefaultPath))"
+                   OnClick="() => PickFolder(nameof(KastSettings.ServerDefaultPath))">
+            Browse…
+        </MudButton>
+    </div>
+
+    <div class="mb-3">
+        <label>Theme Accent</label>
+        <MudInputString @bind-Value="config.ThemeAccent"
+                        disabled="@config.IsEnvLocked(nameof(KastSettings.ThemeAccent))" />
+    </div>
+
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">
+        Save
+    </MudButton>
+</EditForm>
 
 @code {
+    private KastSettings config = new();
 
-    // private bool UseDarkTheme
-    // {
-    //     get => SettingsService.Theme.DarkTheme;
-    //     set { SettingsService.Theme.DarkTheme = value; SettingsService.Save(); StateHasChanged(); }
-    // }
+    protected override async Task OnInitializedAsync()
+    {
+        config = await ConfigService.GetConfigAsync();
+    }
 
-    // private string ColorPrimary
-    // {
-    //     get => SettingsService.Theme.PalettePrimary;
-    //     set { SettingsService.Theme.PalettePrimary = value; SettingsService.Save(); StateHasChanged(); }
-    // }
+    private async Task SaveConfig()
+    {
+        await ConfigService.UpdateConfigAsync(config);
+        Snackbar.Add("Settings saved", Severity.Success);
+    }
 
+    private async Task PickFolder(string propertyName)
+    {
+        var dialog = await DialogService.ShowAsync<FolderPickerDialog>("Select Folder");
+        var result = await dialog.Result;
 
-    // protected override async Task OnInitializedAsync()
-    // { }
+        if (!result!.Canceled && result.Data is string folderPath)
+        {
+            var prop = typeof(KastSettings).GetProperty(propertyName);
+            if (prop != null && prop.CanWrite)
+                prop.SetValue(config, folderPath);
+        }
+    }
 }

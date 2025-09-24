@@ -12,6 +12,45 @@
 else
 {
     <MudGrid Spacing="2">
+        <MudItem xs="12">
+            <MudCard Elevation="25" Class="mud-width-full">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5" Align="Align.Center">SERVER INFO</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+
+                <MudCardContent>
+                    <MudGrid GutterSize="2">
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">Hostname</MudText>
+                            <MudText Typo="Typo.body1">@ServerInfoService.Hostname</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">Platform</MudText>
+                            <MudText Typo="Typo.body1">@ServerInfoService.Platform</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="12" md="4">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">OS Description</MudText>
+                            <MudText Typo="Typo.body2">@ServerInfoService.OSDescription</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">OS Architecture</MudText>
+                            <MudText Typo="Typo.body1">@ServerInfoService.OSArchitecture</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Processor Count</MudText>
+                            <MudText Typo="Typo.body1">@ServerInfoService.ProcessorCount</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
         <MudItem xs="6">
             <MudCard Elevation="25" Class="mud-width-full">
                 <MudCardHeader>
@@ -44,13 +83,22 @@ else
     private bool ready;
     private const int MaxData = 180;
 
-    private readonly ChartOptions      cpuOptions = new();
-    private readonly ChartSeries       cpuData    = new() { Name = "CPU", Data = new double[20] };
-    private readonly List<ChartSeries> CpuSeries  = [];
+    // Chart configuration and series
+    private readonly ChartOptions cpuOptions = new();
+    private readonly ChartSeries cpuData = new() { Name = "CPU", Data = Array.Empty<double>() };
+    private readonly List<ChartSeries> CpuSeries = new();
 
-    private readonly ChartOptions      ramOptions = new();
-    private readonly ChartSeries       ramData    = new() { Name = "RAM", Data = new double[20] };
-    private readonly List<ChartSeries> RamSeries  = [];
+    private readonly ChartOptions ramOptions = new();
+    private readonly ChartSeries ramData = new() { Name = "RAM", Data = Array.Empty<double>() };
+    private readonly List<ChartSeries> RamSeries = new();
+
+    // Circular buffers to avoid repeated Concat/Skip allocations
+    private readonly CircularBuffer cpuBuffer = new(MaxData);
+    private readonly CircularBuffer ramBuffer = new(MaxData);
+
+    // polling task
+    private CancellationTokenSource? _cts;
+    private Task? _pollingTask;
 
     protected override void OnInitialized()
     {
@@ -65,27 +113,100 @@ else
        CpuSeries.Add(cpuData);
        RamSeries.Add(ramData);
 
-       timer = new Timer(Callback, new AutoResetEvent(false), 100, 1000); // fire every second
-       ready = true;
+        // initialize series with empty snapshots
+        cpuData.Data = cpuBuffer.ToArray();
+        ramData.Data = ramBuffer.ToArray();
+
+        // start async polling loop
+        _cts = new CancellationTokenSource();
+        _pollingTask = Task.Run(() => PollLoopAsync(_cts.Token));
+
+        ready = true;
    }
    
-   private async void Callback(object? stateInfo)
-   {
-       var cpuVal = ServerInfoService.GetCpuUsage();
-       if (!float.IsNaN(cpuVal))
-           CpuSeries.First().Data = CpuSeries.First().Data.Concat(new double[] { cpuVal }).ToArray();
-       if (CpuSeries.First().Data.Length > MaxData)
-           CpuSeries.First().Data = CpuSeries.First().Data.Skip(1).ToArray();
+    private async Task PollLoopAsync(CancellationToken token)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+            {
+                // Read metrics (ServerInfoService calls are synchronous)
+                var cpuVal = ServerInfoService.GetCpuUsage();
+                if (!double.IsNaN(cpuVal))
+                    cpuBuffer.Add(cpuVal);
 
-       var ramVal = ServerInfoService.GetMemUsage();
-       if (!float.IsNaN(ramVal))
-           RamSeries.First().Data = RamSeries.First().Data.Concat(new double[] { ramVal }).ToArray();
-       if (RamSeries.First().Data.Length > MaxData)
-           RamSeries.First().Data = RamSeries.First().Data.Skip(1).ToArray();
+                var ramVal = ServerInfoService.GetMemUsage();
+                if (!double.IsNaN(ramVal))
+                    ramBuffer.Add(ramVal);
 
-       await InvokeAsync(StateHasChanged);
-   }
+                // update series snapshots for the chart (create minimal snapshot each tick)
+                cpuData.Data = cpuBuffer.ToArray();
+                ramData.Data = ramBuffer.ToArray();
 
-   public void Dispose()
-   { timer?.Dispose(); }
+                // notify UI on the sync context
+                await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException) { /* expected on dispose */ }
+        catch (Exception)
+        {
+            // swallow unexpected errors to avoid crashing the background thread.
+            // Optionally log here.
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_cts == null) return;
+        _cts.Cancel();
+        try { _pollingTask?.Wait(500); } catch { /* ignore */ }
+        _cts.Dispose();
+        _cts = null;
+    }
+
+    // Simple fixed-size circular buffer for doubles. Avoids LINQ allocations on every tick.
+    private sealed class CircularBuffer
+    {
+        private readonly double[] _buffer;
+        private int _head;   // points to next write position
+        private int _count;
+
+        public CircularBuffer(int capacity)
+        {
+            if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+            _buffer = new double[capacity];
+            _head = 0;
+            _count = 0;
+        }
+
+        public int Count => _count;
+        public int Capacity => _buffer.Length;
+
+        public void Add(double value)
+        {
+            _buffer[_head] = value;
+            _head = (_head + 1) % _buffer.Length;
+            if (_count < _buffer.Length) _count++;
+        }
+
+        // Return snapshot array ordered oldest..newest
+        public double[] ToArray()
+        {
+            if (_count == 0) return Array.Empty<double>();
+            var result = new double[_count];
+            var start = (_head - _count + _buffer.Length) % _buffer.Length;
+            if (start + _count <= _buffer.Length)
+            {
+                Array.Copy(_buffer, start, result, 0, _count);
+            }
+            else
+            {
+                var firstLen = _buffer.Length - start;
+                Array.Copy(_buffer, start, result, 0, firstLen);
+                Array.Copy(_buffer, 0, result, firstLen, _count - firstLen);
+            }
+            return result;
+        }
+    }
 }
