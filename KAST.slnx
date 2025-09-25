@@ -1,0 +1,33 @@
+<Solution>
+  <Folder Name="/App/">
+    <Project Path="KAST/KAST.csproj" />
+  </Folder>
+  <Folder Name="/Aspire/">
+    <Project Path="KAST.AppHost/KAST.AppHost.csproj" />
+    <Project Path="KAST.ServiceDefaults/KAST.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/Core/">
+    <Project Path="KAST.Core/KAST.Core.csproj" />
+    <Project Path="KAST.Data/KAST.Data.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".dockerignore" />
+    <File Path=".gitignore" />
+    <File Path="CODE_OF_CONDUCT.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="global.json" />
+    <File Path="LICENSE.md" />
+    <File Path="README.md" />
+    <File Path="SECURITY.md" />
+  </Folder>
+  <Folder Name="/Solution Items/.github/" />
+  <Folder Name="/Solution Items/.github/ISSUE_TEMPLATE/">
+    <File Path=".github/ISSUE_TEMPLATE/bug_report.md" />
+    <File Path=".github/pull_request_template.md" />
+  </Folder>
+  <Folder Name="/Solution Items/.github/workflows/">
+    <File Path=".github/workflows/codeql-analysis.yml" />
+    <File Path=".github/workflows/sonar.yml" />
+  </Folder>
+  <Folder Name="/Tests/" />
+</Solution>

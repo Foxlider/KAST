@@ -4,6 +4,7 @@
     <RollForward>LatestMinor</RollForward>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>930b9a04-f06a-4052-9bae-75bf7da13f28</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="8.*" />
