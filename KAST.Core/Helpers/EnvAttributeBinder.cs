@@ -13,7 +13,7 @@ namespace KAST.Core.Helpers
         /// </summary>
         public static void ApplyEnvironmentVariables<T>(T instance) where T : class
         {
-            if (instance == null) throw new ArgumentNullException(nameof(instance));
+            ArgumentNullException.ThrowIfNull(instance);
 
             var type = instance.GetType();
             var props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)

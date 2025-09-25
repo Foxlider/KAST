@@ -1,7 +1,7 @@
 ﻿using KAST.Core.Helpers;
+using KAST.Core.Interfaces;
 using KAST.Data;
 using KAST.Data.Attributes;
-using KAST.Data.Interfaces;
 using KAST.Data.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

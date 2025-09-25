@@ -48,12 +48,15 @@ namespace KAST.Core.Services
         private void EnsureFileExists()
         {
             var dir = Path.GetDirectoryName(_filePath);
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+            if (string.IsNullOrEmpty(dir)) 
+                throw new InvalidOperationException("Invalid file path");
+
+            if (!Directory.Exists(dir)) 
+                Directory.CreateDirectory(dir);
 
             if (!File.Exists(_filePath))
-            {
                 File.WriteAllText(_filePath, _format.Serialize(new T()));
-            }
         }
 
         private void LoadFile()
@@ -109,9 +112,14 @@ namespace KAST.Core.Services
 
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
             _watcher?.Dispose();
             _debounceTimer?.Dispose();
-            GC.SuppressFinalize(this);
         }
     }
     #endregion
@@ -119,20 +127,20 @@ namespace KAST.Core.Services
     #region Syntax Tree
     public abstract class ConfigNode 
     { 
-        public string RawText; 
+        public string RawText = string.Empty; 
     }
 
     class KeyValueNode : ConfigNode 
     { 
-        public string Key; 
-        public string Value; 
-        public string Comment; 
+        public string Key = string.Empty; 
+        public string Value = string.Empty; 
+        public string Comment = string.Empty; 
     }
 
     class ClassNode : ConfigNode 
     { 
-        public string Name; 
-        public List<ConfigNode> Children = new(); 
+        public string Name = string.Empty; 
+        public List<ConfigNode> Children = []; 
     }
 
     class CommentNode : ConfigNode { }
@@ -140,11 +148,11 @@ namespace KAST.Core.Services
     #endregion
 
     #region Parser
-    public static class ConfigParser
+    public static partial class ConfigParser
     {
-        private static readonly Regex KeyValueRegex = new(@"^(\w+)\s*=\s*(.*?)\s*;\s*(?:\/\/\s*(.*))?$", RegexOptions.Compiled);
-        private static readonly Regex ClassNameRegex = new(@"^class\s+(\w+)", RegexOptions.Compiled);
-        private static readonly Regex ClassEndRegex = new(@"^\s*\};\s*$", RegexOptions.Compiled);
+        private static readonly Regex KeyValueRegex = RegexKeyValue();
+        private static readonly Regex ClassNameRegex = RegexClassName();
+        private static readonly Regex ClassEndRegex = RegexClassEnd();
 
         public static List<ConfigNode> Parse(string content)
         {
@@ -163,14 +171,12 @@ namespace KAST.Core.Services
                 var rawLine = lines[index];
                 var line = rawLine.Trim();
 
-
                 if (string.IsNullOrWhiteSpace(line))
                 {
                     nodes.Add(new WhitespaceNode { RawText = rawLine });
                     index++;
                     continue;
                 }
-
 
                 if (line.StartsWith("//"))
                 {
@@ -266,6 +272,15 @@ namespace KAST.Core.Services
             }
             return string.Join("\n", lines);
         }
+
+        [GeneratedRegex(@"^(\w+)\s*=\s*(.*?)\s*;\s*(?:\/\/\s*(.*))?$", RegexOptions.Compiled)]
+        private static partial Regex RegexKeyValue();
+
+        [GeneratedRegex(@"^class\s+(\w+)", RegexOptions.Compiled)]
+        private static partial Regex RegexClassName();
+
+        [GeneratedRegex(@"^\s*\};\s*$", RegexOptions.Compiled)]
+        private static partial Regex RegexClassEnd();
     }
     #endregion
 

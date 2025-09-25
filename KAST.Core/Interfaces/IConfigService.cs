@@ -1,11 +1,6 @@
 ﻿using KAST.Data.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace KAST.Data.Interfaces
+namespace KAST.Core.Interfaces
 {
     public interface IConfigService
     {
