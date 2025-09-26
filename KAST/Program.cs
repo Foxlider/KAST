@@ -2,7 +2,7 @@
 using KAST.Core.Helpers;
 using KAST.Core.Services;
 using KAST.Data;
-using KAST.Data.Interfaces;
+using KAST.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using System.Diagnostics;
