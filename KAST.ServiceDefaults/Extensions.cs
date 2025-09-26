@@ -61,10 +61,10 @@ public static class Extensions
                     .AddSource(builder.Environment.ApplicationName)
                     .AddSource($"{builder.Environment.ApplicationName}.*")
                     .AddSource("KAST")
-                    //.AddAspNetCoreInstrumentation()
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
-                    //.AddHttpClientInstrumentation()
                     ;
             });
 

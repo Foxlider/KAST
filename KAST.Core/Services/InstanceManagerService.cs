@@ -1,6 +1,7 @@
 ﻿using KAST.Core.Helpers;
 using KAST.Data;
 using KAST.Data.Models;
+using Microsoft.Extensions.Logging;
 
 namespace KAST.Core.Services
 {
@@ -10,25 +11,66 @@ namespace KAST.Core.Services
 
         private readonly ApplicationDbContext _dbContext;
 
-        public InstanceManagerService(ITracingNamingProvider namingProvider, ApplicationDbContext context) : base(namingProvider)
+        public InstanceManagerService(ITracingNamingProvider namingProvider, ApplicationDbContext context, 
+            ILogger<InstanceManagerService> logger) : base(namingProvider, logger)
         {
             _dbContext = context;
-            Servers.AddRange(_dbContext.Servers.Select(s => new ServerInstance(s)));
+            
+            ExecuteWithTelemetry<int>("InstanceManagerService.LoadServers", (activity) =>
+            {
+                var servers = _dbContext.Servers.ToList();
+                activity?.SetTag("server.count", servers.Count);
+                
+                foreach (var server in servers)
+                {
+                    Servers.Add(new ServerInstance(server));
+                }
+                
+                Logger.LogInformation("Loaded {ServerCount} servers", servers.Count);
+                
+                return servers.Count;
+            });
         }
 
         public void AddServer(string name)
         {
-            ServerInstance s = new ServerInstance(name);
-            Servers.Add(s);
-            _dbContext.Servers.Add(s.Server);
+            ExecuteWithTelemetry<object?>("InstanceManagerService.AddServer", (activity) =>
+            {
+                activity?.SetTag("server.name", name);
+                
+                ServerInstance s = new ServerInstance(name);
+                Servers.Add(s);
+                _dbContext.Servers.Add(s.Server);
+                
+                Logger.LogInformation("Added new server: {ServerName} with ID: {ServerId}", name, s.Server.Id);
+                return null;
+            }, new[] { new KeyValuePair<string, object?>("server.name", name) });
         }
 
         public void SaveAll()
         {
-            foreach (var server in Servers)
+            ExecuteWithTelemetry<object?>("InstanceManagerService.SaveAll", (activity) =>
             {
-                server.PerfCfgService.SaveFile();
-            }
+                activity?.SetTag("server.count", Servers.Count);
+                
+                var savedCount = 0;
+                foreach (var server in Servers)
+                {
+                    try
+                    {
+                        server.PerfCfgService.SaveFile();
+                        savedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "Failed to save configuration for server {ServerId}", server.Server.Id);
+                    }
+                }
+                
+                activity?.SetTag("server.savedCount", savedCount);
+                Logger.LogInformation("Saved configurations for {SavedCount}/{TotalCount} servers", savedCount, Servers.Count);
+                return null;
+            });
         }
     }
 

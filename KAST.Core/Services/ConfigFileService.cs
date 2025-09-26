@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using KAST.Core.Helpers;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace KAST.Core.Services
@@ -14,22 +16,29 @@ namespace KAST.Core.Services
     {
         private readonly string _filePath;
         private readonly IConfigFormat<T> _format;
-        private FileSystemWatcher _watcher;
+        private FileSystemWatcher? _watcher;
         private bool _suppressWatcher;
-        private Timer _debounceTimer;
+        private Timer? _debounceTimer;
         private readonly Lock _lock = new();
+        private static readonly ActivitySource ActivitySource = new("KAST.Core.ConfigFileService");
 
-        public T Config { get; private set; }
-        public event Action OnUpdated;
+        public T Config { get; private set; } = default!;
+        public event Action? OnUpdated;
 
         public ConfigFileService(string filePath, IConfigFormat<T> format)
         {
             _filePath = Path.GetFullPath(filePath);
             _format = format;
 
+            using var activity = ActivitySource.StartActivity("ConfigFileService.Initialize");
+            activity?.SetTag("file.path", _filePath);
+            activity?.SetTag("config.type", typeof(T).Name);
+
             EnsureFileExists();
             LoadFile();
             WatchFile();
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
         }
 
         public string RawFileContent
@@ -37,38 +46,87 @@ namespace KAST.Core.Services
             get => File.ReadAllText(_filePath);
             set
             {
-                lock (_lock)
+                using var activity = ActivitySource.StartActivity("ConfigFileService.SetRawContent");
+                activity?.SetTag("file.path", _filePath);
+                activity?.SetTag("content.length", value?.Length ?? 0);
+
+                try
                 {
-                    File.WriteAllText(_filePath, value);
+                    lock (_lock)
+                    {
+                        File.WriteAllText(_filePath, value);
+                    }
+                    LoadFile();
+                    
+                    activity?.SetStatus(ActivityStatusCode.Ok);
                 }
-                LoadFile();
+                catch (Exception ex)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    throw;
+                }
             }
         }
 
         private void EnsureFileExists()
         {
-            var dir = Path.GetDirectoryName(_filePath);
+            using var activity = ActivitySource.StartActivity("ConfigFileService.EnsureFileExists");
+            activity?.SetTag("file.path", _filePath);
 
-            if (string.IsNullOrEmpty(dir)) 
-                throw new InvalidOperationException("Invalid file path");
+            try
+            {
+                var dir = Path.GetDirectoryName(_filePath);
+                var fileExists = File.Exists(_filePath);
+                var dirExists = Directory.Exists(dir);
 
-            if (!Directory.Exists(dir)) 
-                Directory.CreateDirectory(dir);
+                activity?.SetTag("file.exists", fileExists);
+                activity?.SetTag("directory.exists", dirExists);
 
-            if (!File.Exists(_filePath))
-                File.WriteAllText(_filePath, _format.Serialize(new T()));
+                if (string.IsNullOrEmpty(dir)) 
+                    throw new InvalidOperationException("Invalid file path");
+
+                if (!dirExists) 
+                {
+                    Directory.CreateDirectory(dir);
+                    activity?.SetTag("directory.created", true);
+                }
+
+                if (!fileExists)
+                {
+                    File.WriteAllText(_filePath, _format.Serialize(new T()));
+                    activity?.SetTag("file.created", true);
+                }
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
+            }
         }
 
         private void LoadFile()
         {
+            using var activity = ActivitySource.StartActivity("ConfigFileService.LoadFile");
+            activity?.SetTag("file.path", _filePath);
+
             try
             {
                 var content = File.ReadAllText(_filePath);
+                activity?.SetTag("content.length", content.Length);
+                
                 Config = _format.Parse(content);
                 OnUpdated?.Invoke();
+                
+                activity?.SetTag("load.success", true);
+                activity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                activity?.SetTag("load.success", false);
+                
                 Debug.WriteLine($"Config load failed: {ex.Message}");
                 throw;
             }
@@ -76,38 +134,80 @@ namespace KAST.Core.Services
 
         public void SaveFile()
         {
-            _suppressWatcher = true;
-            lock (_lock)
-            {
-                File.WriteAllText(_filePath, _format.Serialize(Config));
-            }
+            using var activity = ActivitySource.StartActivity("ConfigFileService.SaveFile");
+            activity?.SetTag("file.path", _filePath);
 
-            // Delay un-suppress to let FS settle
-            Task.Delay(300).ContinueWith(_ => _suppressWatcher = false);
+            try
+            {
+                _suppressWatcher = true;
+                
+                string serializedContent;
+                lock (_lock)
+                {
+                    serializedContent = _format.Serialize(Config);
+                    File.WriteAllText(_filePath, serializedContent);
+                }
+
+                activity?.SetTag("content.length", serializedContent.Length);
+                activity?.SetTag("save.success", true);
+                activity?.SetStatus(ActivityStatusCode.Ok);
+
+                // Delay un-suppress to let FS settle
+                Task.Delay(300).ContinueWith(_ => _suppressWatcher = false);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                activity?.SetTag("save.success", false);
+                throw;
+            }
         }
 
         private void WatchFile()
         {
-            _watcher = new FileSystemWatcher(Path.GetDirectoryName(_filePath))
-            {
-                Filter = Path.GetFileName(_filePath),
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
-            };
+            using var activity = ActivitySource.StartActivity("ConfigFileService.SetupFileWatcher");
+            activity?.SetTag("file.path", _filePath);
 
-            _watcher.Changed += (s, e) =>
+            try
             {
-                if (_suppressWatcher) return;
-                _debounceTimer?.Dispose();
-                _debounceTimer = new Timer(_ =>
+                var directory = Path.GetDirectoryName(_filePath);
+                if (string.IsNullOrEmpty(directory))
+                    throw new InvalidOperationException("Invalid file path - no directory");
+
+                _watcher = new FileSystemWatcher(directory)
                 {
-                    lock (_lock)
-                    {
-                        LoadFile();
-                    }
-                }, null, 200, Timeout.Infinite);
-            };
+                    Filter = Path.GetFileName(_filePath),
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
+                };
 
-            _watcher.EnableRaisingEvents = true;
+                _watcher.Changed += (s, e) =>
+                {
+                    if (_suppressWatcher) return;
+                    
+                    using var changeActivity = ActivitySource.StartActivity("ConfigFileService.FileChanged");
+                    changeActivity?.SetTag("file.path", _filePath);
+                    
+                    _debounceTimer?.Dispose();
+                    _debounceTimer = new Timer(_ =>
+                    {
+                        lock (_lock)
+                        {
+                            LoadFile();
+                        }
+                    }, null, 200, Timeout.Infinite);
+
+                    changeActivity?.SetStatus(ActivityStatusCode.Ok);
+                };
+
+                _watcher.EnableRaisingEvents = true;
+                activity?.SetTag("watcher.enabled", true);
+                activity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
+            }
         }
 
         public void Dispose()
