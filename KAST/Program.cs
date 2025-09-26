@@ -2,7 +2,7 @@
 using KAST.Core.Helpers;
 using KAST.Core.Services;
 using KAST.Data;
-using KAST.Data.Interfaces;
+using KAST.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using System.Diagnostics;
@@ -31,6 +31,7 @@ namespace KAST
             builder.Services.AddSingleton<ServerInfoService>();
             builder.Services.AddScoped<InstanceManagerService>();
             builder.Services.AddScoped<ConfigService>();
+            builder.Services.AddScoped<ThemeService>();
             builder.Services.AddScoped<FileSystemService>(sp =>
             {
                 var env = sp.GetRequiredService<IWebHostEnvironment>(); // Get environment

@@ -4,16 +4,18 @@
 @using KAST.Data.Models
 @using KAST.Core.Extensions
 @inject ConfigService ConfigService
+@inject ThemeService ThemeService
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
 <PageTitle>Settings</PageTitle>
 <MudText Typo="Typo.h3" GutterBottom="true">Settings</MudText>
 
-<EditForm Model="@config" OnValidSubmit="SaveConfig">
+<div>
     <div class="mb-3">
         <label>API Key</label>
         <MudInputString @bind-Value="config.ApiKey"
+                        @bind-Value:after="OnApiKeyChanged"
                         disabled="@config.IsEnvLocked(nameof(KastSettings.ApiKey))" />
     </div>
 
@@ -42,13 +44,49 @@
     <div class="mb-3">
         <label>Theme Accent</label>
         <MudInputString @bind-Value="config.ThemeAccent"
+                        @bind-Value:after="OnThemeAccentChanged"
                         disabled="@config.IsEnvLocked(nameof(KastSettings.ThemeAccent))" />
     </div>
 
-    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">
-        Save
-    </MudButton>
-</EditForm>
+    <div class="mb-3">
+        <label>Theme Mode</label>
+        <MudSelect @bind-Value="config.ThemeMode" 
+                   @bind-Value:after="OnThemeModeChanged"
+                   Disabled="@config.IsEnvLocked(nameof(KastSettings.ThemeMode))"
+                   Label="Select theme mode">
+            <MudSelectItem Value='"auto"'>Auto (System)</MudSelectItem>
+            <MudSelectItem Value='"light"'>Light</MudSelectItem>
+            <MudSelectItem Value='"dark"'>Dark</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    <div class="mb-3">
+        <label>Language</label>
+        <MudSelect @bind-Value="config.Language" 
+                   @bind-Value:after="OnLanguageChanged"
+                   Disabled="@config.IsEnvLocked(nameof(KastSettings.Language))"
+                   Label="Select language">
+            <MudSelectItem Value='"en"'>English</MudSelectItem>
+            <MudSelectItem Value='"fr"'>Français</MudSelectItem>
+            <MudSelectItem Value='"de"'>Deutsch</MudSelectItem>
+            <MudSelectItem Value='"es"'>Español</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    <div class="mb-3">
+        <MudCheckBox @bind-Value="config.CheckForUpdates" 
+                     @bind-Value:after="OnCheckForUpdatesChanged"
+                     Label="Check for updates on startup"
+                     Disabled="@config.IsEnvLocked(nameof(KastSettings.CheckForUpdates))" />
+    </div>
+
+    <div class="mb-3">
+        <MudCheckBox @bind-Value="config.DebugLogging" 
+                     @bind-Value:after="OnDebugLoggingChanged"
+                     Label="Enable debug logging"
+                     Disabled="@config.IsEnvLocked(nameof(KastSettings.DebugLogging))" />
+    </div>
+</div>
 
 @code {
     private KastSettings config = new();
@@ -58,10 +96,49 @@
         config = await ConfigService.GetConfigAsync();
     }
 
-    private async Task SaveConfig()
+    private async Task SaveConfigAsync()
     {
-        await ConfigService.UpdateConfigAsync(config);
-        Snackbar.Add("Settings saved", Severity.Success);
+        try
+        {
+            await ConfigService.UpdateConfigAsync(config);
+            Snackbar.Add("Settings saved", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnApiKeyChanged()
+    {
+        await SaveConfigAsync();
+    }
+
+    private async Task OnThemeAccentChanged()
+    {
+        await SaveConfigAsync();
+    }
+
+    private async Task OnThemeModeChanged()
+    {
+        // Update the theme service when theme mode changes
+        await ThemeService.SetThemeModeAsync(config.ThemeMode ?? "auto");
+        Snackbar.Add("Theme updated", Severity.Success);
+    }
+
+    private async Task OnLanguageChanged()
+    {
+        await SaveConfigAsync();
+    }
+
+    private async Task OnCheckForUpdatesChanged()
+    {
+        await SaveConfigAsync();
+    }
+
+    private async Task OnDebugLoggingChanged()
+    {
+        await SaveConfigAsync();
     }
 
     private async Task PickFolder(string propertyName)
@@ -73,7 +150,10 @@
         {
             var prop = typeof(KastSettings).GetProperty(propertyName);
             if (prop != null && prop.CanWrite)
+            {
                 prop.SetValue(config, folderPath);
+                await SaveConfigAsync();
+            }
         }
     }
 }
