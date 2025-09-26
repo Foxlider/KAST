@@ -6,40 +6,80 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace KAST.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class AddModsProfilesAndRelationships : Migration
+    public partial class EnhanceSettingsModel : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
-                name: "ThemeAccent",
+            migrationBuilder.DropTable(
+                name: "ModProfiles");
+
+            migrationBuilder.DropTable(
+                name: "ProfileHistories");
+
+            migrationBuilder.DropTable(
+                name: "Mods");
+
+            migrationBuilder.DropTable(
+                name: "Profiles");
+
+            migrationBuilder.DropColumn(
+                name: "CreatedAt",
+                table: "Servers");
+
+            migrationBuilder.DropColumn(
+                name: "LastUpdated",
+                table: "Servers");
+
+            migrationBuilder.DropColumn(
+                name: "Version",
+                table: "Servers");
+
+            migrationBuilder.AddColumn<bool>(
+                name: "CheckForUpdates",
+                table: "Settings",
+                type: "INTEGER",
+                nullable: true);
+
+            migrationBuilder.AddColumn<bool>(
+                name: "DebugLogging",
+                table: "Settings",
+                type: "INTEGER",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Language",
                 table: "Settings",
                 type: "TEXT",
                 maxLength: 10,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "TEXT",
-                oldMaxLength: 10);
-
-            migrationBuilder.AlterColumn<string>(
-                name: "ModFolderPath",
-                table: "Settings",
-                type: "TEXT",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "TEXT");
-
-            migrationBuilder.AddColumn<string>(
-                name: "ApiKey",
-                table: "Settings",
-                type: "TEXT",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "ServerDefaultPath",
+                name: "ThemeMode",
                 table: "Settings",
                 type: "TEXT",
+                maxLength: 10,
                 nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "CheckForUpdates",
+                table: "Settings");
+
+            migrationBuilder.DropColumn(
+                name: "DebugLogging",
+                table: "Settings");
+
+            migrationBuilder.DropColumn(
+                name: "Language",
+                table: "Settings");
+
+            migrationBuilder.DropColumn(
+                name: "ThemeMode",
+                table: "Settings");
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "CreatedAt",
@@ -66,16 +106,16 @@ namespace KAST.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    SteamId = table.Column<string>(type: "TEXT", nullable: true),
-                    Name = table.Column<string>(type: "TEXT", nullable: false),
                     Author = table.Column<string>(type: "TEXT", nullable: true),
-                    Path = table.Column<string>(type: "TEXT", nullable: false),
-                    SizeBytes = table.Column<long>(type: "INTEGER", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    IsEnabled = table.Column<bool>(type: "INTEGER", nullable: false),
                     IsLocal = table.Column<bool>(type: "INTEGER", nullable: false),
                     LastUpdated = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    Version = table.Column<string>(type: "TEXT", nullable: true),
-                    IsEnabled = table.Column<bool>(type: "INTEGER", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    Name = table.Column<string>(type: "TEXT", nullable: false),
+                    Path = table.Column<string>(type: "TEXT", nullable: false),
+                    SizeBytes = table.Column<long>(type: "INTEGER", nullable: false),
+                    SteamId = table.Column<string>(type: "TEXT", nullable: true),
+                    Version = table.Column<string>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -87,16 +127,16 @@ namespace KAST.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Name = table.Column<string>(type: "TEXT", maxLength: 255, nullable: false),
-                    Description = table.Column<string>(type: "TEXT", nullable: true),
-                    ServerConfig = table.Column<string>(type: "TEXT", nullable: true),
-                    ServerProfile = table.Column<string>(type: "TEXT", nullable: true),
-                    PerformanceConfig = table.Column<string>(type: "TEXT", nullable: true),
+                    ServerId = table.Column<Guid>(type: "TEXT", nullable: true),
                     CommandLineArgs = table.Column<string>(type: "TEXT", nullable: true),
-                    IsActive = table.Column<bool>(type: "INTEGER", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    Description = table.Column<string>(type: "TEXT", nullable: true),
+                    IsActive = table.Column<bool>(type: "INTEGER", nullable: false),
                     LastModified = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    ServerId = table.Column<Guid>(type: "TEXT", nullable: true)
+                    Name = table.Column<string>(type: "TEXT", maxLength: 255, nullable: false),
+                    PerformanceConfig = table.Column<string>(type: "TEXT", nullable: true),
+                    ServerConfig = table.Column<string>(type: "TEXT", nullable: true),
+                    ServerProfile = table.Column<string>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -116,9 +156,9 @@ namespace KAST.Data.Migrations
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     ModId = table.Column<Guid>(type: "TEXT", nullable: false),
                     ProfileId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Order = table.Column<int>(type: "INTEGER", nullable: false),
+                    AddedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     IsEnabled = table.Column<bool>(type: "INTEGER", nullable: false),
-                    AddedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    Order = table.Column<int>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -143,15 +183,15 @@ namespace KAST.Data.Migrations
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     ProfileId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Version = table.Column<int>(type: "INTEGER", nullable: false),
                     ChangeDescription = table.Column<string>(type: "TEXT", nullable: true),
+                    ChangedBy = table.Column<string>(type: "TEXT", nullable: true),
+                    CommandLineArgsSnapshot = table.Column<string>(type: "TEXT", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    ModsSnapshot = table.Column<string>(type: "TEXT", nullable: true),
+                    PerformanceConfigSnapshot = table.Column<string>(type: "TEXT", nullable: true),
                     ServerConfigSnapshot = table.Column<string>(type: "TEXT", nullable: true),
                     ServerProfileSnapshot = table.Column<string>(type: "TEXT", nullable: true),
-                    PerformanceConfigSnapshot = table.Column<string>(type: "TEXT", nullable: true),
-                    CommandLineArgsSnapshot = table.Column<string>(type: "TEXT", nullable: true),
-                    ModsSnapshot = table.Column<string>(type: "TEXT", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    ChangedBy = table.Column<string>(type: "TEXT", nullable: true)
+                    Version = table.Column<int>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -191,64 +231,6 @@ namespace KAST.Data.Migrations
                 name: "IX_Profiles_ServerId",
                 table: "Profiles",
                 column: "ServerId");
-        }
-
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropTable(
-                name: "ModProfiles");
-
-            migrationBuilder.DropTable(
-                name: "ProfileHistories");
-
-            migrationBuilder.DropTable(
-                name: "Mods");
-
-            migrationBuilder.DropTable(
-                name: "Profiles");
-
-            migrationBuilder.DropColumn(
-                name: "ApiKey",
-                table: "Settings");
-
-            migrationBuilder.DropColumn(
-                name: "ServerDefaultPath",
-                table: "Settings");
-
-            migrationBuilder.DropColumn(
-                name: "CreatedAt",
-                table: "Servers");
-
-            migrationBuilder.DropColumn(
-                name: "LastUpdated",
-                table: "Servers");
-
-            migrationBuilder.DropColumn(
-                name: "Version",
-                table: "Servers");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "ThemeAccent",
-                table: "Settings",
-                type: "TEXT",
-                maxLength: 10,
-                nullable: false,
-                defaultValue: "",
-                oldClrType: typeof(string),
-                oldType: "TEXT",
-                oldMaxLength: 10,
-                oldNullable: true);
-
-            migrationBuilder.AlterColumn<string>(
-                name: "ModFolderPath",
-                table: "Settings",
-                type: "TEXT",
-                nullable: false,
-                defaultValue: "",
-                oldClrType: typeof(string),
-                oldType: "TEXT",
-                oldNullable: true);
         }
     }
 }

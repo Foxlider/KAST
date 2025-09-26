@@ -32,5 +32,31 @@ namespace KAST.Data.Models
         /// </summary>
         [EnvVariableAttribute("KAST_SERVER_DEFAULT_PATH")]
         public string? ServerDefaultPath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the theme mode (light, dark, auto).
+        /// </summary>
+        [MaxLength(10)]
+        [EnvVariableAttribute("KAST_THEME_MODE")]
+        public string? ThemeMode { get; set; } = "auto";
+
+        /// <summary>
+        /// Gets or sets whether to check for updates on startup.
+        /// </summary>
+        [EnvVariableAttribute("KAST_CHECK_UPDATES")]
+        public bool? CheckForUpdates { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the UI language/locale.
+        /// </summary>
+        [MaxLength(10)]
+        [EnvVariableAttribute("KAST_LANGUAGE")]
+        public string? Language { get; set; } = "en";
+
+        /// <summary>
+        /// Gets or sets whether to enable debug logging.
+        /// </summary>
+        [EnvVariableAttribute("KAST_DEBUG_LOGGING")]
+        public bool? DebugLogging { get; set; } = false;
     }
 }

@@ -1,181 +1,190 @@
 ﻿@page "/mods"
-@using KAST.Data.Models
-@using KAST.Core.Services
-@inject ModService ModService
+@* @using KAST.Data.Enums;
+@using KAST.Data.Models;
+@using KAST.Core.Services;
+@using KAST.Server.Data;
+@inject ModsService ModsService
+@inject SteamService SteamService *@
 @inject ISnackbar Snackbar
 
 <PageTitle>Mods</PageTitle>
 
 <MudText Typo="Typo.h3" GutterBottom="true">Mods</MudText>
-<MudText Class="mb-8">Manage your Arma 3 mods from the database.</MudText>
-
-@if (mods == null)
+<MudText Class="mb-8">This component demonstrates fetching data from the server.</MudText>
+@* @if (localMods == null || steamMods == null)
 {
     <MudProgressCircular Color="MudBlazor.Color.Default" Indeterminate="true" />
 }
-else if (!mods.Any())
-{
-    <MudAlert Severity="Severity.Info">
-        No mods found in the database. Add some mods to get started.
-    </MudAlert>
-    
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" 
-               OnClick="AddSampleMod" Class="mt-4">
-        Add Sample Mod
-    </MudButton>
-}
 else
 {
-    <MudTable Items="mods" Hover="true" FixedHeader="true" SortLabel="Sort By" Elevation="0">
+    <MudTable Items="steamMods" Hover="true" FixedHeader="true" SortLabel="Sort By" Elevation="0">
         <ColGroup>
             <col style="width: 5%;" />
-            <col style="width: 15%;" />
+            <col style="width: 10%;" />
             <col />
-            <col style="width: 15%;" />
-            <col style="width: 10%;" />
             <col style="width: 10%;" />
             <col style="width: 15%;" />
+            <col style="width: 15%;" />
+            <col style="width: 10%;" />
         </ColGroup>
         <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.IsLocal)">Type</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Mod, object>(x=>x.SteamId ?? string.Empty)">Steam ID</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Author ?? string.Empty)">Author</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.IsEnabled)">Enabled</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.SizeBytes)">Size</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<SteamMod, object>(x=>x.SteamID)">ID</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Author.Name)">Author</MudTableSortLabel></MudTh>
             <MudTh>Actions</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.Status)">Status</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<SteamMod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Type">
-                @if (context.IsLocal)
-                {
-                    <MudIcon Icon="@Icons.Material.Filled.Folder" Title="Local Mod" />
-                }
-                else
-                {
-                    <MudIcon Icon="@Icons.Custom.Brands.Steam" Title="Steam Workshop Mod" />
-                }
-            </MudTd>
-            <MudTd DataLabel="Steam ID">@(context.SteamId ?? "N/A")</MudTd>
+            <MudTd DataLabel=""><MudLink Href="@context.Url" Target="_blank"><MudIcon Icon="@Icons.Custom.Brands.Steam"></MudIcon></MudLink></MudTd>
+            <MudTd DataLabel="ID"><MudLink Href="@context.Url" Target="_blank">@context.SteamID</MudLink></MudTd>
             <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Author">@(context.Author ?? "Unknown")</MudTd>
-            <MudTd DataLabel="Enabled">
-                @if (context.IsEnabled)
-                {
-                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
-                }
-                else
-                {
-                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" />
-                }
-            </MudTd>
-            <MudTd DataLabel="Size">@FormatBytes(context.SizeBytes)</MudTd>
+            <MudTd DataLabel="Author">@context.Author?.Name</MudTd>
             <MudTd>
-                <MudButtonGroup Variant="Variant.Outlined" Color="MudBlazor.Color.Primary">
-                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit">
-                        Edit
-                    </MudButton>
-                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Delete" 
-                               Color="Color.Error" OnClick="() => DeleteMod(context.Id)">
-                        Delete
-                    </MudButton>
+                <MudButtonGroup Variant="Variant.Outlined" Color=" MudBlazor.Color.Primary">
+                    <MudTooltip Text="Get Infos from Steam">
+                        <MudIconButton Color="MudBlazor.Color.Info" OnClick="() => GetModInfos(context)">
+                            @switch (modContext[context.Id].GetStatus)
+                            {
+                                case QueryStatus.Progress:
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                    break;
+                                case QueryStatus.Failed:
+                                    <MudIcon Color="MudBlazor.Color.Error" Icon="@Icons.Material.Filled.Error" />
+                                    break;
+                                default:
+                                    <MudIcon Icon="@Icons.Material.Filled.Update" />
+                                    break;
+                            }
+                        </MudIconButton>
+                    </MudTooltip>
+                    <MudTooltip Text="Update">
+                        <MudIconButton Color="context.Status== ModStatus.UpToDate ? MudBlazor.Color.Success : MudBlazor.Color.Warning" OnClick="args => DownloadMod(context, args)">
+                            @switch (modContext[context.Id].UpdateStatus)
+                            {
+                                case QueryStatus.Progress:
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="modContext[context.Id].UpdateProgress == 0" Value="modContext[context.Id].UpdateProgress" Maximum="100" />
+                                    break;
+                                case QueryStatus.Failed:
+                                    <MudIcon Color="MudBlazor.Color.Error" Icon="@Icons.Material.Filled.Error" />
+                                    break;
+                                default:
+                                    <MudIcon Icon="@Icons.Material.Filled.Download" />
+                                    break;
+                            }
+                        </MudIconButton>
+                    </MudTooltip>
                 </MudButtonGroup>
+
             </MudTd>
+            <MudTd DataLabel="Size">@context.Status</MudTd>
+            <MudTd DataLabel="Size">@context.ActualSize</MudTd>
         </RowTemplate>
         <PagerContent>
             <MudTablePager PageSizeOptions="new int[]{50, 100}" />
         </PagerContent>
     </MudTable>
-    
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" 
-               OnClick="AddSampleMod" Class="mt-4">
-        Add Sample Mod
-    </MudButton>
-}
+
+    <MudTable Items="localMods" Hover="true" SortLabel="Sort By" Elevation="0">
+        <ColGroup>
+            <col style="width: 60px;" />
+            <col />
+            <col />
+            <col style="width: 60px;" />
+        </ColGroup>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.IsLocal)"></MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
+            <MudTh>Path</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<Mod, object>(x=>x.ActualSize)">Size</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel=""><MudIcon Icon="@Icons.Material.Filled.Folder"></MudIcon></MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="URL">@context.Path</MudTd>
+            <MudTd DataLabel="Size">@context.ActualSize</MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[]{50, 100}" />
+        </PagerContent>
+    </MudTable>
+} *@
 
 
 @code {
-    private List<Mod>? mods;
+    // private SteamMod[]? steamMods;
+    // private LocalMod[]? localMods;
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadMods();
-    }
+    // private Dictionary<Guid, ModContext> modContext = new();
 
-    private async Task LoadMods()
-    {
-        try
-        {
-            mods = await ModService.GetAllModsAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error loading mods: {ex.Message}", Severity.Error);
-        }
-    }
+    // async Task GetModInfos(SteamMod mod)
+    // {
+    //     modContext[mod.Id].GetStatus = QueryStatus.Progress;
+    //     mod.Status = ModStatus.Progress;
+    //     try
+    //     {
+    //         await SteamService.GetModInfo(mod.SteamID);
+    //     }
+    //     catch (Exception e)
+    //     {
+    //         modContext[mod.Id].GetStatus = QueryStatus.Failed;
+    //         Snackbar.Add($"{e.GetType().Name} : {e.Message}", Severity.Error);
+    //         StateHasChanged();
+    //         await Task.Delay(5000);
+    //     }
+    //     finally
+    //     {
+    //         modContext[mod.Id].GetStatus = QueryStatus.Success;
+    //         StateHasChanged();
+    //     }
+    // }
 
-    private async Task AddSampleMod()
-    {
-        try
-        {
-            var sampleMod = new Mod
-            {
-                Id = Guid.NewGuid(),
-                Name = $"Sample Mod {DateTime.Now:HH:mm:ss}",
-                Author = "KAST Team",
-                Path = "/sample/path",
-                SteamId = Random.Shared.Next(100000, 999999).ToString(),
-                IsLocal = Random.Shared.NextDouble() > 0.5,
-                SizeBytes = Random.Shared.NextInt64(1024 * 1024, 1024 * 1024 * 500), // 1MB to 500MB
-                IsEnabled = true,
-                Version = "1.0.0",
-                CreatedAt = DateTime.UtcNow
-            };
 
-            await ModService.SaveModAsync(sampleMod);
-            await LoadMods();
-            Snackbar.Add("Sample mod added successfully!", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error adding sample mod: {ex.Message}", Severity.Error);
-        }
-    }
+    // async Task DownloadMod(SteamMod mod, MouseEventArgs args)
+    // {
+    //     modContext[mod.Id].UpdateStatus = QueryStatus.Progress;
+    //     StateHasChanged();
+    //     try
+    //     {
+    //         modContext[mod.Id].UpdateProgress = 0;
+    //         StateHasChanged();
 
-    private async Task DeleteMod(Guid modId)
-    {
-        try
-        {
-            if (await ModService.DeleteModAsync(modId))
-            {
-                await LoadMods();
-                Snackbar.Add("Mod deleted successfully!", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("Failed to delete mod.", Severity.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error deleting mod: {ex.Message}", Severity.Error);
-        }
-    }
+    //         await Task.Delay(2000);
 
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        int counter = 0;
-        decimal number = bytes;
-        
-        while (Math.Round(number / 1024) >= 1)
-        {
-            number /= 1024;
-            counter++;
-        }
-        
-        return $"{number:n1} {suffixes[counter]}";
-    }
+    //         for (int i = 0; i < 100; i++)
+    //         {
+    //             await Task.Delay(100);
+    //             modContext[mod.Id].UpdateProgress = i;
+    //             StateHasChanged();
+    //         }
+
+    //         mod.Status = ModStatus.UpToDate;
+    //         await ModsService.Save();
+
+    //     }
+    //     catch (Exception e)
+    //     {
+    //         modContext[mod.Id].UpdateStatus = QueryStatus.Failed;
+    //         mod.Status = ModStatus.Error;
+    //         await ModsService.Save();
+    //         Snackbar.Add($"{e.GetType().Name} : {e.Message}", Severity.Error);
+    //         StateHasChanged();
+    //         await Task.Delay(5000);
+    //     }
+    //     finally
+    //     {
+    //         modContext[mod.Id].UpdateStatus = QueryStatus.Success;
+    //         StateHasChanged();
+    //     }
+    // }
+
+    // protected override async Task OnInitializedAsync()
+    // {
+    //     steamMods = await ModsService.GetSteamModsAsync();
+    //     localMods = await ModsService.GetLocalModsAsync();
+    //     modContext.Clear();
+    //     foreach (var mod in steamMods)
+    //     { modContext.Add(mod.Id, new ModContext()); }
+    // }
 }
