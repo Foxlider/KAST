@@ -1,4 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@using KAST.Core.Services
+@inject ThemeService ThemeService
+@implements IDisposable
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
@@ -36,7 +39,7 @@
     private bool _isDarkMode = false;
     private MudTheme? _theme = null;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _theme = new()
             {
@@ -44,6 +47,13 @@
                 PaletteDark = _darkPalette,
                 LayoutProperties = new LayoutProperties() { DefaultBorderRadius = "0" }
             };
+
+        // Initialize theme service and sync with its state
+        await ThemeService.InitializeAsync();
+        _isDarkMode = ThemeService.IsDarkMode;
+        
+        // Subscribe to theme changes
+        ThemeService.OnThemeChanged += OnThemeChanged;
     }
 
     private void DrawerToggle()
@@ -51,9 +61,20 @@
         _drawerOpen = !_drawerOpen;
     }
 
-    private void DarkModeToggle()
+    private async Task DarkModeToggle()
     {
-        _isDarkMode = !_isDarkMode;
+        await ThemeService.ToggleDarkModeAsync();
+    }
+
+    private void OnThemeChanged(bool isDarkMode)
+    {
+        _isDarkMode = isDarkMode;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ThemeService.OnThemeChanged -= OnThemeChanged;
     }
 
     private readonly PaletteLight _lightPalette = new() {};
