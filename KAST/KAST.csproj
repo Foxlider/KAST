@@ -7,6 +7,10 @@
     <UserSecretsId>930b9a04-f06a-4052-9bae-75bf7da13f28</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.9">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="MudBlazor" Version="8.*" />
     <PackageReference Include="OpenTelemetry" Version="1.11.2" />
     <PackageReference Include="OpenTelemetry.Api" Version="1.11.2" />
