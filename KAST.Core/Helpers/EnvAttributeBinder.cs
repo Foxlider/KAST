@@ -11,13 +11,16 @@ namespace KAST.Core.Helpers
         /// based on the EnvVariableAttribute applied to those properties.
         /// Supports string, primitive types, nullable primitives and enums.
         /// </summary>
-        public static void ApplyEnvironmentVariables<T>(T instance) where T : class
+        /// <returns>The number of properties that were overridden by environment variables</returns>
+        public static int ApplyEnvironmentVariables<T>(T instance) where T : class
         {
             ArgumentNullException.ThrowIfNull(instance);
 
             var type = instance.GetType();
             var props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
                             .Where(p => p.CanWrite);
+
+            var overrideCount = 0;
 
             foreach (var prop in props)
             {
@@ -52,12 +55,15 @@ namespace KAST.Core.Helpers
                     }
 
                     prop.SetValue(instance, converted);
+                    overrideCount++;
                 }
                 catch
                 {
                     // swallow conversion errors — optionally log or rethrow in your app
                 }
             }
+
+            return overrideCount;
         }
     }
 }

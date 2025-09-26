@@ -1,4 +1,5 @@
 ﻿using KAST.Core.Helpers;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -25,11 +26,16 @@ namespace KAST.Core.Services
     }
 
 
-    public class ServerInfoService(ITracingNamingProvider namingProvider) : TracedServiceBase(namingProvider), ISystemMetricsService
+    public class ServerInfoService : TracedServiceBase, ISystemMetricsService
     {
         private readonly Lock _initLock = new();
         private Task? _initTask;
         private volatile bool _initialized;
+
+        public ServerInfoService(ITracingNamingProvider namingProvider, ILogger<ServerInfoService> logger) 
+            : base(namingProvider, logger)
+        {
+        }
 
         /// <summary>
         /// Gets the name of the machine on which the application is running.
@@ -80,12 +86,23 @@ namespace KAST.Core.Services
         /// <exception cref="PlatformNotSupportedException">Thrown if the operating system is not Windows or Linux.</exception>
         public double GetCpuUsage()
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return GetCpuUsageWindows();
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                return GetCpuUsageLinux();
+            return ExecuteWithTelemetry("ServerInfoService.GetCpuUsage", (activity) =>
+            {
+                activity?.SetTag("system.platform", Platform.ToString());
+                
+                double result;
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    result = GetCpuUsageWindows();
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    result = GetCpuUsageLinux();
+                else
+                    throw new PlatformNotSupportedException("Only Windows and Linux are supported.");
 
-            throw new PlatformNotSupportedException("Only Windows and Linux are supported.");
+                activity?.SetTag("cpu.usage", result);
+                activity?.SetTag("cpu.isValid", !double.IsNaN(result));
+                
+                return result;
+            });
         }
 
         /// <summary>
@@ -98,12 +115,23 @@ namespace KAST.Core.Services
         /// <exception cref="PlatformNotSupportedException">Thrown if the method is called on an unsupported platform.</exception>
         public double GetMemUsage()
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return GetMemUsageWindows();
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                return GetMemUsageLinux();
+            return ExecuteWithTelemetry("ServerInfoService.GetMemUsage", (activity) =>
+            {
+                activity?.SetTag("system.platform", Platform.ToString());
+                
+                double result;
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    result = GetMemUsageWindows();
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    result = GetMemUsageLinux();
+                else
+                    throw new PlatformNotSupportedException("Only Windows and Linux are supported.");
 
-            throw new PlatformNotSupportedException("Only Windows and Linux are supported.");
+                activity?.SetTag("memory.usage", result);
+                activity?.SetTag("memory.isValid", !double.IsNaN(result));
+                
+                return result;
+            });
         }
 
         /// <summary>
