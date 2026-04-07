@@ -3,10 +3,11 @@ using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService) : IModService
+public class ModService(KastDbContext db, ISteamService steamService, ILogger<ModService> logger) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -32,7 +33,8 @@ public class ModService(KastDbContext db, ISteamService steamService) : IModServ
             Description = info?.Description,
             ThumbnailUrl = info?.ThumbnailUrl,
             Author = info?.Author,
-            SizeBytes = info?.SizeBytes ?? 0,
+            SizeBytes = 0,
+            ExpectedSizeBytes = info?.SizeBytes ?? 0,
             Source = ModSource.SteamWorkshop,
             Status = ModStatus.NotInstalled,
             LastUpdatedSteam = info?.LastUpdated
@@ -65,6 +67,21 @@ public class ModService(KastDbContext db, ISteamService steamService) : IModServ
         var mod = await db.Mods.FindAsync([id], ct);
         if (mod != null)
         {
+            // Delete mod files from disk
+            if (!string.IsNullOrEmpty(mod.LocalPath) && Directory.Exists(mod.LocalPath))
+            {
+                try
+                {
+                    Directory.Delete(mod.LocalPath, recursive: true);
+                    logger.LogInformation("Deleted mod files at {Path}", mod.LocalPath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to delete mod files at {Path}", mod.LocalPath);
+                }
+            }
+
+            // DB cascade delete automatically removes ServerInstanceMod join rows
             db.Mods.Remove(mod);
             await db.SaveChangesAsync(ct);
         }
@@ -97,11 +114,14 @@ public class ModService(KastDbContext db, ISteamService steamService) : IModServ
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
+            mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Download failed for mod {Id} (WorkshopId={WorkshopId})", id, mod.WorkshopId);
             mod.Status = ModStatus.Error;
+            mod.SizeBytes = 0;
             throw;
         }
         finally
@@ -122,11 +142,14 @@ public class ModService(KastDbContext db, ISteamService steamService) : IModServ
         {
             await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, null, ct);
             mod.Status = ModStatus.Installed;
+            mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Update failed for mod {Id} (WorkshopId={WorkshopId})", id, mod.WorkshopId);
             mod.Status = ModStatus.Error;
+            mod.SizeBytes = 0;
             throw;
         }
         finally
@@ -152,5 +175,21 @@ public class ModService(KastDbContext db, ISteamService steamService) : IModServ
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static long GetSizeOnDisk(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                return new FileInfo(path).Length;
+
+            if (Directory.Exists(path))
+                return new DirectoryInfo(path)
+                    .EnumerateFiles("*", SearchOption.AllDirectories)
+                    .Sum(f => f.Length);
+        }
+        catch { /* best effort */ }
+        return 0;
     }
 }
