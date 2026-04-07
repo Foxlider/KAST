@@ -38,6 +38,23 @@ var app = builder.Build();
 // Auto-migrate database and reset any mods stuck in an in-progress state from a previous crash
 using (var scope = app.Services.CreateScope())
 {
+    // Ensure data directories exist (for dev .KAST_DATA/ or production /app/data/)
+    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var modsDir = config["Kast:ModsDirectory"] ?? "./mods";
+    var serversDir = config["Kast:ServersDirectory"] ?? "./servers";
+    Directory.CreateDirectory(modsDir);
+    Directory.CreateDirectory(serversDir);
+
+    // Ensure the SQLite directory exists
+    var cs = config.GetConnectionString("Default") ?? "";
+    var dbPath = cs.Replace("Data Source=", "");
+    if (!string.IsNullOrEmpty(dbPath))
+    {
+        var dbDir = Path.GetDirectoryName(dbPath);
+        if (!string.IsNullOrEmpty(dbDir))
+            Directory.CreateDirectory(dbDir);
+    }
+
     var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
     await db.Database.MigrateAsync();
 

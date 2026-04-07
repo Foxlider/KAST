@@ -3,6 +3,9 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# KAST local dev data
+.KAST_DATA/
+
 # dotenv files
 .env
 
