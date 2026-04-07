@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Visual Studio Code files for those working on multiple tools
+.vscode
