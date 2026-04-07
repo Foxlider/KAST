@@ -1,4 +1,5 @@
 using KAST.Core.Enums;
+using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService, ILogger<ModService> logger) : IModService
+public class ModService(KastDbContext db, ISteamService steamService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -101,12 +102,21 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
 
         mod.Status = ModStatus.Downloading;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
+
+        // Wrap the user's progress to also broadcast over SignalR
+        var broadcastProgress = new Progress<double>(async pct =>
+        {
+            progress?.Report(pct);
+            await broadcaster.BroadcastDownloadProgressAsync(
+                new ModDownloadProgressEvent(mod.Id, mod.WorkshopId, pct, (long)(pct / 100.0 * mod.ExpectedSizeBytes), mod.ExpectedSizeBytes));
+        });
 
         try
         {
             var destPath = Path.Combine("mods", mod.WorkshopId.ToString());
 
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, progress, ct);
+            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
@@ -123,6 +133,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
         finally
         {
             await db.SaveChangesAsync(ct);
+            await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
         }
     }
 
@@ -133,10 +144,18 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
 
         mod.Status = ModStatus.Updating;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
+
+        var broadcastProgress = new Progress<double>(async pct =>
+        {
+            progress?.Report(pct);
+            await broadcaster.BroadcastDownloadProgressAsync(
+                new ModDownloadProgressEvent(mod.Id, mod.WorkshopId, pct, (long)(pct / 100.0 * mod.ExpectedSizeBytes), mod.ExpectedSizeBytes));
+        });
 
         try
         {
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, progress, ct);
+            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, broadcastProgress, ct);
             mod.Status = ModStatus.Installed;
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
@@ -151,6 +170,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
         finally
         {
             await db.SaveChangesAsync(ct);
+            await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
         }
     }
 
