@@ -473,17 +473,173 @@ public class SteamClientService : ISteamService, IDisposable
         progress?.Report(100);
     }
 
-    public Task DownloadAppAsync(
+    public async Task DownloadAppAsync(
         uint appId, string destinationPath,
         IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        if (!_isConnected)
+            throw new InvalidOperationException("Not connected to Steam");
         if (!IsAuthenticated)
             throw new InvalidOperationException("Must be signed in with a Steam account to download app content");
 
-        _logger.LogWarning("App depot downloading for AppId {AppId} is not yet implemented", appId);
+        _logger.LogInformation("Starting app download for AppId {AppId} → {Path}", appId, destinationPath);
+        progress?.Report(0);
+
+        // 1. Get product info to discover depots and their manifests
+        var picsRequest = new SteamApps.PICSRequest(appId);
+        var productInfo = await _steamApps.PICSGetProductInfo(new[] { picsRequest }, Enumerable.Empty<SteamApps.PICSRequest>());
+        if (productInfo.Failed || !productInfo.Results?.Any() == true)
+            throw new InvalidOperationException($"Failed to get product info for AppId {appId}");
+
+        var appInfo = productInfo.Results!
+            .SelectMany(r => r.Apps)
+            .FirstOrDefault(a => a.Key == appId).Value;
+
+        if (appInfo == null)
+            throw new InvalidOperationException($"AppId {appId} not found in PICS response");
+
+        var depots = appInfo.KeyValues["depots"];
+        if (depots == KeyValue.Invalid)
+            throw new InvalidOperationException($"No depots found for AppId {appId}");
+
+        // 2. Collect all relevant depots (numeric keys only, skip branches/etc.)
+        var depotManifests = new List<(uint DepotId, ulong ManifestId)>();
+
+        foreach (var depot in depots.Children)
+        {
+            if (!uint.TryParse(depot.Name, out var depotId))
+                continue;
+
+            // Filter: only download depots for the current OS
+            var config = depot["config"];
+            if (config != KeyValue.Invalid)
+            {
+                var oslist = config["oslist"].AsString();
+                if (!string.IsNullOrEmpty(oslist))
+                {
+                    var currentOs = OperatingSystem.IsWindows() ? "windows" : "linux";
+                    if (!oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
+                        continue;
+                    }
+                }
+            }
+
+            // Get manifest ID from the "public" branch
+            var depotManifestsKv = depot["manifests"];
+            if (depotManifestsKv == KeyValue.Invalid) continue;
+
+            var publicManifest = depotManifestsKv["public"];
+            if (publicManifest == KeyValue.Invalid) continue;
+
+            // SteamKit2 can store manifest as the value directly or under "gid"
+            var manifestIdStr = publicManifest["gid"].AsString() ?? publicManifest.AsString();
+            if (string.IsNullOrEmpty(manifestIdStr) || !ulong.TryParse(manifestIdStr, out var manifestId))
+                continue;
+
+            depotManifests.Add(((uint)depotId, (ulong)manifestId));
+            _logger.LogInformation("Depot {DepotId}: ManifestId={ManifestId}", depotId, manifestId);
+        }
+
+        if (depotManifests.Count == 0)
+            throw new InvalidOperationException($"No downloadable depots found for AppId {appId}");
+
+        // 3. Download each depot
+        var servers = await GetCdnServersAsync(ct);
         Directory.CreateDirectory(destinationPath);
+
+        long totalDownloaded = 0;
+        long totalSize = 0;
+
+        // First pass: collect total size from all manifests
+        var manifests = new List<(uint DepotId, byte[]? DepotKey, DepotManifest Manifest)>();
+
+        foreach (var (depotId, manifestId) in depotManifests)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Get depot key
+            byte[]? depotKey = null;
+            var depotKeyResult = await _steamApps.GetDepotDecryptionKey(depotId, appId);
+            if (depotKeyResult.Result == EResult.OK)
+                depotKey = depotKeyResult.DepotKey;
+            else
+                _logger.LogWarning("Could not get depot key for {DepotId}: {Result}", depotId, depotKeyResult.Result);
+
+            // Get manifest request code and download manifest
+            var manifestRequestCode = await _steamContent.GetManifestRequestCode(depotId, appId, manifestId);
+            var server = servers.First();
+
+            DepotManifest manifest;
+            try
+            {
+                manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "CDN download manifest failed for depot {DepotId}, trying next server", depotId);
+                if (servers.Length > 1)
+                {
+                    server = servers[1];
+                    manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
+                }
+                else throw;
+            }
+
+            if (manifest.FilenamesEncrypted && depotKey != null)
+                manifest.DecryptFilenames(depotKey);
+
+            manifests.Add((depotId, depotKey, manifest));
+            totalSize += (long)(manifest.TotalUncompressedSize);
+        }
+
+        _logger.LogInformation("Total download size: {Size} bytes across {Count} depots",
+            totalSize, manifests.Count);
+
+        // Second pass: download files from each depot
+        foreach (var (depotId, depotKey, manifest) in manifests)
+        {
+            var files = manifest.Files?
+                .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
+                .ToList() ?? [];
+
+            var server = servers.First();
+
+            foreach (var file in files)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+                var filePath = Path.Combine(destinationPath, relativePath);
+                var dir = Path.GetDirectoryName(filePath);
+                if (dir != null) Directory.CreateDirectory(dir);
+
+                await using var fs = File.Create(filePath);
+                if (file.TotalSize > 0)
+                    fs.SetLength((long)file.TotalSize);
+
+                foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var chunkBuffer = new byte[chunk.UncompressedLength];
+                    var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, chunkBuffer, depotKey);
+
+                    fs.Position = (long)chunk.Offset;
+                    await fs.WriteAsync(chunkBuffer.AsMemory(0, written), ct);
+
+                    totalDownloaded += chunk.UncompressedLength;
+                    if (totalSize > 0)
+                        progress?.Report((double)totalDownloaded / totalSize * 100.0);
+                }
+            }
+
+            _logger.LogInformation("Depot {DepotId} download complete ({FileCount} files)", depotId, files.Count);
+        }
+
+        _logger.LogInformation("App {AppId} download complete → {Path}", appId, destinationPath);
         progress?.Report(100);
-        return Task.CompletedTask;
     }
 
     // ───── CDN Server Discovery ─────
