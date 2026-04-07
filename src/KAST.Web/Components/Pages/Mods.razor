@@ -44,9 +44,12 @@ else
         <TemplateColumn Title="Status">
             @if (context.Status is ModStatus.Downloading or ModStatus.Updating)
             {
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <FluentProgressRing Style="width: 16px; height: 16px;" />
-                    <span>@context.Status</span>
+                <div style="display: flex; flex-direction: column; gap: 2px; min-width: 100px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 12px;">@context.Status</span>
+                        <span style="font-size: 11px; color: var(--neutral-foreground-hint, #9e9e9e);">@(GetModProgress(context.Id).ToString("F0"))%</span>
+                    </div>
+                    <FluentProgress Min="0" Max="100" Value="@((int)GetModProgress(context.Id))" />
                 </div>
             }
             else
@@ -199,6 +202,10 @@ else
     private string _workshopIdInput = "";
     private string _localModName = "";
     private string _localModPath = "";
+    private readonly Dictionary<int, double> _downloadProgress = new();
+
+    private double GetModProgress(int modId) =>
+        _downloadProgress.TryGetValue(modId, out var p) ? p : 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -249,21 +256,30 @@ else
     {
         try
         {
-            // Immediately update UI to show progress
-            mod.Status = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error
-                ? ModStatus.Updating : ModStatus.Downloading;
+            // Immediately update UI to show progress bar
+            var isUpdate = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error;
+            mod.Status = isUpdate ? ModStatus.Updating : ModStatus.Downloading;
+            _downloadProgress[mod.Id] = 0;
             StateHasChanged();
 
-            if (mod.Status is ModStatus.Updating)
-                await ModService.UpdateModFilesAsync(mod.Id);
-            else
-                await ModService.DownloadModAsync(mod.Id);
+            var progress = new Progress<double>(p =>
+            {
+                _downloadProgress[mod.Id] = p;
+                InvokeAsync(StateHasChanged);
+            });
 
+            if (isUpdate)
+                await ModService.UpdateModFilesAsync(mod.Id, progress);
+            else
+                await ModService.DownloadModAsync(mod.Id, progress);
+
+            _downloadProgress.Remove(mod.Id);
             await RefreshMods();
             ToastService.ShowSuccess($"Downloaded {mod.Name}");
         }
         catch (Exception ex)
         {
+            _downloadProgress.Remove(mod.Id);
             ToastService.ShowError($"Download failed: {ex.Message}");
             await RefreshMods();
         }

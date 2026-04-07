@@ -43,14 +43,14 @@ public class ModsController(IModService modService) : ControllerBase
     [HttpPost("{id:int}/download")]
     public async Task<ActionResult> Download(int id, CancellationToken ct)
     {
-        await modService.DownloadModAsync(id, ct);
+        await modService.DownloadModAsync(id, null, ct);
         return Ok();
     }
 
     [HttpPost("{id:int}/update")]
     public async Task<ActionResult> Update(int id, CancellationToken ct)
     {
-        await modService.UpdateModFilesAsync(id, ct);
+        await modService.UpdateModFilesAsync(id, null, ct);
         return Ok();
     }
 

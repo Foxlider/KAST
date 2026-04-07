@@ -94,7 +94,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
         return mod;
     }
 
-    public async Task DownloadModAsync(int id, CancellationToken ct = default)
+    public async Task DownloadModAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         var mod = await db.Mods.FindAsync([id], ct)
             ?? throw new InvalidOperationException($"Mod {id} not found");
@@ -105,10 +105,6 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
         try
         {
             var destPath = Path.Combine("mods", mod.WorkshopId.ToString());
-            var progress = new Progress<double>(p =>
-            {
-                // Progress will be reported via SignalR in the hub
-            });
 
             await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, progress, ct);
 
@@ -130,7 +126,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
         }
     }
 
-    public async Task UpdateModFilesAsync(int id, CancellationToken ct = default)
+    public async Task UpdateModFilesAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         var mod = await db.Mods.FindAsync([id], ct)
             ?? throw new InvalidOperationException($"Mod {id} not found");
@@ -140,7 +136,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ILogger<Mo
 
         try
         {
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, null, ct);
+            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, progress, ct);
             mod.Status = ModStatus.Installed;
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;

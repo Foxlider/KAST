@@ -4,33 +4,46 @@
 @using KAST.Core.Models
 @using Microsoft.AspNetCore.SignalR.Client
 @using Microsoft.FluentUI.AspNetCore.Components
+@using System.Text.Json
 @implements IAsyncDisposable
 @inject IMonitoringService MonitoringService
 @inject IServerInstanceService ServerService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>KAST — Monitoring</PageTitle>
 
 <h1>Monitoring</h1>
 
 <h2 style="margin-top: 24px;">Host</h2>
-<div class="kast-tiles">
+
+@* ── Current values ── *@
+<div class="kast-tiles" style="margin-bottom: 16px;">
     <div class="kast-tile">
         <div class="kast-tile-title">CPU</div>
         <div class="kast-tile-value">@_hostMetrics.CpuUsagePercent.ToString("F1")%</div>
-        <FluentProgress Value="@((int)_hostMetrics.CpuUsagePercent)" />
     </div>
     <div class="kast-tile">
         <div class="kast-tile-title">Memory</div>
         <div class="kast-tile-value">@_hostMetrics.MemoryUsagePercent.ToString("F1")%</div>
         <div class="kast-tile-subtitle">@FormatBytes(_hostMetrics.UsedMemoryBytes) / @FormatBytes(_hostMetrics.TotalMemoryBytes)</div>
-        <FluentProgress Value="@((int)_hostMetrics.MemoryUsagePercent)" />
     </div>
     <div class="kast-tile">
         <div class="kast-tile-title">Disk</div>
         <div class="kast-tile-value">@_hostMetrics.DiskUsagePercent.ToString("F1")%</div>
         <div class="kast-tile-subtitle">@FormatBytes(_hostMetrics.UsedDiskBytes) / @FormatBytes(_hostMetrics.TotalDiskBytes)</div>
-        <FluentProgress Value="@((int)_hostMetrics.DiskUsagePercent)" />
+    </div>
+</div>
+
+@* ── Host charts ── *@
+<div class="kast-chart-row">
+    <div class="kast-card kast-chart-card">
+        <h3>CPU Usage</h3>
+        <canvas id="chart-host-cpu"></canvas>
+    </div>
+    <div class="kast-card kast-chart-card">
+        <h3>Memory Usage</h3>
+        <canvas id="chart-host-mem"></canvas>
     </div>
 </div>
 
@@ -43,63 +56,58 @@
 }
 else
 {
-    <div class="kast-tiles">
-        @foreach (var instance in _instances)
-        {
-            var metrics = _instanceMetrics.GetValueOrDefault(instance.Id);
-            <div class="kast-tile">
-                <div>
-                    <div class="kast-tile-title">
-                        <span class="status-dot @instance.Status.ToString().ToLowerInvariant()"></span>
-                        @instance.Name
-                    </div>
-                    <div class="kast-tile-subtitle" style="margin-top: 8px;">Port @instance.Port</div>
-                </div>
-                @if (metrics != null)
-                {
-                    <div style="margin-top: 12px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                            <span>CPU</span>
-                            <span>@metrics.CpuUsagePercent.ToString("F1")%</span>
-                        </div>
-                        <FluentProgress Value="@((int)metrics.CpuUsagePercent)" Style="margin-top: 4px;" />
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px;">
-                            <span>Memory</span>
-                            <span>@FormatBytes(metrics.MemoryUsageBytes)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px;">
-                            <span>Players</span>
-                            <span>@metrics.PlayerCount</span>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <div style="color: var(--kast-text-muted); font-size: 13px; margin-top: 12px;">
-                        No metrics available
-                    </div>
-                }
+    @foreach (var instance in _instances)
+    {
+        var metrics = _instanceMetrics.GetValueOrDefault(instance.Id);
+        <h3 style="margin-top: 20px;">
+            <span class="status-dot @instance.Status.ToString().ToLowerInvariant()"></span>
+            @instance.Name
+            <span style="font-size: 13px; font-weight: 400; color: var(--kast-text-muted); margin-left: 8px;">Port @instance.Port</span>
+            @if (metrics != null)
+            {
+                <span style="font-size: 13px; font-weight: 400; color: var(--kast-text-muted); margin-left: 12px;">
+                    Players: @metrics.PlayerCount
+                </span>
+            }
+        </h3>
+        <div class="kast-chart-row">
+            <div class="kast-card kast-chart-card">
+                <h4>CPU</h4>
+                <canvas id="chart-inst-@(instance.Id)-cpu"></canvas>
             </div>
-        }
-    </div>
+            <div class="kast-card kast-chart-card">
+                <h4>Memory</h4>
+                <canvas id="chart-inst-@(instance.Id)-mem"></canvas>
+            </div>
+        </div>
+    }
 }
 
 @code {
+    // ── State ──
     private HostMetrics _hostMetrics = new();
     private IReadOnlyList<ServerInstance> _instances = [];
     private Dictionary<int, InstanceMetrics> _instanceMetrics = new();
     private HubConnection? _hubConnection;
     private CancellationTokenSource? _cts;
+    private bool _chartsInitialized;
+
+    // ── History ring buffers (2 h @ 5 s interval = 1 440 points) ──
+    private const int MaxPoints = 1_440;
+    private const int SampleIntervalSeconds = 5;
+    private readonly List<string> _hostLabels = new(MaxPoints);
+    private readonly List<double> _hostCpu = new(MaxPoints);
+    private readonly List<double> _hostMem = new(MaxPoints);
+    private readonly Dictionary<int, (List<double> Cpu, List<double> Mem)> _instanceHistory = new();
 
     protected override async Task OnInitializedAsync()
     {
         await RefreshData();
+        PushHostSample();
 
-        // Set up periodic refresh using PeriodicTimer on the Blazor sync context
         _cts = new CancellationTokenSource();
         _ = RunPeriodicRefresh(_cts.Token);
 
-        // Set up SignalR connection
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
             .WithAutomaticReconnect()
@@ -110,15 +118,22 @@ else
             await _hubConnection.StartAsync();
             await _hubConnection.InvokeAsync("SubscribeToHost");
         }
-        catch
+        catch { /* SignalR may not be available */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
         {
-            // SignalR connection may fail in some environments
+            await InitChartsAsync();
+            _chartsInitialized = true;
         }
     }
 
+    // ── Periodic refresh ──
     private async Task RunPeriodicRefresh(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(SampleIntervalSeconds));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
@@ -126,7 +141,12 @@ else
                 await InvokeAsync(async () =>
                 {
                     await RefreshData();
+                    PushHostSample();
+                    PushInstanceSamples();
                     StateHasChanged();
+
+                    if (_chartsInitialized)
+                        await UpdateChartsAsync();
                 });
             }
         }
@@ -139,14 +159,125 @@ else
         {
             _hostMetrics = await MonitoringService.GetHostMetricsAsync();
             _instances = await ServerService.GetAllInstancesAsync();
-
             var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync();
             _instanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
         }
-        catch
+        catch { /* Monitoring may not be available */ }
+    }
+
+    // ── History ──
+    private void PushHostSample()
+    {
+        var label = DateTime.Now.ToString("HH:mm:ss");
+        if (_hostLabels.Count >= MaxPoints) { _hostLabels.RemoveAt(0); _hostCpu.RemoveAt(0); _hostMem.RemoveAt(0); }
+        _hostLabels.Add(label);
+        _hostCpu.Add(Math.Round(_hostMetrics.CpuUsagePercent, 1));
+        _hostMem.Add(Math.Round(_hostMetrics.MemoryUsagePercent, 1));
+    }
+
+    private void PushInstanceSamples()
+    {
+        foreach (var (id, metrics) in _instanceMetrics)
         {
-            // Monitoring may not be available
+            if (!_instanceHistory.TryGetValue(id, out var hist))
+            {
+                hist = (new List<double>(MaxPoints), new List<double>(MaxPoints));
+                _instanceHistory[id] = hist;
+            }
+            if (hist.Cpu.Count >= MaxPoints) { hist.Cpu.RemoveAt(0); hist.Mem.RemoveAt(0); }
+            hist.Cpu.Add(Math.Round(metrics.CpuUsagePercent, 1));
+            hist.Mem.Add(Math.Round(metrics.MemoryUsageBytes / 1_048_576.0, 1)); // MB
         }
+    }
+
+    // ── Chart.js interop ──
+    private async Task InitChartsAsync()
+    {
+        await CreateLineChart("chart-host-cpu", "CPU %", "#ff6b35", 100);
+        await CreateLineChart("chart-host-mem", "Memory %", "#4fc3f7", 100);
+
+        foreach (var instance in _instances)
+        {
+            await CreateLineChart($"chart-inst-{instance.Id}-cpu", "CPU %", "#ff6b35", 100);
+            await CreateLineChart($"chart-inst-{instance.Id}-mem", "Memory (MB)", "#4fc3f7", null);
+        }
+
+        await UpdateChartsAsync();
+    }
+
+    private async Task CreateLineChart(string canvasId, string label, string color, int? maxY)
+    {
+        var config = new
+        {
+            type = "line",
+            data = new
+            {
+                labels = Array.Empty<string>(),
+                datasets = new[]
+                {
+                    new
+                    {
+                        label,
+                        data = Array.Empty<double>(),
+                        borderColor = color,
+                        backgroundColor = color + "1A",
+                        borderWidth = 1.5,
+                        pointRadius = 0,
+                        fill = true,
+                        tension = 0.3
+                    }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                animation = false,
+                interaction = new { intersect = false, mode = "index" },
+                plugins = new
+                {
+                    legend = new { display = false },
+                    tooltip = new { enabled = true }
+                },
+                scales = new
+                {
+                    x = new
+                    {
+                        ticks = new { maxTicksLimit = 12, color = "#9e9e9e", font = new { size = 10 } },
+                        grid = new { color = "#333" }
+                    },
+                    y = new
+                    {
+                        min = 0,
+                        max = maxY,
+                        ticks = new { color = "#9e9e9e", font = new { size = 10 } },
+                        grid = new { color = "#333" }
+                    }
+                }
+            }
+        };
+
+        await JS.InvokeVoidAsync("kastCharts.create", canvasId,
+            JsonSerializer.Deserialize<object>(JsonSerializer.Serialize(config)));
+    }
+
+    private async Task UpdateChartsAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-cpu", _hostLabels, new[] { _hostCpu });
+            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-mem", _hostLabels, new[] { _hostMem });
+
+            foreach (var instance in _instances)
+            {
+                if (_instanceHistory.TryGetValue(instance.Id, out var hist))
+                {
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance.Id}-cpu", _hostLabels, new[] { hist.Cpu });
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance.Id}-mem", _hostLabels, new[] { hist.Mem });
+                }
+            }
+        }
+        catch (JSDisconnectedException) { }
     }
 
     private static string FormatBytes(long bytes)
@@ -162,6 +293,20 @@ else
     {
         _cts?.Cancel();
         _cts?.Dispose();
+
+        // Destroy charts
+        try
+        {
+            await JS.InvokeVoidAsync("kastCharts.destroy", "chart-host-cpu");
+            await JS.InvokeVoidAsync("kastCharts.destroy", "chart-host-mem");
+            foreach (var instance in _instances)
+            {
+                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance.Id}-cpu");
+                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance.Id}-mem");
+            }
+        }
+        catch (JSDisconnectedException) { }
+
         if (_hubConnection != null) await _hubConnection.DisposeAsync();
     }
 }

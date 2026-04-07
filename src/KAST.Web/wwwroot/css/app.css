@@ -429,6 +429,31 @@ h1, h2, h3, h4 {
     color: var(--neutral-foreground-hint, #9e9e9e);
 }
 
+/* Chart layout */
+.kast-chart-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.kast-chart-card {
+    padding: 16px;
+    height: 260px;
+}
+
+.kast-chart-card h3,
+.kast-chart-card h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.kast-chart-card canvas {
+    width: 100% !important;
+    height: calc(100% - 30px) !important;
+}
+
 /* Status indicators */
 .status-dot {
     display: inline-block;
