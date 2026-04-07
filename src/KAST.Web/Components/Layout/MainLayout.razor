@@ -2,10 +2,11 @@
 @using KAST.Core.Interfaces
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject ISteamService SteamService
+@inject ISettingsService SettingsService
 @inject NavigationManager Navigation
 @implements IDisposable
 
-<FluentDesignTheme Mode="DesignThemeModes.Dark"
+<FluentDesignTheme @bind-Mode="_themeMode"
                    CustomColor="#ff6b35"
                    StorageName="kast-theme">
     <div class="kast-layout">
@@ -25,7 +26,20 @@
                 </svg>
                 <span class="kast-header-subtitle">Keelah's Arma Server Tool</span>
             </div>
-            <div class="kast-user-tile-wrapper" style="margin-left: auto; position: relative;">
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                <FluentButton Appearance="Appearance.Stealth"
+                              Title="@(_themeMode == DesignThemeModes.Dark ? "Switch to light mode" : "Switch to dark mode")"
+                              OnClick="ToggleTheme">
+                    @if (_themeMode == DesignThemeModes.Dark)
+                    {
+                        <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.WeatherSunny())" Color="Color.Neutral" />
+                    }
+                    else
+                    {
+                        <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.WeatherMoon())" Color="Color.Neutral" />
+                    }
+                </FluentButton>
+                <div class="kast-user-tile-wrapper" style="position: relative;">
                 <button class="kast-user-tile" @onclick="ToggleUserPanel" @onclick:stopPropagation="true">
                     @if (SteamService.IsAuthenticated && !string.IsNullOrEmpty(SteamService.Profile?.AvatarUrl))
                     {
@@ -109,6 +123,7 @@
                     </div>
                 }
             </div>
+            </div>
         </header>
 
         <div class="kast-body">
@@ -141,10 +156,24 @@
 
 @code {
     private bool _showUserPanel;
+    private DesignThemeModes _themeMode = DesignThemeModes.Dark;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         SteamService.AuthStateChanged += OnAuthStateChanged;
+
+        // Load theme from DB settings
+        try
+        {
+            var settings = await SettingsService.GetSettingsAsync();
+            _themeMode = settings.ThemeMode?.Equals("light", StringComparison.OrdinalIgnoreCase) == true
+                ? DesignThemeModes.Light
+                : DesignThemeModes.Dark;
+        }
+        catch
+        {
+            // Default to dark on error
+        }
     }
 
     private void OnAuthStateChanged()
@@ -173,6 +202,24 @@
     {
         _showUserPanel = false;
         Navigation.NavigateTo("/settings");
+    }
+
+    private async Task ToggleTheme()
+    {
+        _themeMode = _themeMode == DesignThemeModes.Dark
+            ? DesignThemeModes.Light
+            : DesignThemeModes.Dark;
+
+        try
+        {
+            var settings = await SettingsService.GetSettingsAsync();
+            settings.ThemeMode = _themeMode == DesignThemeModes.Light ? "light" : "dark";
+            await SettingsService.UpdateSettingsAsync(settings);
+        }
+        catch
+        {
+            // Persist best-effort
+        }
     }
 
     public void Dispose()
