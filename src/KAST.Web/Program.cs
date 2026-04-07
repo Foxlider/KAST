@@ -3,6 +3,7 @@ using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Steam;
 using KAST.Web.Hubs;
+using KAST.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.FluentUI.AspNetCore.Components;
@@ -25,6 +26,7 @@ builder.Services.AddEndpointsApiExplorer();
 
 // SignalR
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
 var app = builder.Build();
 
