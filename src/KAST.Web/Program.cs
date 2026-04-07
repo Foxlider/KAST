@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
 // Background services
 builder.Services.AddHostedService<MetricsBackgroundService>();
+builder.Services.AddHostedService<ProcessWatchdogService>();
 
 var app = builder.Build();
 
