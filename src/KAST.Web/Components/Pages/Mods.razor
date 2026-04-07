@@ -4,6 +4,7 @@
 @using KAST.Core.Models
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IModService ModService
+@inject ISteamService SteamService
 @inject IToastService ToastService
 
 <PageTitle>KAST — Mods</PageTitle>
@@ -26,29 +27,45 @@
 @if (_mods.Count == 0)
 {
     <div class="kast-card" style="margin-top: 20px; text-align: center; padding: 60px;">
-        <h3 style="color: var(--kast-text-muted);">No mods yet</h3>
-        <p style="color: var(--kast-text-muted);">Add mods from the Steam Workshop or import local mods to get started.</p>
+        <h3>No mods yet</h3>
+        <p style="color: var(--neutral-foreground-hint, #9e9e9e);">Add mods from the Steam Workshop or import local mods to get started.</p>
     </div>
 }
 else
 {
-    <FluentDataGrid Items="@_mods.AsQueryable()" Style="margin-top: 20px;" GridTemplateColumns="1fr 120px 120px 120px 200px">
-        <PropertyColumn Title="Name" Property="@(m => m.Name)" Sortable="true" />
+    <FluentDataGrid Items="@_mods.AsQueryable()" Style="margin-top: 20px;" GridTemplateColumns="1fr 120px 140px 120px 260px">
+        <TemplateColumn Title="Name" Sortable="true" SortBy="@(GridSort<SteamMod>.ByAscending(m => m.Name))">
+            <a href="javascript:void(0)" @onclick="@(() => ShowModDetails(context))" @onclick:stopPropagation
+               style="cursor: pointer; text-decoration: none; color: var(--accent-foreground-rest, #ff8c5a);">
+                @context.Name
+            </a>
+        </TemplateColumn>
         <PropertyColumn Title="Source" Property="@(m => m.Source)" Sortable="true" />
         <TemplateColumn Title="Status">
-            <span class="status-dot @context.Status.ToString().ToLowerInvariant()"></span>
-            @context.Status
+            @if (context.Status is ModStatus.Downloading or ModStatus.Updating)
+            {
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <FluentProgressRing Style="width: 16px; height: 16px;" />
+                    <span>@context.Status</span>
+                </div>
+            }
+            else
+            {
+                <span class="status-dot @GetStatusClass(context.Status)"></span>
+                @context.Status
+            }
         </TemplateColumn>
-        <TemplateColumn Title="Size">
-            @FormatBytes(context.SizeBytes)
+        <TemplateColumn Title="Size on Disk">
+            @(context.SizeBytes > 0 ? FormatBytes(context.SizeBytes) : "—")
         </TemplateColumn>
         <TemplateColumn Title="Actions">
             <FluentStack Orientation="Orientation.Horizontal">
-                @if (context.Status == ModStatus.NotInstalled || context.Status == ModStatus.UpdateAvailable)
+                @if (CanDownloadOrUpdate(context))
                 {
                     <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Accent"
-                                  OnClick="@(() => DownloadMod(context))">
-                        @(context.Status == ModStatus.UpdateAvailable ? "Update" : "Download")
+                                  OnClick="@(() => DownloadMod(context))"
+                                  Disabled="@(context.Status is ModStatus.Downloading or ModStatus.Updating)">
+                        @GetDownloadButtonLabel(context)
                     </FluentButton>
                 }
                 <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
@@ -60,15 +77,94 @@ else
     </FluentDataGrid>
 }
 
+@* Mod Detail Dialog *@
+@if (_selectedMod != null)
+{
+<FluentDialog Modal="true" TrapFocus="true" PreventScroll="true" Style="min-width: 500px;">
+    <FluentDialogHeader>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-dot @GetStatusClass(_selectedMod.Status)"></span>
+            @_selectedMod.Name
+        </div>
+    </FluentDialogHeader>
+    <FluentDialogBody>
+        <div style="display: flex; gap: 16px;">
+            @if (!string.IsNullOrEmpty(_selectedMod.ThumbnailUrl))
+            {
+                <img src="@_selectedMod.ThumbnailUrl" alt="@_selectedMod.Name"
+                     style="width: 180px; height: 180px; object-fit: cover; border-radius: 6px; flex-shrink: 0;" />
+            }
+            <div style="flex: 1; min-width: 0;">
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+                    <div>
+                        <strong>Status:</strong> @_selectedMod.Status
+                    </div>
+                    @if (_selectedMod.Author != null)
+                    {
+                        <div><strong>Author:</strong> @_selectedMod.Author</div>
+                    }
+                    <div><strong>Source:</strong> @_selectedMod.Source</div>
+                    @if (_selectedMod.WorkshopId > 0)
+                    {
+                        <div>
+                            <strong>Workshop ID:</strong>
+                            <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=@_selectedMod.WorkshopId"
+                               target="_blank" rel="noopener">@_selectedMod.WorkshopId</a>
+                        </div>
+                    }
+                    <div>
+                        <strong>Size on Disk:</strong>
+                        @((_selectedMod.SizeBytes > 0) ? FormatBytes(_selectedMod.SizeBytes) : "Not downloaded")
+                    </div>
+                    @if (_selectedMod.ExpectedSizeBytes > 0)
+                    {
+                        <div><strong>Expected Size (Steam):</strong> @FormatBytes(_selectedMod.ExpectedSizeBytes)</div>
+                    }
+                    @if (_selectedMod.LastUpdatedSteam.HasValue)
+                    {
+                        <div><strong>Last Updated (Steam):</strong> @_selectedMod.LastUpdatedSteam.Value.ToString("g")</div>
+                    }
+                    @if (_selectedMod.LastUpdatedLocal.HasValue)
+                    {
+                        <div><strong>Last Updated (Local):</strong> @_selectedMod.LastUpdatedLocal.Value.ToString("g")</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_selectedMod.LocalPath))
+                    {
+                        <div><strong>Path:</strong> <code style="word-break: break-all;">@_selectedMod.LocalPath</code></div>
+                    }
+                </FluentStack>
+
+                @if (!string.IsNullOrWhiteSpace(_selectedMod.Description))
+                {
+                    <div style="margin-top: 12px; max-height: 120px; overflow-y: auto; font-size: 13px; color: var(--neutral-foreground-hint, #9e9e9e);">
+                        @StripBbCode(_selectedMod.Description)
+                    </div>
+                }
+            </div>
+        </div>
+    </FluentDialogBody>
+    <FluentDialogFooter>
+        @if (CanDownloadOrUpdate(_selectedMod))
+        {
+            <FluentButton Appearance="Appearance.Accent"
+                          OnClick="@(() => DownloadModFromDialog())"
+                          Disabled="@(_selectedMod.Status is ModStatus.Downloading or ModStatus.Updating)">
+                @GetDownloadButtonLabel(_selectedMod)
+            </FluentButton>
+        }
+        <FluentButton OnClick="@(() => _selectedMod = null)">Close</FluentButton>
+    </FluentDialogFooter>
+</FluentDialog>
+}
+
 @* Add Workshop Mod Dialog *@
 @if (_showAddDialog)
 {
-<FluentDialog Modal="true" TrapFocus="true"
-              PreventScroll="true">
+<FluentDialog Modal="true" TrapFocus="true" PreventScroll="true">
     <FluentDialogHeader>Add Workshop Mod</FluentDialogHeader>
     <FluentDialogBody>
-        <FluentTextField @bind-Value="_workshopIdInput" 
-                        Label="Workshop ID or URL" 
+        <FluentTextField @bind-Value="_workshopIdInput"
+                        Label="Workshop ID or URL"
                         Placeholder="e.g. 450814997 or full Steam URL"
                         Style="width: 100%;" />
     </FluentDialogBody>
@@ -82,8 +178,7 @@ else
 @* Import Local Mod Dialog *@
 @if (_showImportDialog)
 {
-<FluentDialog Modal="true" TrapFocus="true"
-              PreventScroll="true">
+<FluentDialog Modal="true" TrapFocus="true" PreventScroll="true">
     <FluentDialogHeader>Import Local Mod</FluentDialogHeader>
     <FluentDialogBody>
         <FluentTextField @bind-Value="_localModName" Label="Mod Name" Style="width: 100%;" />
@@ -98,13 +193,12 @@ else
 
 @code {
     private IReadOnlyList<SteamMod> _mods = [];
+    private SteamMod? _selectedMod;
     private bool _showAddDialog;
     private bool _showImportDialog;
     private string _workshopIdInput = "";
     private string _localModName = "";
     private string _localModPath = "";
-
-
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,11 +210,15 @@ else
         _mods = await ModService.GetAllModsAsync();
     }
 
+    private void ShowModDetails(SteamMod mod)
+    {
+        _selectedMod = mod;
+    }
+
     private async Task AddWorkshopMod()
     {
         if (string.IsNullOrWhiteSpace(_workshopIdInput)) return;
 
-        // Extract workshop ID from URL or direct input
         var workshopId = ParseWorkshopId(_workshopIdInput);
         if (workshopId <= 0)
         {
@@ -151,22 +249,39 @@ else
     {
         try
         {
-            if (mod.Status == ModStatus.UpdateAvailable)
+            // Immediately update UI to show progress
+            mod.Status = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error
+                ? ModStatus.Updating : ModStatus.Downloading;
+            StateHasChanged();
+
+            if (mod.Status is ModStatus.Updating)
                 await ModService.UpdateModFilesAsync(mod.Id);
             else
                 await ModService.DownloadModAsync(mod.Id);
 
             await RefreshMods();
+            ToastService.ShowSuccess($"Downloaded {mod.Name}");
         }
         catch (Exception ex)
         {
             ToastService.ShowError($"Download failed: {ex.Message}");
+            await RefreshMods();
         }
+    }
+
+    private async Task DownloadModFromDialog()
+    {
+        if (_selectedMod == null) return;
+        var mod = _selectedMod;
+        _selectedMod = null;
+        await DownloadMod(mod);
     }
 
     private async Task DeleteMod(SteamMod mod)
     {
         await ModService.DeleteModAsync(mod.Id);
+        if (_selectedMod?.Id == mod.Id)
+            _selectedMod = null;
         await RefreshMods();
         ToastService.ShowSuccess($"Deleted {mod.Name}");
     }
@@ -178,13 +293,35 @@ else
         ToastService.ShowInfo("Update check complete");
     }
 
+    private static bool CanDownloadOrUpdate(SteamMod mod)
+    {
+        // Always allow for workshop mods — enables download, update, and retry
+        return mod.Source == ModSource.SteamWorkshop;
+    }
+
+    private static string GetDownloadButtonLabel(SteamMod mod) => mod.Status switch
+    {
+        ModStatus.NotInstalled => "Download",
+        ModStatus.UpdateAvailable => "Update",
+        ModStatus.Error => "Retry",
+        ModStatus.Downloading or ModStatus.Updating => "In Progress...",
+        _ => "Re-download"
+    };
+
+    private static string GetStatusClass(ModStatus status) => status switch
+    {
+        ModStatus.Installed => "running",
+        ModStatus.Downloading or ModStatus.Updating => "downloading",
+        ModStatus.Error => "error",
+        ModStatus.UpdateAvailable => "starting",
+        _ => "stopped"
+    };
+
     private static long ParseWorkshopId(string input)
     {
-        // Direct number
         if (long.TryParse(input.Trim(), out var directId))
             return directId;
 
-        // URL: https://steamcommunity.com/sharedfiles/filedetails/?id=450814997
         if (input.Contains("id="))
         {
             var idPart = input.Split("id=").Last().Split('&').First();
@@ -202,5 +339,14 @@ else
         double size = bytes;
         while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
         return $"{size:F1} {sizes[order]}";
+    }
+
+    private static string StripBbCode(string text)
+    {
+        // Strip BBCode tags: [b], [/b], [h1], [url=...], [img]...[/img], etc.
+        var result = System.Text.RegularExpressions.Regex.Replace(text, @"\[/?[a-zA-Z0-9]+(?:=[^\]]+)?\]", "");
+        // Collapse multiple newlines
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"\n{3,}", "\n\n");
+        return result.Trim();
     }
 }
