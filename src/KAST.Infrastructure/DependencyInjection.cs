@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IServerInstanceService, ServerInstanceService>();
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
+        services.AddScoped<ISettingsService, SettingsService>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();
 
         return services;
