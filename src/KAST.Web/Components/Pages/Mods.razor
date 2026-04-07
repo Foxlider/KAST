@@ -1,0 +1,201 @@
+@page "/mods"
+@using KAST.Core.Enums
+@using KAST.Core.Interfaces
+@using KAST.Core.Models
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IModService ModService
+@inject IToastService ToastService
+
+<PageTitle>KAST — Mods</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: center;">
+    <h1>Mod Management</h1>
+    <FluentStack Orientation="Orientation.Horizontal">
+        <FluentButton Appearance="Appearance.Accent" OnClick="@(() => _showAddDialog = true)">
+            Add Workshop Mod
+        </FluentButton>
+        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => _showImportDialog = true)">
+            Import Local Mod
+        </FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="CheckForUpdates">
+            Check for Updates
+        </FluentButton>
+    </FluentStack>
+</div>
+
+@if (_mods.Count == 0)
+{
+    <div class="kast-card" style="margin-top: 20px; text-align: center; padding: 60px;">
+        <h3 style="color: var(--kast-text-muted);">No mods yet</h3>
+        <p style="color: var(--kast-text-muted);">Add mods from the Steam Workshop or import local mods to get started.</p>
+    </div>
+}
+else
+{
+    <FluentDataGrid Items="@_mods.AsQueryable()" Style="margin-top: 20px;" GridTemplateColumns="1fr 120px 120px 120px 200px">
+        <PropertyColumn Title="Name" Property="@(m => m.Name)" Sortable="true" />
+        <PropertyColumn Title="Source" Property="@(m => m.Source)" Sortable="true" />
+        <TemplateColumn Title="Status">
+            <span class="status-dot @context.Status.ToString().ToLowerInvariant()"></span>
+            @context.Status
+        </TemplateColumn>
+        <TemplateColumn Title="Size">
+            @FormatBytes(context.SizeBytes)
+        </TemplateColumn>
+        <TemplateColumn Title="Actions">
+            <FluentStack Orientation="Orientation.Horizontal">
+                @if (context.Status == ModStatus.NotInstalled || context.Status == ModStatus.UpdateAvailable)
+                {
+                    <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Accent"
+                                  OnClick="@(() => DownloadMod(context))">
+                        @(context.Status == ModStatus.UpdateAvailable ? "Update" : "Download")
+                    </FluentButton>
+                }
+                <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                              OnClick="@(() => DeleteMod(context))">
+                    Delete
+                </FluentButton>
+            </FluentStack>
+        </TemplateColumn>
+    </FluentDataGrid>
+}
+
+@* Add Workshop Mod Dialog *@
+<FluentDialog @bind-Hidden="@_addDialogHidden" Modal="true" TrapFocus="true"
+              PreventScroll="true">
+    <FluentDialogHeader>Add Workshop Mod</FluentDialogHeader>
+    <FluentDialogBody>
+        <FluentTextField @bind-Value="_workshopIdInput" 
+                        Label="Workshop ID or URL" 
+                        Placeholder="e.g. 450814997 or full Steam URL"
+                        Style="width: 100%;" />
+    </FluentDialogBody>
+    <FluentDialogFooter>
+        <FluentButton OnClick="@(() => _showAddDialog = false)">Cancel</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="AddWorkshopMod">Add Mod</FluentButton>
+    </FluentDialogFooter>
+</FluentDialog>
+
+@* Import Local Mod Dialog *@
+<FluentDialog @bind-Hidden="@_importDialogHidden" Modal="true" TrapFocus="true"
+              PreventScroll="true">
+    <FluentDialogHeader>Import Local Mod</FluentDialogHeader>
+    <FluentDialogBody>
+        <FluentTextField @bind-Value="_localModName" Label="Mod Name" Style="width: 100%;" />
+        <FluentTextField @bind-Value="_localModPath" Label="Path (folder or .zip)" Style="width: 100%; margin-top: 12px;" />
+    </FluentDialogBody>
+    <FluentDialogFooter>
+        <FluentButton OnClick="@(() => _showImportDialog = false)">Cancel</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ImportLocalMod">Import</FluentButton>
+    </FluentDialogFooter>
+</FluentDialog>
+
+@code {
+    private IReadOnlyList<SteamMod> _mods = [];
+    private bool _showAddDialog;
+    private bool _showImportDialog;
+    private string _workshopIdInput = "";
+    private string _localModName = "";
+    private string _localModPath = "";
+
+    private bool _addDialogHidden => !_showAddDialog;
+    private bool _importDialogHidden => !_showImportDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshMods();
+    }
+
+    private async Task RefreshMods()
+    {
+        _mods = await ModService.GetAllModsAsync();
+    }
+
+    private async Task AddWorkshopMod()
+    {
+        if (string.IsNullOrWhiteSpace(_workshopIdInput)) return;
+
+        // Extract workshop ID from URL or direct input
+        var workshopId = ParseWorkshopId(_workshopIdInput);
+        if (workshopId <= 0)
+        {
+            ToastService.ShowError("Invalid Workshop ID or URL");
+            return;
+        }
+
+        await ModService.AddWorkshopModAsync(workshopId);
+        _showAddDialog = false;
+        _workshopIdInput = "";
+        await RefreshMods();
+        ToastService.ShowSuccess("Mod added successfully");
+    }
+
+    private async Task ImportLocalMod()
+    {
+        if (string.IsNullOrWhiteSpace(_localModName) || string.IsNullOrWhiteSpace(_localModPath)) return;
+
+        await ModService.ImportLocalModAsync(_localModPath, _localModName);
+        _showImportDialog = false;
+        _localModName = "";
+        _localModPath = "";
+        await RefreshMods();
+        ToastService.ShowSuccess("Mod imported successfully");
+    }
+
+    private async Task DownloadMod(SteamMod mod)
+    {
+        try
+        {
+            if (mod.Status == ModStatus.UpdateAvailable)
+                await ModService.UpdateModFilesAsync(mod.Id);
+            else
+                await ModService.DownloadModAsync(mod.Id);
+
+            await RefreshMods();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Download failed: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteMod(SteamMod mod)
+    {
+        await ModService.DeleteModAsync(mod.Id);
+        await RefreshMods();
+        ToastService.ShowSuccess($"Deleted {mod.Name}");
+    }
+
+    private async Task CheckForUpdates()
+    {
+        await ModService.CheckForUpdatesAsync();
+        await RefreshMods();
+        ToastService.ShowInfo("Update check complete");
+    }
+
+    private static long ParseWorkshopId(string input)
+    {
+        // Direct number
+        if (long.TryParse(input.Trim(), out var directId))
+            return directId;
+
+        // URL: https://steamcommunity.com/sharedfiles/filedetails/?id=450814997
+        if (input.Contains("id="))
+        {
+            var idPart = input.Split("id=").Last().Split('&').First();
+            if (long.TryParse(idPart, out var urlId))
+                return urlId;
+        }
+
+        return -1;
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
+        return $"{size:F1} {sizes[order]}";
+    }
+}

@@ -1,0 +1,49 @@
+@inherits LayoutComponentBase
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<FluentLayout>
+    <FluentHeader>
+        <div class="header-content">
+            <div class="header-brand">
+                <svg viewBox="0 0 120 36" xmlns="http://www.w3.org/2000/svg" class="header-logo">
+                    <defs>
+                        <linearGradient id="header-molten" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#ff6b35"/>
+                            <stop offset="100%" style="stop-color:#ff4444"/>
+                        </linearGradient>
+                    </defs>
+                    <text x="60" y="28" text-anchor="middle"
+                          font-family="'Segoe UI', system-ui, sans-serif"
+                          font-size="30" font-weight="700"
+                          fill="url(#header-molten)">KAST</text>
+                </svg>
+            </div>
+        </div>
+    </FluentHeader>
+
+    <FluentStack Orientation="Orientation.Horizontal" Style="height: calc(100vh - 50px);">
+        <FluentNavMenu Width="250" Collapsible="true" Title="Navigation">
+            <FluentNavLink Href="/" Match="NavLinkMatch.All" Icon="@(new Icons.Regular.Size24.Home())">
+                Dashboard
+            </FluentNavLink>
+            <FluentNavLink Href="/mods" Icon="@(new Icons.Regular.Size24.Puzzle())">
+                Mods
+            </FluentNavLink>
+            <FluentNavLink Href="/servers" Icon="@(new Icons.Regular.Size24.Server())">
+                Servers
+            </FluentNavLink>
+            <FluentNavLink Href="/monitoring" Icon="@(new Icons.Regular.Size24.ChartMultiple())">
+                Monitoring
+            </FluentNavLink>
+            <FluentNavLink Href="/settings" Icon="@(new Icons.Regular.Size24.Settings())">
+                Settings
+            </FluentNavLink>
+        </FluentNavMenu>
+
+        <FluentBodyContent>
+            <div class="page-content">
+                @Body
+            </div>
+        </FluentBodyContent>
+    </FluentStack>
+</FluentLayout>

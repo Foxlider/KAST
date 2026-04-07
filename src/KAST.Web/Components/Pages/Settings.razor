@@ -1,0 +1,191 @@
+@page "/settings"
+@using KAST.Core.Interfaces
+@using KAST.Core.Models
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IApiKeyService ApiKeyService
+@inject ISteamService SteamService
+@inject IToastService ToastService
+
+<PageTitle>KAST — Settings</PageTitle>
+
+<h1>Settings</h1>
+
+<FluentTabs Style="margin-top: 20px;">
+    <FluentTab Label="Steam">
+        <div class="kast-card" style="margin-top: 16px;">
+            <h3>Steam Connection</h3>
+            <FluentBadge Appearance="@(SteamService.IsLoggedIn ? Appearance.Accent : Appearance.Neutral)"
+                        Style="margin-bottom: 16px;">
+                @(SteamService.IsLoggedIn ? $"Connected as {SteamService.CurrentUsername ?? "Anonymous"}" : "Not Connected")
+            </FluentBadge>
+
+            @if (!SteamService.IsLoggedIn)
+            {
+                <div style="margin-top: 16px;">
+                    <FluentButton Appearance="Appearance.Accent" OnClick="LoginAnonymous" Disabled="_loggingIn">
+                        Login Anonymous
+                    </FluentButton>
+
+                    <h4 style="margin-top: 20px;">Steam Account Login</h4>
+                    <p style="color: var(--kast-text-muted); font-size: 13px;">Required for downloading some Workshop mods.</p>
+                    <FluentTextField @bind-Value="_steamUsername" Label="Username" Style="width: 300px;" />
+                    <FluentTextField @bind-Value="_steamPassword" Label="Password" TextFieldType="TextFieldType.Password" Style="width: 300px; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_steamGuardCode" Label="Steam Guard Code" Style="width: 300px; margin-top: 8px;" />
+                    <FluentButton Appearance="Appearance.Accent" OnClick="LoginSteam" Disabled="_loggingIn" Style="margin-top: 12px;">
+                        Login
+                    </FluentButton>
+                </div>
+            }
+            else
+            {
+                <FluentButton Appearance="Appearance.Outline" OnClick="Logout">Disconnect</FluentButton>
+            }
+        </div>
+    </FluentTab>
+
+    <FluentTab Label="API Keys">
+        <div class="kast-card" style="margin-top: 16px;">
+            <h3>API Keys</h3>
+            <p style="color: var(--kast-text-muted); font-size: 13px;">
+                Generate API keys for bot integrations or custom frontends.
+                Keys are shown only once upon creation.
+            </p>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <FluentTextField @bind-Value="_newKeyName" Placeholder="Key name (e.g. Discord Bot)" Style="width: 300px;" />
+                <FluentButton Appearance="Appearance.Accent" OnClick="CreateApiKey">Generate Key</FluentButton>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_newRawKey))
+            {
+                <FluentMessageBar Title="New API Key" Intent="MessageIntent.Warning" Style="margin-top: 12px;">
+                    Copy this key — it won't be shown again: <code>@_newRawKey</code>
+                </FluentMessageBar>
+            }
+
+            @if (_apiKeys.Count > 0)
+            {
+                <FluentDataGrid Items="@_apiKeys.AsQueryable()" Style="margin-top: 16px;">
+                    <PropertyColumn Title="Name" Property="@(k => k.Name)" />
+                    <PropertyColumn Title="Prefix" Property="@(k => k.KeyPrefix + "...")" />
+                    <TemplateColumn Title="Created">
+                        @context.CreatedAt.ToString("g")
+                    </TemplateColumn>
+                    <TemplateColumn Title="Last Used">
+                        @(context.LastUsedAt?.ToString("g") ?? "Never")
+                    </TemplateColumn>
+                    <TemplateColumn Title="Status">
+                        <FluentBadge Appearance="@(context.IsActive ? Appearance.Accent : Appearance.Neutral)">
+                            @(context.IsActive ? "Active" : "Revoked")
+                        </FluentBadge>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Actions">
+                        @if (context.IsActive)
+                        {
+                            <FluentButton Size="ButtonSize.Small" OnClick="@(() => RevokeKey(context.Id))">
+                                Revoke
+                            </FluentButton>
+                        }
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+        </div>
+    </FluentTab>
+
+    <FluentTab Label="About">
+        <div class="kast-card" style="margin-top: 16px; text-align: center;">
+            <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg" style="width: 200px;">
+                <defs>
+                    <linearGradient id="about-molten" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ff6b35"/>
+                        <stop offset="50%" style="stop-color:#ff4444"/>
+                        <stop offset="100%" style="stop-color:#cc2200"/>
+                    </linearGradient>
+                </defs>
+                <text x="100" y="45" text-anchor="middle"
+                      font-family="'Segoe UI', system-ui, sans-serif"
+                      font-size="48" font-weight="700"
+                      fill="url(#about-molten)">KAST</text>
+            </svg>
+            <h2 style="margin-top: 12px;">Keelah's Arma Server Tool</h2>
+            <p style="color: var(--kast-text-muted);">Version 1.0.0</p>
+            <p style="color: var(--kast-text-muted); font-size: 13px; margin-top: 16px;">
+                Manage your Arma 3 dedicated servers with ease.<br/>
+                Download mods, configure instances, monitor performance.
+            </p>
+        </div>
+    </FluentTab>
+</FluentTabs>
+
+@code {
+    private string _steamUsername = "";
+    private string _steamPassword = "";
+    private string _steamGuardCode = "";
+    private bool _loggingIn;
+
+    private IReadOnlyList<ApiKey> _apiKeys = [];
+    private string _newKeyName = "";
+    private string _newRawKey = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+    }
+
+    private async Task LoginAnonymous()
+    {
+        _loggingIn = true;
+        var success = await SteamService.LoginAnonymousAsync();
+        _loggingIn = false;
+
+        if (success)
+            ToastService.ShowSuccess("Connected to Steam (anonymous)");
+        else
+            ToastService.ShowError("Failed to connect");
+    }
+
+    private async Task LoginSteam()
+    {
+        if (string.IsNullOrWhiteSpace(_steamUsername) || string.IsNullOrWhiteSpace(_steamPassword)) return;
+
+        _loggingIn = true;
+        var code = string.IsNullOrWhiteSpace(_steamGuardCode) ? null : _steamGuardCode;
+        var success = await SteamService.LoginAsync(_steamUsername, _steamPassword, code);
+        _loggingIn = false;
+
+        if (success)
+        {
+            ToastService.ShowSuccess($"Connected as {_steamUsername}");
+            _steamPassword = "";
+            _steamGuardCode = "";
+        }
+        else
+        {
+            ToastService.ShowError("Login failed — check credentials or Steam Guard code");
+        }
+    }
+
+    private async Task Logout()
+    {
+        await SteamService.LogoutAsync();
+        ToastService.ShowInfo("Disconnected from Steam");
+    }
+
+    private async Task CreateApiKey()
+    {
+        if (string.IsNullOrWhiteSpace(_newKeyName)) return;
+
+        var (_, rawKey) = await ApiKeyService.CreateApiKeyAsync(_newKeyName);
+        _newRawKey = rawKey;
+        _newKeyName = "";
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        ToastService.ShowSuccess("API key created");
+    }
+
+    private async Task RevokeKey(int id)
+    {
+        await ApiKeyService.RevokeKeyAsync(id);
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        ToastService.ShowSuccess("Key revoked");
+    }
+}

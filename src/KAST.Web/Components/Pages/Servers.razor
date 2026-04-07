@@ -1,0 +1,142 @@
+@page "/servers"
+@using KAST.Core.Enums
+@using KAST.Core.Interfaces
+@using KAST.Core.Models
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IServerInstanceService ServerService
+@inject IModService ModService
+@inject IToastService ToastService
+@inject NavigationManager Nav
+
+<PageTitle>KAST — Servers</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: center;">
+    <h1>Server Instances</h1>
+    <FluentButton Appearance="Appearance.Accent" OnClick="@(() => Nav.NavigateTo("/servers/new"))">
+        New Instance
+    </FluentButton>
+</div>
+
+@if (_instances.Count == 0)
+{
+    <div class="kast-card" style="margin-top: 20px; text-align: center; padding: 60px;">
+        <h3 style="color: var(--kast-text-muted);">No server instances</h3>
+        <p style="color: var(--kast-text-muted);">Create your first Arma 3 server instance to get started.</p>
+    </div>
+}
+else
+{
+    <div class="kast-tiles" style="margin-top: 20px;">
+        @foreach (var instance in _instances)
+        {
+            <div class="kast-tile" @onclick="@(() => Nav.NavigateTo($"/servers/{instance.Id}"))">
+                <div>
+                    <div class="kast-tile-title" style="font-size: 18px;">
+                        <span class="status-dot @instance.Status.ToString().ToLowerInvariant()"></span>
+                        @instance.Name
+                    </div>
+                    <div class="kast-tile-subtitle" style="margin-top: 8px;">
+                        Port: @instance.Port | Mods: @instance.Mods.Count | HC: @instance.HeadlessClientCount
+                    </div>
+                    @if (instance.StartedAt.HasValue)
+                    {
+                        <div class="kast-tile-subtitle">
+                            Running since @instance.StartedAt.Value.ToString("g")
+                        </div>
+                    }
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    @if (instance.Status == ServerInstanceStatus.Running)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Outline"
+                                      OnClick:stopPropagation="true"
+                                      OnClick="@(() => StopInstance(instance.Id))">
+                            Stop
+                        </FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                                      OnClick:stopPropagation="true"
+                                      OnClick="@(() => RestartInstance(instance.Id))">
+                            Restart
+                        </FluentButton>
+                    }
+                    else if (instance.Status == ServerInstanceStatus.Stopped)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Accent"
+                                      OnClick:stopPropagation="true"
+                                      OnClick="@(() => StartInstance(instance.Id))">
+                            Start
+                        </FluentButton>
+                    }
+                    <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                                  OnClick:stopPropagation="true"
+                                  OnClick="@(() => DeleteInstance(instance.Id))">
+                        Delete
+                    </FluentButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ServerInstance> _instances = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshInstances();
+    }
+
+    private async Task RefreshInstances()
+    {
+        _instances = await ServerService.GetAllInstancesAsync();
+    }
+
+    private async Task StartInstance(int id)
+    {
+        try
+        {
+            await ServerService.StartInstanceAsync(id);
+            ToastService.ShowSuccess("Server started");
+            await RefreshInstances();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Failed to start: {ex.Message}");
+        }
+    }
+
+    private async Task StopInstance(int id)
+    {
+        try
+        {
+            await ServerService.StopInstanceAsync(id);
+            ToastService.ShowSuccess("Server stopped");
+            await RefreshInstances();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Failed to stop: {ex.Message}");
+        }
+    }
+
+    private async Task RestartInstance(int id)
+    {
+        try
+        {
+            await ServerService.RestartInstanceAsync(id);
+            ToastService.ShowSuccess("Server restarted");
+            await RefreshInstances();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Failed to restart: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteInstance(int id)
+    {
+        await ServerService.DeleteInstanceAsync(id);
+        await RefreshInstances();
+        ToastService.ShowSuccess("Instance deleted");
+    }
+}
