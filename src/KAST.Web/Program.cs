@@ -28,6 +28,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
+// Background services
+builder.Services.AddHostedService<MetricsBackgroundService>();
+
 var app = builder.Build();
 
 // Auto-migrate database and reset any mods stuck in an in-progress state from a previous crash
