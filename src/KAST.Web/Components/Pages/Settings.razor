@@ -226,6 +226,18 @@
         _qrSession = session;
         _qrPolling = true;
         _loggingIn = false;
+
+        // Subscribe to QR challenge URL refresh from Steam
+        session.ChallengeUrlChanged = newUrl =>
+        {
+            InvokeAsync(() =>
+            {
+                _challengeUrl = newUrl;
+                _qrCodeBase64 = GenerateQrCodeBase64(newUrl);
+                StateHasChanged();
+            });
+        };
+
         StateHasChanged();
 
         // Start polling in background
