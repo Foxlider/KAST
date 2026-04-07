@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/KAST.Core/KAST.Core.csproj" />
+    <Project Path="src/KAST.Infrastructure/KAST.Infrastructure.csproj" />
+    <Project Path="src/KAST.Web/KAST.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/KAST.Tests/KAST.Tests.csproj" />
+  </Folder>
+</Solution>
