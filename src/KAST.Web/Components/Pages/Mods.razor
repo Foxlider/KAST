@@ -61,7 +61,9 @@ else
 }
 
 @* Add Workshop Mod Dialog *@
-<FluentDialog @bind-Hidden="@_addDialogHidden" Modal="true" TrapFocus="true"
+@if (_showAddDialog)
+{
+<FluentDialog Modal="true" TrapFocus="true"
               PreventScroll="true">
     <FluentDialogHeader>Add Workshop Mod</FluentDialogHeader>
     <FluentDialogBody>
@@ -75,9 +77,12 @@ else
         <FluentButton Appearance="Appearance.Accent" OnClick="AddWorkshopMod">Add Mod</FluentButton>
     </FluentDialogFooter>
 </FluentDialog>
+}
 
 @* Import Local Mod Dialog *@
-<FluentDialog @bind-Hidden="@_importDialogHidden" Modal="true" TrapFocus="true"
+@if (_showImportDialog)
+{
+<FluentDialog Modal="true" TrapFocus="true"
               PreventScroll="true">
     <FluentDialogHeader>Import Local Mod</FluentDialogHeader>
     <FluentDialogBody>
@@ -89,6 +94,7 @@ else
         <FluentButton Appearance="Appearance.Accent" OnClick="ImportLocalMod">Import</FluentButton>
     </FluentDialogFooter>
 </FluentDialog>
+}
 
 @code {
     private IReadOnlyList<SteamMod> _mods = [];
@@ -98,8 +104,7 @@ else
     private string _localModName = "";
     private string _localModPath = "";
 
-    private bool _addDialogHidden => !_showAddDialog;
-    private bool _importDialogHidden => !_showImportDialog;
+
 
     protected override async Task OnInitializedAsync()
     {

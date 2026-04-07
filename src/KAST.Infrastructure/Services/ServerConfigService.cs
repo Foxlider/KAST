@@ -100,7 +100,7 @@ public partial class ServerConfigService : IServerConfigService
                 case "maxsizeguaranteed": data.MaxSizeGuaranteed = int.TryParse(value, out var v2) ? v2 : 512; break;
                 case "maxsizenonguaranteed": data.MaxSizeNonguaranteed = int.TryParse(value, out var v3) ? v3 : 256; break;
                 case "minbandwidth": data.MinBandwidth = int.TryParse(value, out var v4) ? v4 : 131072; break;
-                case "maxbandwidth": data.MaxBandwidth = int.TryParse(value, out var v5) ? v5 : 10000000000; break;
+                case "maxbandwidth": data.MaxBandwidth = long.TryParse(value, out var v5) ? v5 : 10000000000; break;
                 case "minerrortosend": data.MinErrorToSend = double.TryParse(value, out var v6) ? v6 : 0.001; break;
                 case "minerrortosendnear": data.MinErrorToSendNear = double.TryParse(value, out var v7) ? v7 : 0.01; break;
                 case "maxcustomfilesize": data.MaxCustomFileSize = int.TryParse(value, out var v8) ? v8 : 0; break;

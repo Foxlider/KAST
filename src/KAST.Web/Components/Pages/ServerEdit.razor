@@ -37,10 +37,10 @@
                     <FluentNumberField @bind-Value="_instance.HeadlessClientCount" Label="Headless Clients" Min="0" Max="10" />
                 </FluentGridItem>
                 <FluentGridItem xs="6" sm="3">
-                    <FluentSelect TOption="RestartPolicy" @bind-Value="_instance.RestartPolicy" Label="Restart Policy">
-                        <FluentOption Value="@RestartPolicy.None">None</FluentOption>
-                        <FluentOption Value="@RestartPolicy.OnCrash">On Crash</FluentOption>
-                        <FluentOption Value="@RestartPolicy.Always">Always</FluentOption>
+                    <FluentSelect TOption="string" @bind-Value="_restartPolicyStr" Label="Restart Policy">
+                        <FluentOption TOption="string" Value="@("None")">None</FluentOption>
+                        <FluentOption TOption="string" Value="@("OnCrash")">On Crash</FluentOption>
+                        <FluentOption TOption="string" Value="@("Always")">Always</FluentOption>
                     </FluentSelect>
                 </FluentGridItem>
             </FluentGrid>
@@ -153,6 +153,12 @@
     private ServerInstance _instance = new();
     private bool _isNew => Id == null || Id == 0;
     private IReadOnlyList<SteamMod> _availableMods = [];
+
+    private string _restartPolicyStr
+    {
+        get => _instance.RestartPolicy.ToString();
+        set => _instance.RestartPolicy = Enum.Parse<RestartPolicy>(value);
+    }
 
     private ServerConfigData _serverConfig = new();
     private BasicConfigData _basicConfig = new();
