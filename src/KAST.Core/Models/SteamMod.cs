@@ -11,6 +11,7 @@ public class SteamMod
     public string? ThumbnailUrl { get; set; }
     public string? Author { get; set; }
     public long SizeBytes { get; set; }
+    public long ExpectedSizeBytes { get; set; }
     public ModSource Source { get; set; } = ModSource.SteamWorkshop;
     public ModStatus Status { get; set; } = ModStatus.NotInstalled;
     public string LocalPath { get; set; } = string.Empty;

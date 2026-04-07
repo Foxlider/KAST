@@ -163,6 +163,169 @@ html, body {
     text-transform: uppercase;
 }
 
+/* ===== User Tile & Panel ===== */
+.kast-user-tile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--neutral-foreground-rest, #e0e0e0);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+}
+.kast-user-tile:hover {
+    background: var(--neutral-layer-4, #333);
+    border-color: var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
+}
+
+.kast-user-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 260px;
+    background: var(--neutral-layer-floating, #2d2d2d);
+    border: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.12));
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 1000;
+    overflow: hidden;
+    animation: kast-panel-in 0.15s ease-out;
+}
+@keyframes kast-panel-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.kast-user-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+}
+
+.kast-user-panel-divider {
+    height: 1px;
+    background: var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
+}
+
+.kast-user-panel-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    color: var(--neutral-foreground-rest, #e0e0e0);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.1s;
+    text-align: left;
+}
+.kast-user-panel-item:hover {
+    background: var(--neutral-layer-4, rgba(255,255,255,0.06));
+}
+
+/* ===== Steam Avatars ===== */
+.steam-avatar-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+}
+
+.steam-avatar-panel {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+}
+
+.steam-avatar-large {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+}
+
+.steam-avatar-placeholder {
+    background: var(--neutral-layer-4, #444);
+}
+
+/* ===== Steam Profile Card (Settings page) ===== */
+.steam-profile-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--neutral-layer-3, #2f2f2f);
+    border-radius: 8px;
+    border: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
+    margin-top: 8px;
+}
+
+.steam-profile-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.steam-profile-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--neutral-foreground-rest, #e0e0e0);
+}
+
+.steam-profile-sub {
+    font-size: 12px;
+    color: var(--neutral-foreground-hint, #9e9e9e);
+}
+
+/* ===== QR Login Layout (Settings page) ===== */
+.steam-qr-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.steam-qr-image-wrap {
+    background: #fff;
+    padding: 10px;
+    border-radius: 8px;
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.steam-qr-instructions {
+    flex: 1;
+    min-width: 200px;
+    padding-top: 4px;
+}
+
+.steam-qr-instructions a {
+    color: var(--accent-fill-rest, #ff6b35);
+    text-decoration: underline;
+}
+
+.steam-qr-instructions a:hover {
+    color: var(--accent-fill-hover, #ff8050);
+}
+
 .kast-body {
     display: flex;
     flex: 1;

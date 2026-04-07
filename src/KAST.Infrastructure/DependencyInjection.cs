@@ -14,7 +14,13 @@ public static class DependencyInjection
         services.AddDbContext<KastDbContext>(options =>
             options.UseSqlite(connectionString));
 
-        services.AddSingleton<ISteamService, SteamClientService>();
+        // Steam services
+        services.AddSingleton<ISteamService>(sp =>
+        {
+            var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SteamClientService>>();
+            return new SteamClientService(logger);
+        });
+
         services.AddSingleton<IProcessManagerService, ProcessManagerService>();
         services.AddScoped<IModService, ModService>();
         services.AddScoped<IServerInstanceService, ServerInstanceService>();
