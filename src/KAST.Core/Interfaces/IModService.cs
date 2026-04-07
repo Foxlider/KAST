@@ -11,7 +11,7 @@ public interface IModService
     Task<SteamMod> ImportLocalModAsync(string path, string name, CancellationToken ct = default);
     Task DeleteModAsync(int id, CancellationToken ct = default);
     Task<SteamMod> UpdateModAsync(SteamMod mod, CancellationToken ct = default);
-    Task DownloadModAsync(int id, CancellationToken ct = default);
-    Task UpdateModFilesAsync(int id, CancellationToken ct = default);
+    Task DownloadModAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default);
+    Task UpdateModFilesAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default);
     Task CheckForUpdatesAsync(CancellationToken ct = default);
 }

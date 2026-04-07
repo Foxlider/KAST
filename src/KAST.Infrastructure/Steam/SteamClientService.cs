@@ -30,7 +30,7 @@ public class SteamClientService : ISteamService, IDisposable
     private string? _currentRefreshToken;
 
     // QR auth state
-    private AuthSession? _activeQrSession;
+    private QrAuthSession? _activeQrSession;
 
     // CDN state — cached across downloads
     private Server[]? _cdnServers;
@@ -139,9 +139,17 @@ public class SteamClientService : ISteamService, IDisposable
         CurrentUsername = null;
         _pendingAccessToken = null;
         _currentRefreshToken = null;
-        _isReconnecting = true;  // prevent OnDisconnected from cancelling the TCS if we were already connected
         StartCallbackLoop();
-        _steamClient.Connect();
+
+        if (_steamClient.IsConnected)
+        {
+            // Already connected — just send the anonymous logon directly
+            _steamUser.LogOnAnonymous();
+        }
+        else
+        {
+            _steamClient.Connect();
+        }
 
         using var reg = ct.Register(() => _loginTcs.TrySetResult(false));
         return await _loginTcs.Task;
@@ -165,7 +173,7 @@ public class SteamClientService : ISteamService, IDisposable
         CurrentUsername = username;
         _pendingAccessToken = refreshToken;
         _currentRefreshToken = refreshToken;
-        _isReconnecting = true;
+        _isReconnecting = _steamClient.IsConnected;
         StartCallbackLoop();
         _steamClient.Connect();
 
@@ -175,43 +183,43 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task LogoutAsync()
     {
-        _steamUser.LogOff();
-        _isReconnecting = true;
-        _steamClient.Disconnect();
-        _isConnected = false;
+        _activeQrSession = null;
         CurrentUsername = null;
         _profile = null;
-        _activeQrSession = null;
         _pendingAccessToken = null;
         _currentRefreshToken = null;
         ClearTokenCache();
+        _isConnected = false;
         AuthStateChanged?.Invoke();
 
-        // Fall back to anonymous session
-        await Task.Delay(500);
+        // Disconnect — auto-reconnect will fire and log on anonymously
         _loginTcs = new TaskCompletionSource<bool>();
-        _isReconnecting = false;
-        _steamClient.Connect();
-        await _loginTcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        _isReconnecting = true;
+        _steamClient.Disconnect();
+
+        try
+        {
+            await _loginTcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Anonymous reconnect after logout timed out");
+        }
     }
 
     // ───── QR Code Authentication ─────
 
     public async Task<SteamQrAuthSession> BeginQrLoginAsync(CancellationToken ct = default)
     {
-        // Ensure we're connected to Steam first
-        if (!_steamClient.IsConnected)
+        // Ensure we're connected (may not be if logout's auto-reconnect failed)
+        if (!_isConnected)
         {
-            var connectTcs = new TaskCompletionSource<bool>();
-            _callbackManager.Subscribe<SteamClient.ConnectedCallback>(cb => connectTcs.TrySetResult(true));
-            _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(cb => connectTcs.TrySetResult(false));
-            StartCallbackLoop();
-            _steamClient.Connect();
-
-            var connected = await connectTcs.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
-            if (!connected)
-                return new SteamQrAuthSession { ErrorMessage = "Failed to connect to Steam" };
+            _logger.LogWarning("Not connected to Steam — reconnecting before QR auth");
+            await LoginAnonymousAsync(ct);
         }
+
+        if (!_isConnected)
+            return new SteamQrAuthSession { ErrorMessage = "Failed to connect to Steam" };
 
         try
         {
@@ -220,10 +228,20 @@ public class SteamClientService : ISteamService, IDisposable
 
             _activeQrSession = qrSession;
 
-            return new SteamQrAuthSession
+            var session = new SteamQrAuthSession
             {
                 ChallengeUrl = qrSession.ChallengeURL
             };
+
+            // Steam periodically refreshes the challenge URL — relay it to the UI
+            qrSession.ChallengeURLChanged = () =>
+            {
+                _logger.LogDebug("QR challenge URL refreshed");
+                session.ChallengeUrl = qrSession.ChallengeURL;
+                session.ChallengeUrlChanged?.Invoke(qrSession.ChallengeURL);
+            };
+
+            return session;
         }
         catch (Exception ex)
         {
@@ -234,31 +252,27 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task<bool> PollQrLoginAsync(SteamQrAuthSession session, CancellationToken ct = default)
     {
-        if (_activeQrSession is not SteamKit2.Authentication.QrAuthSession qrSession)
+        if (_activeQrSession is not { } qrSession)
             return false;
 
         try
         {
+            // Block until the user scans the QR code and confirms in the Steam app
             var result = await qrSession.PollingWaitForResultAsync(ct);
 
             _logger.LogInformation("QR auth succeeded for {Account}", result.AccountName);
-            // Save partial cache now; profile fields will be filled by OnPersonaState
-            SaveTokenCache(result.AccountName, result.RefreshToken);
 
-            // Now log on using the tokens
+            // Prepare credentials for the reconnect
             CurrentUsername = result.AccountName;
             _pendingAccessToken = result.RefreshToken;
             _currentRefreshToken = result.RefreshToken;
+            SaveTokenCache(result.AccountName, result.RefreshToken);
 
-            // Disconnect and reconnect to log on with the token
+            // Transition from anonymous → real account:
+            // Disconnect (auto-reconnect will fire → OnConnected → LogOn with token)
+            _loginTcs = new TaskCompletionSource<bool>();
             _isReconnecting = true;
             _steamClient.Disconnect();
-            await Task.Delay(500, ct);
-
-            // Create TCS AFTER disconnect callback has fired
-            _loginTcs = new TaskCompletionSource<bool>();
-            _isReconnecting = false;
-            _steamClient.Connect();
 
             using var reg = ct.Register(() => _loginTcs.TrySetResult(false));
             var loggedIn = await _loginTcs.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
@@ -267,6 +281,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (OperationCanceledException)
         {
+            _activeQrSession = null;
             return false;
         }
         catch (Exception ex)
@@ -516,22 +531,23 @@ public class SteamClientService : ISteamService, IDisposable
 
     private void OnConnected(SteamClient.ConnectedCallback cb)
     {
-        _isReconnecting = false;  // safe to handle disconnects from here
         _logger.LogInformation("Connected to Steam");
 
-        if (CurrentUsername == null)
+        if (CurrentUsername != null && _pendingAccessToken != null)
         {
-            _steamUser.LogOnAnonymous();
-        }
-        else if (_pendingAccessToken != null)
-        {
+            // Log on with real account credentials
             var token = _pendingAccessToken;
             _pendingAccessToken = null;
+            _logger.LogInformation("Logging in as {Username}", CurrentUsername);
             _steamUser.LogOn(new SteamUser.LogOnDetails
             {
                 Username = CurrentUsername,
                 AccessToken = token
             });
+        }
+        else
+        {
+            _steamUser.LogOnAnonymous();
         }
     }
 
@@ -539,10 +555,20 @@ public class SteamClientService : ISteamService, IDisposable
     {
         _logger.LogInformation("Disconnected from Steam");
         _isConnected = false;
-        if (!_isReconnecting)
+        _cdnServers = null; // invalidate CDN server cache
+
+        if (_isReconnecting)
+        {
+            // Intentional disconnect (account transition) — auto-reconnect once
+            _isReconnecting = false;
+            _logger.LogInformation("Auto-reconnecting to Steam");
+            _steamClient.Connect();
+        }
+        else
         {
             _loginTcs?.TrySetResult(false);
         }
+
         AuthStateChanged?.Invoke();
     }
 
