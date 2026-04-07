@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using KAST.Core.Enums;
+using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
@@ -11,6 +12,7 @@ namespace KAST.Infrastructure.Services;
 public class ServerInstanceService(
     KastDbContext db,
     IProcessManagerService processManager,
+    IAppEventBroadcaster broadcaster,
     ILogger<ServerInstanceService> logger) : IServerInstanceService
 {
     public async Task<IReadOnlyList<ServerInstance>> GetAllInstancesAsync(CancellationToken ct = default)
@@ -71,6 +73,7 @@ public class ServerInstanceService(
 
         instance.Status = ServerInstanceStatus.Starting;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
 
         try
         {
@@ -103,6 +106,7 @@ public class ServerInstanceService(
         finally
         {
             await db.SaveChangesAsync(ct);
+            await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
         }
     }
 
@@ -115,6 +119,7 @@ public class ServerInstanceService(
 
         instance.Status = ServerInstanceStatus.Stopping;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
 
         // Stop headless clients first
         foreach (var hc in instance.HeadlessClients.Where(h => h.ProcessId.HasValue))
@@ -133,6 +138,7 @@ public class ServerInstanceService(
         instance.Status = ServerInstanceStatus.Stopped;
         instance.StartedAt = null;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
     }
 
     public async Task RestartInstanceAsync(int id, CancellationToken ct = default)
@@ -142,6 +148,7 @@ public class ServerInstanceService(
 
         instance.Status = ServerInstanceStatus.Restarting;
         await db.SaveChangesAsync(ct);
+        await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
 
         await StopInstanceAsync(id, ct);
         await StartInstanceAsync(id, ct);
