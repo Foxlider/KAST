@@ -4,13 +4,14 @@ public interface IServerConfigService
 {
     /// <summary>
     /// Parses a server.cfg file content into structured key-value pairs.
-    /// Preserves comments and unknown keys.
+    /// Uses AST-based parser that supports nested class blocks.
+    /// Preserves comments, whitespace, and unknown keys for round-trip fidelity.
     /// </summary>
     ServerConfigData ParseServerConfig(string rawContent);
 
     /// <summary>
     /// Serializes structured config data back to raw file content.
-    /// Preserves comments and unknown lines from the original.
+    /// Preserves comments, whitespace, and unknown lines from the original AST.
     /// </summary>
     string SerializeServerConfig(ServerConfigData data);
 
@@ -20,6 +21,39 @@ public interface IServerConfigService
     BasicConfigData ParseBasicConfig(string rawContent);
     string SerializeBasicConfig(BasicConfigData data);
 }
+
+// ── AST Node types for Arma 3 config files ──
+
+public abstract class ConfigNode
+{
+    public string RawText { get; set; } = string.Empty;
+}
+
+public class WhitespaceNode : ConfigNode;
+
+public class CommentNode : ConfigNode;
+
+public class KeyValueNode : ConfigNode
+{
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string? Comment { get; set; }
+}
+
+public class ArrayNode : ConfigNode
+{
+    public string Key { get; set; } = string.Empty;
+    public List<string> Values { get; set; } = [];
+    public string? Comment { get; set; }
+}
+
+public class ClassNode : ConfigNode
+{
+    public string Name { get; set; } = string.Empty;
+    public List<ConfigNode> Children { get; set; } = [];
+}
+
+// ── Config data DTOs ──
 
 public class ServerConfigData
 {
@@ -36,8 +70,9 @@ public class ServerConfigData
     public string? Motd { get; set; }
     public int MotdInterval { get; set; } = 5;
 
-    // Store raw lines for round-trip fidelity
+    // Store the full AST for round-trip fidelity
     public string RawContent { get; set; } = string.Empty;
+    public List<ConfigNode> Ast { get; set; } = [];
     public List<string> UnknownLines { get; set; } = [];
 }
 
@@ -54,5 +89,6 @@ public class BasicConfigData
     public int TerrainGridViewDistance { get; set; } = 50;
 
     public string RawContent { get; set; } = string.Empty;
+    public List<ConfigNode> Ast { get; set; } = [];
     public List<string> UnknownLines { get; set; } = [];
 }
