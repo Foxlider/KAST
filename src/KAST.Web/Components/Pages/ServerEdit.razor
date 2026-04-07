@@ -1,0 +1,233 @@
+@page "/servers/new"
+@page "/servers/{Id:int}"
+@using KAST.Core.Enums
+@using KAST.Core.Interfaces
+@using KAST.Core.Models
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IServerInstanceService ServerService
+@inject IServerConfigService ConfigService
+@inject IModService ModService
+@inject IToastService ToastService
+@inject NavigationManager Nav
+
+<PageTitle>KAST — @(_isNew ? "New Server" : _instance.Name)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: center;">
+    <h1>@(_isNew ? "New Server Instance" : $"Edit: {_instance.Name}")</h1>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Save">Save</FluentButton>
+</div>
+
+<FluentTabs Style="margin-top: 20px;">
+    <FluentTab Label="General">
+        <div class="kast-card" style="margin-top: 16px;">
+            <FluentGrid Spacing="3">
+                <FluentGridItem xs="12" sm="6">
+                    <FluentTextField @bind-Value="_instance.Name" Label="Instance Name" Style="width: 100%;" />
+                </FluentGridItem>
+                <FluentGridItem xs="12" sm="6">
+                    <FluentTextField @bind-Value="_instance.InstallPath" Label="Install Path" Style="width: 100%;" />
+                </FluentGridItem>
+                <FluentGridItem xs="6" sm="3">
+                    <FluentNumberField @bind-Value="_instance.Port" Label="Game Port" Min="1" Max="65535" />
+                </FluentGridItem>
+                <FluentGridItem xs="6" sm="3">
+                    <FluentNumberField @bind-Value="_instance.SteamQueryPort" Label="Steam Query Port" Min="1" Max="65535" />
+                </FluentGridItem>
+                <FluentGridItem xs="6" sm="3">
+                    <FluentNumberField @bind-Value="_instance.HeadlessClientCount" Label="Headless Clients" Min="0" Max="10" />
+                </FluentGridItem>
+                <FluentGridItem xs="6" sm="3">
+                    <FluentSelect TOption="RestartPolicy" @bind-Value="_instance.RestartPolicy" Label="Restart Policy">
+                        <FluentOption Value="@RestartPolicy.None">None</FluentOption>
+                        <FluentOption Value="@RestartPolicy.OnCrash">On Crash</FluentOption>
+                        <FluentOption Value="@RestartPolicy.Always">Always</FluentOption>
+                    </FluentSelect>
+                </FluentGridItem>
+            </FluentGrid>
+        </div>
+
+        <div class="kast-card" style="margin-top: 16px;">
+            <h3>Schedule</h3>
+            <FluentSwitch @bind-Value="_instance.ScheduleEnabled" Label="Enable Schedule" />
+            @if (_instance.ScheduleEnabled)
+            {
+                <FluentGrid Spacing="3" Style="margin-top: 12px;">
+                    <FluentGridItem xs="6">
+                        <FluentTextField @bind-Value="_instance.AutoStartTime" Label="Auto-Start Time (HH:mm)" Placeholder="08:00" />
+                    </FluentGridItem>
+                    <FluentGridItem xs="6">
+                        <FluentTextField @bind-Value="_instance.AutoStopTime" Label="Auto-Stop Time (HH:mm)" Placeholder="23:00" />
+                    </FluentGridItem>
+                </FluentGrid>
+            }
+        </div>
+
+        <div class="kast-card" style="margin-top: 16px;">
+            <FluentTextField @bind-Value="_instance.AdditionalParameters"
+                            Label="Additional Launch Parameters"
+                            Style="width: 100%;"
+                            Placeholder="-enableHT -hugepages" />
+        </div>
+    </FluentTab>
+
+    <FluentTab Label="Server Config">
+        <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="kast-card">
+                <h3>Settings</h3>
+                <FluentTextField @bind-Value="_serverConfig.Hostname" Label="Hostname" Style="width: 100%;"
+                                @oninput="OnConfigFieldChanged" />
+                <FluentTextField @bind-Value="_serverConfig.Password" Label="Server Password" Style="width: 100%; margin-top: 8px;"
+                                @oninput="OnConfigFieldChanged" />
+                <FluentTextField @bind-Value="_serverConfig.PasswordAdmin" Label="Admin Password" Style="width: 100%; margin-top: 8px;"
+                                @oninput="OnConfigFieldChanged" />
+                <FluentNumberField @bind-Value="_serverConfig.MaxPlayers" Label="Max Players" Min="1" Max="128"
+                                   Style="margin-top: 8px;" />
+                <FluentSwitch @bind-Value="_serverConfig.BattlEye" Label="BattlEye" Style="margin-top: 8px;" />
+                <FluentSwitch @bind-Value="_serverConfig.PersistentBattlefield" Label="Persistent Battlefield" Style="margin-top: 8px;" />
+                <FluentTextField @bind-Value="_serverConfig.Motd" Label="MOTD" Style="width: 100%; margin-top: 8px;"
+                                @oninput="OnConfigFieldChanged" />
+            </div>
+            <div class="kast-card">
+                <h3>Raw Config</h3>
+                <FluentTextArea @bind-Value="_serverCfgRaw" Label="" Rows="20" Style="width: 100%; font-family: monospace; font-size: 13px;"
+                               @oninput="OnRawConfigChanged" />
+            </div>
+        </div>
+    </FluentTab>
+
+    <FluentTab Label="Basic Config">
+        <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="kast-card">
+                <h3>Network Settings</h3>
+                <FluentNumberField @bind-Value="_basicConfig.MaxMsgSend" Label="MaxMsgSend" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeGuaranteed" Label="MaxSizeGuaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeNonguaranteed" Label="MaxSizeNonguaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MinBandwidth" Label="MinBandwidth" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxBandwidth" Label="MaxBandwidth" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.TerrainGridViewDistance" Label="TerrainGridViewDistance" Style="margin-top: 8px;" />
+            </div>
+            <div class="kast-card">
+                <h3>Raw Config</h3>
+                <FluentTextArea @bind-Value="_basicCfgRaw" Label="" Rows="16" Style="width: 100%; font-family: monospace; font-size: 13px;" />
+            </div>
+        </div>
+    </FluentTab>
+
+    <FluentTab Label="Mods">
+        <div class="kast-card" style="margin-top: 16px;">
+            <h3>Assigned Mods</h3>
+            @if (!_isNew && _instance.Mods.Count > 0)
+            {
+                <FluentDataGrid Items="@_instance.Mods.AsQueryable()" Style="margin-top: 12px;">
+                    <PropertyColumn Title="Mod" Property="@(m => m.SteamMod.Name)" />
+                    <PropertyColumn Title="Load Order" Property="@(m => m.LoadOrder)" Sortable="true" />
+                    <TemplateColumn Title="Actions">
+                        <FluentButton Size="ButtonSize.Small" OnClick="@(() => RemoveMod(context.SteamModId))">
+                            Remove
+                        </FluentButton>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+            else
+            {
+                <p style="color: var(--kast-text-muted);">No mods assigned.</p>
+            }
+
+            <h4 style="margin-top: 20px;">Available Mods</h4>
+            @foreach (var mod in _availableMods)
+            {
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span>@mod.Name</span>
+                    <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Accent" OnClick="@(() => AddMod(mod.Id))">
+                        Add
+                    </FluentButton>
+                </div>
+            }
+        </div>
+    </FluentTab>
+</FluentTabs>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private ServerInstance _instance = new();
+    private bool _isNew => Id == null || Id == 0;
+    private IReadOnlyList<SteamMod> _availableMods = [];
+
+    private ServerConfigData _serverConfig = new();
+    private BasicConfigData _basicConfig = new();
+    private string _serverCfgRaw = "";
+    private string _basicCfgRaw = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!_isNew)
+        {
+            var instance = await ServerService.GetInstanceByIdAsync(Id!.Value);
+            if (instance == null)
+            {
+                Nav.NavigateTo("/servers");
+                return;
+            }
+            _instance = instance;
+
+            // Parse configs
+            if (!string.IsNullOrEmpty(_instance.ServerCfgContent))
+            {
+                _serverConfig = ConfigService.ParseServerConfig(_instance.ServerCfgContent);
+                _serverCfgRaw = _instance.ServerCfgContent;
+            }
+            if (!string.IsNullOrEmpty(_instance.BasicCfgContent))
+            {
+                _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent);
+                _basicCfgRaw = _instance.BasicCfgContent;
+            }
+        }
+
+        _availableMods = await ModService.GetAllModsAsync();
+    }
+
+    private void OnConfigFieldChanged()
+    {
+        _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+    }
+
+    private void OnRawConfigChanged()
+    {
+        _serverConfig = ConfigService.ParseServerConfig(_serverCfgRaw);
+    }
+
+    private async Task Save()
+    {
+        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
+        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+
+        if (_isNew)
+            await ServerService.CreateInstanceAsync(_instance);
+        else
+            await ServerService.UpdateInstanceAsync(_instance);
+
+        ToastService.ShowSuccess("Server saved");
+        Nav.NavigateTo("/servers");
+    }
+
+    private async Task AddMod(int modId)
+    {
+        if (!_isNew)
+        {
+            await ServerService.AddModToInstanceAsync(_instance.Id, modId);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveMod(int modId)
+    {
+        if (!_isNew)
+        {
+            await ServerService.RemoveModFromInstanceAsync(_instance.Id, modId);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            StateHasChanged();
+        }
+    }
+}
