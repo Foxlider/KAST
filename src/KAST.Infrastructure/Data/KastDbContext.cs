@@ -13,6 +13,7 @@ public class KastDbContext : DbContext
     public DbSet<HeadlessClient> HeadlessClients => Set<HeadlessClient>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<DownloadTask> DownloadTasks => Set<DownloadTask>();
+    public DbSet<KastSettings> Settings => Set<KastSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
