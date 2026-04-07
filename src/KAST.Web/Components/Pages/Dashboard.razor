@@ -3,6 +3,7 @@
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
 @using Microsoft.FluentUI.AspNetCore.Components
+@implements IAsyncDisposable
 @inject IModService ModService
 @inject IServerInstanceService ServerService
 @inject IMonitoringService MonitoringService
@@ -120,8 +121,17 @@ else
     private IReadOnlyList<SteamMod> _mods = [];
     private IReadOnlyList<ServerInstance> _instances = [];
     private HostMetrics _hostMetrics = new();
+    private CancellationTokenSource? _cts;
 
     protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+
+        _cts = new CancellationTokenSource();
+        _ = RunPeriodicRefresh(_cts.Token);
+    }
+
+    private async Task RefreshData()
     {
         _mods = await ModService.GetAllModsAsync();
         _instances = await ServerService.GetAllInstancesAsync();
@@ -134,6 +144,23 @@ else
         {
             // Monitoring may not be available in all environments
         }
+    }
+
+    private async Task RunPeriodicRefresh(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshData();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private static Appearance GetStatusAppearance(ServerInstanceStatus status) => status switch
@@ -155,5 +182,12 @@ else
             size /= 1024;
         }
         return $"{size:F1} {sizes[order]}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        await ValueTask.CompletedTask;
     }
 }

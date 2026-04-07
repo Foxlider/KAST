@@ -4,11 +4,6 @@
     --kast-primary: #ff6b35;
     --kast-primary-dark: #cc2200;
     --kast-primary-light: #ff8c5a;
-    --kast-bg-dark: #1a1a2e;
-    --kast-bg-card: #16213e;
-    --kast-bg-surface: #0f3460;
-    --kast-text: #e0e0e0;
-    --kast-text-muted: #8892b0;
     --kast-accent: #e94560;
     --kast-success: #4caf50;
     --kast-warning: #ff9800;
@@ -18,11 +13,11 @@
 html, body {
     margin: 0;
     padding: 0;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: var(--kast-bg-dark);
-    color: var(--kast-text);
     overflow: hidden;
     height: 100%;
+    background: var(--neutral-layer-1, #1b1b1b);
+    color: var(--neutral-foreground-rest, #e0e0e0);
+    font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
 }
 
 /* ===== Splash Screen ===== */
@@ -101,7 +96,7 @@ html, body {
 }
 
 .splash-subtitle {
-    color: var(--kast-text-muted);
+    color: var(--neutral-foreground-hint, #8892b0);
     font-size: 14px;
     letter-spacing: 3px;
     text-transform: uppercase;
@@ -137,18 +132,67 @@ html, body {
 }
 
 /* ===== Layout ===== */
+.kast-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.kast-header {
+    display: flex;
+    align-items: center;
+    height: 48px;
+    padding: 0 20px;
+    background: var(--neutral-layer-3, #282828);
+    border-bottom: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
+    flex-shrink: 0;
+    z-index: 100;
+}
+
+.kast-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kast-header-subtitle {
+    font-size: 12px;
+    color: var(--neutral-foreground-hint, #9e9e9e);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.kast-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.kast-nav {
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.kast-main {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--neutral-layer-1, #1b1b1b);
+}
+
 .page-content {
     padding: 24px;
-    height: 100%;
-    overflow-y: auto;
+    max-width: 1400px;
+}
+
+h1, h2, h3, h4 {
+    color: var(--neutral-foreground-rest, #e0e0e0);
 }
 
 /* Acrylic card style */
 .kast-card {
-    background: rgba(22, 33, 62, 0.7);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--neutral-layer-2, #272727);
+    border: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
     border-radius: 8px;
     padding: 20px;
     transition: all 0.2s ease;
@@ -156,7 +200,7 @@ html, body {
 
 .kast-card:hover {
     border-color: rgba(255, 107, 53, 0.3);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 /* Tile layout (Windows 10 style) */
@@ -167,9 +211,8 @@ html, body {
 }
 
 .kast-tile {
-    background: rgba(22, 33, 62, 0.8);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--neutral-layer-2, #272727);
+    border: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
     border-radius: 6px;
     padding: 20px;
     min-height: 140px;
@@ -197,17 +240,18 @@ html, body {
 .kast-tile:hover {
     transform: translateY(-2px);
     border-color: rgba(255, 107, 53, 0.2);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .kast-tile:hover::before {
     opacity: 1;
 }
 
+/* Fluent UI dark theme integration */
 .kast-tile-title {
     font-size: 14px;
     font-weight: 600;
-    color: var(--kast-text);
+    color: var(--neutral-foreground-rest, #e0e0e0);
     margin-bottom: 4px;
 }
 
@@ -219,7 +263,7 @@ html, body {
 
 .kast-tile-subtitle {
     font-size: 12px;
-    color: var(--kast-text-muted);
+    color: var(--neutral-foreground-hint, #9e9e9e);
 }
 
 /* Status indicators */
@@ -232,7 +276,7 @@ html, body {
 }
 
 .status-dot.running { background: var(--kast-success); box-shadow: 0 0 6px var(--kast-success); }
-.status-dot.stopped { background: var(--kast-text-muted); }
+.status-dot.stopped { background: var(--neutral-foreground-hint, #9e9e9e); }
 .status-dot.error { background: var(--kast-error); box-shadow: 0 0 6px var(--kast-error); }
 .status-dot.starting, .status-dot.downloading { background: var(--kast-warning); animation: pulse 1.5s infinite; }
 
@@ -241,27 +285,10 @@ html, body {
     50% { opacity: 0.4; }
 }
 
-/* Header override */
-.header-content {
-    display: flex;
-    align-items: center;
-    width: 100%;
-}
 
-.header-brand {
-    display: flex;
-    align-items: center;
-}
 
-.header-logo {
-    height: 32px;
-    width: auto;
-}
-
-/* Fluent UI theme overrides */
-fluent-design-system-provider {
-    --neutral-fill-rest: rgba(22, 33, 62, 0.6);
-}
+/* Fluent UI overrides */
+a { color: var(--accent-foreground-rest, #ff8c5a); }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
