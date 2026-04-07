@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using KAST.Core;
 using KAST.Core.Enums;
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
@@ -8,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger) : IModService
+public class ModService(KastDbContext db, ISteamService steamService, ISettingsService settingsService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -114,7 +116,8 @@ public class ModService(KastDbContext db, ISteamService steamService, IAppEventB
 
         try
         {
-            var destPath = Path.Combine("mods", mod.WorkshopId.ToString());
+            var settings = await settingsService.GetSettingsAsync(ct);
+            var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
             await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
 
