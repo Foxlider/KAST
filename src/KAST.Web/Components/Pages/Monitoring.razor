@@ -1,0 +1,152 @@
+@page "/monitoring"
+@using KAST.Core.Enums
+@using KAST.Core.Interfaces
+@using KAST.Core.Models
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.FluentUI.AspNetCore.Components
+@implements IAsyncDisposable
+@inject IMonitoringService MonitoringService
+@inject IServerInstanceService ServerService
+@inject NavigationManager Nav
+
+<PageTitle>KAST — Monitoring</PageTitle>
+
+<h1>Monitoring</h1>
+
+<h2 style="margin-top: 24px;">Host</h2>
+<div class="kast-tiles">
+    <div class="kast-tile">
+        <div class="kast-tile-title">CPU</div>
+        <div class="kast-tile-value">@_hostMetrics.CpuUsagePercent.ToString("F1")%</div>
+        <FluentProgress Value="@((int)_hostMetrics.CpuUsagePercent)" />
+    </div>
+    <div class="kast-tile">
+        <div class="kast-tile-title">Memory</div>
+        <div class="kast-tile-value">@_hostMetrics.MemoryUsagePercent.ToString("F1")%</div>
+        <div class="kast-tile-subtitle">@FormatBytes(_hostMetrics.UsedMemoryBytes) / @FormatBytes(_hostMetrics.TotalMemoryBytes)</div>
+        <FluentProgress Value="@((int)_hostMetrics.MemoryUsagePercent)" />
+    </div>
+    <div class="kast-tile">
+        <div class="kast-tile-title">Disk</div>
+        <div class="kast-tile-value">@_hostMetrics.DiskUsagePercent.ToString("F1")%</div>
+        <div class="kast-tile-subtitle">@FormatBytes(_hostMetrics.UsedDiskBytes) / @FormatBytes(_hostMetrics.TotalDiskBytes)</div>
+        <FluentProgress Value="@((int)_hostMetrics.DiskUsagePercent)" />
+    </div>
+</div>
+
+<h2 style="margin-top: 32px;">Instances</h2>
+@if (_instances.Count == 0)
+{
+    <div class="kast-card">
+        <p style="color: var(--kast-text-muted);">No running instances to monitor.</p>
+    </div>
+}
+else
+{
+    <div class="kast-tiles">
+        @foreach (var instance in _instances)
+        {
+            var metrics = _instanceMetrics.GetValueOrDefault(instance.Id);
+            <div class="kast-tile">
+                <div>
+                    <div class="kast-tile-title">
+                        <span class="status-dot @instance.Status.ToString().ToLowerInvariant()"></span>
+                        @instance.Name
+                    </div>
+                    <div class="kast-tile-subtitle" style="margin-top: 8px;">Port @instance.Port</div>
+                </div>
+                @if (metrics != null)
+                {
+                    <div style="margin-top: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                            <span>CPU</span>
+                            <span>@metrics.CpuUsagePercent.ToString("F1")%</span>
+                        </div>
+                        <FluentProgress Value="@((int)metrics.CpuUsagePercent)" Style="margin-top: 4px;" />
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px;">
+                            <span>Memory</span>
+                            <span>@FormatBytes(metrics.MemoryUsageBytes)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px;">
+                            <span>Players</span>
+                            <span>@metrics.PlayerCount</span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="color: var(--kast-text-muted); font-size: 13px; margin-top: 12px;">
+                        No metrics available
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private HostMetrics _hostMetrics = new();
+    private IReadOnlyList<ServerInstance> _instances = [];
+    private Dictionary<int, InstanceMetrics> _instanceMetrics = new();
+    private HubConnection? _hubConnection;
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+
+        // Set up periodic refresh
+        _refreshTimer = new Timer(async _ =>
+        {
+            await RefreshData();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+
+        // Set up SignalR connection
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        try
+        {
+            await _hubConnection.StartAsync();
+            await _hubConnection.InvokeAsync("SubscribeToHost");
+        }
+        catch
+        {
+            // SignalR connection may fail in some environments
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        try
+        {
+            _hostMetrics = await MonitoringService.GetHostMetricsAsync();
+            _instances = await ServerService.GetAllInstancesAsync();
+
+            var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync();
+            _instanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
+        }
+        catch
+        {
+            // Monitoring may not be available
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
+        return $"{size:F1} {sizes[order]}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_refreshTimer != null) await _refreshTimer.DisposeAsync();
+        if (_hubConnection != null) await _hubConnection.DisposeAsync();
+    }
+}
