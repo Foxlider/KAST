@@ -69,8 +69,7 @@ public class ApiKeyService(KastDbContext db) : IApiKeyService
     private static string HashKey(string key)
     {
         var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = KeyDerivation.Prf.HMACSHA256;
-        var derived = KeyDerivation.Pbkdf2(key, salt, hash, 100_000, 32);
+        var derived = KeyDerivation.Pbkdf2(key, salt, KeyDerivationPrf.HMACSHA256, 100_000, 32);
         return $"{Convert.ToBase64String(salt)}.{Convert.ToBase64String(derived)}";
     }
 
@@ -81,7 +80,7 @@ public class ApiKeyService(KastDbContext db) : IApiKeyService
 
         var salt = Convert.FromBase64String(parts[0]);
         var expectedHash = Convert.FromBase64String(parts[1]);
-        var derived = KeyDerivation.Pbkdf2(key, salt, KeyDerivation.Prf.HMACSHA256, 100_000, 32);
+        var derived = KeyDerivation.Pbkdf2(key, salt, KeyDerivationPrf.HMACSHA256, 100_000, 32);
 
         return CryptographicOperations.FixedTimeEquals(derived, expectedHash);
     }

@@ -89,18 +89,15 @@ else
     private IReadOnlyList<ServerInstance> _instances = [];
     private Dictionary<int, InstanceMetrics> _instanceMetrics = new();
     private HubConnection? _hubConnection;
-    private Timer? _refreshTimer;
+    private CancellationTokenSource? _cts;
 
     protected override async Task OnInitializedAsync()
     {
         await RefreshData();
 
-        // Set up periodic refresh
-        _refreshTimer = new Timer(async _ =>
-        {
-            await RefreshData();
-            await InvokeAsync(StateHasChanged);
-        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        // Set up periodic refresh using PeriodicTimer on the Blazor sync context
+        _cts = new CancellationTokenSource();
+        _ = RunPeriodicRefresh(_cts.Token);
 
         // Set up SignalR connection
         _hubConnection = new HubConnectionBuilder()
@@ -117,6 +114,23 @@ else
         {
             // SignalR connection may fail in some environments
         }
+    }
+
+    private async Task RunPeriodicRefresh(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshData();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task RefreshData()
@@ -146,7 +160,8 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        if (_refreshTimer != null) await _refreshTimer.DisposeAsync();
+        _cts?.Cancel();
+        _cts?.Dispose();
         if (_hubConnection != null) await _hubConnection.DisposeAsync();
     }
 }

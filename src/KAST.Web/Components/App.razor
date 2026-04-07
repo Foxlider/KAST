@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KAST — Keelah's Arma Server Tool</title>
     <base href="/" />
+    <link rel="stylesheet" href="KAST.Web.styles.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="@InteractiveServer" />
 </head>
 <body>
     <div id="kast-splash" class="splash-screen">
@@ -49,17 +50,25 @@
         </div>
     </div>
 
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="@InteractiveServer" />
 
-    <script src="_framework/blazor.web.js"></script>
+    <script src="_framework/blazor.web.js" autostart="false"></script>
     <script>
-        // Hide splash after Blazor connects
-        Blazor.addEventListener('enhancedload', () => {
-            const splash = document.getElementById('kast-splash');
-            if (splash) {
-                splash.classList.add('splash-fade-out');
-                setTimeout(() => splash.remove(), 600);
-            }
+        // Track when the splash started
+        var splashStart = Date.now();
+        var minSplashMs = 3000; // minimum 3 seconds
+
+        Blazor.start().then(() => {
+            var elapsed = Date.now() - splashStart;
+            var remaining = Math.max(0, minSplashMs - elapsed);
+
+            setTimeout(() => {
+                var splash = document.getElementById('kast-splash');
+                if (splash) {
+                    splash.classList.add('splash-fade-out');
+                    setTimeout(() => splash.remove(), 600);
+                }
+            }, remaining);
         });
     </script>
 </body>
