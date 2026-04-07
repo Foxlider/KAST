@@ -1,0 +1,27 @@
+using KAST.Core.Interfaces;
+using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Services;
+using KAST.Infrastructure.Steam;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace KAST.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddKastInfrastructure(this IServiceCollection services, string connectionString)
+    {
+        services.AddDbContext<KastDbContext>(options =>
+            options.UseSqlite(connectionString));
+
+        services.AddSingleton<ISteamService, SteamClientService>();
+        services.AddSingleton<IProcessManagerService, ProcessManagerService>();
+        services.AddScoped<IModService, ModService>();
+        services.AddScoped<IServerInstanceService, ServerInstanceService>();
+        services.AddScoped<IMonitoringService, MonitoringService>();
+        services.AddScoped<IApiKeyService, ApiKeyService>();
+        services.AddSingleton<IServerConfigService, ServerConfigService>();
+
+        return services;
+    }
+}
