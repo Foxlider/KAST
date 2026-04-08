@@ -19,11 +19,21 @@ public class ServerInstance
     public string? AutoStopTime { get; set; }    // "HH:mm" format
     public bool ScheduleEnabled { get; set; }
 
-    // Arma 3 launch parameters
+    // Arma 3 config files (raw text stored in DB)
     public string? ServerCfgContent { get; set; }
     public string? BasicCfgContent { get; set; }
-    public string? ServerProfileContent { get; set; }
+    public string? ArmaProfileContent { get; set; }
     public string? AdditionalParameters { get; set; }
+
+    // Creator DLC toggles
+    public bool ContactDlc { get; set; }
+    public bool GmDlc { get; set; }
+    public bool PfDlc { get; set; }
+    public bool CslaDlc { get; set; }
+    public bool WsDlc { get; set; }
+    public bool SpeDlc { get; set; }
+    public bool RfDlc { get; set; }
+    public bool EfDlc { get; set; }
 
     // Process tracking
     public int? ProcessId { get; set; }
