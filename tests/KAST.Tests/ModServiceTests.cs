@@ -14,6 +14,7 @@ public class ModServiceTests : IDisposable
 {
     private readonly Infrastructure.Data.KastDbContext _db;
     private readonly ISteamService _steamService;
+    private readonly ISettingsService _settingsService;
     private readonly IAppEventBroadcaster _broadcaster;
     private readonly ILogger<ModService> _logger;
     private readonly ModService _sut;
@@ -22,9 +23,12 @@ public class ModServiceTests : IDisposable
     {
         _db = DbHelper.CreateInMemoryDb();
         _steamService = Substitute.For<ISteamService>();
+        _settingsService = Substitute.For<ISettingsService>();
+        _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings { ModsDirectory = ".KAST_DATA/mods" });
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
         _logger = Substitute.For<ILogger<ModService>>();
-        _sut = new ModService(_db, _steamService, _broadcaster, _logger);
+        _sut = new ModService(_db, _steamService, _settingsService, _broadcaster, _logger);
     }
 
     public void Dispose() => _db.Dispose();

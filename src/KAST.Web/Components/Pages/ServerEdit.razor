@@ -74,23 +74,25 @@
         <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="kast-card">
                 <h3>Settings</h3>
-                <FluentTextField @bind-Value="_serverConfig.Hostname" Label="Hostname" Style="width: 100%;"
-                                @oninput="OnConfigFieldChanged" />
-                <FluentTextField @bind-Value="_serverConfig.Password" Label="Server Password" Style="width: 100%; margin-top: 8px;"
-                                @oninput="OnConfigFieldChanged" />
-                <FluentTextField @bind-Value="_serverConfig.PasswordAdmin" Label="Admin Password" Style="width: 100%; margin-top: 8px;"
-                                @oninput="OnConfigFieldChanged" />
-                <FluentNumberField @bind-Value="_serverConfig.MaxPlayers" Label="Max Players" Min="1" Max="128"
-                                   Style="margin-top: 8px;" />
-                <FluentSwitch @bind-Value="_serverConfig.BattlEye" Label="BattlEye" Style="margin-top: 8px;" />
-                <FluentSwitch @bind-Value="_serverConfig.PersistentBattlefield" Label="Persistent Battlefield" Style="margin-top: 8px;" />
-                <FluentTextField @bind-Value="_serverConfig.Motd" Label="MOTD" Style="width: 100%; margin-top: 8px;"
-                                @oninput="OnConfigFieldChanged" />
+                <FluentTextField @bind-Value="_serverConfig.Hostname" @bind-Value:after="OnServerConfigChanged"
+                                Label="Hostname" Style="width: 100%;" />
+                <FluentTextField @bind-Value="_serverConfig.Password" @bind-Value:after="OnServerConfigChanged"
+                                Label="Server Password" Style="width: 100%; margin-top: 8px;" />
+                <FluentTextField @bind-Value="_serverConfig.PasswordAdmin" @bind-Value:after="OnServerConfigChanged"
+                                Label="Admin Password" Style="width: 100%; margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_serverConfig.MaxPlayers" @bind-Value:after="OnServerConfigChanged"
+                                   Label="Max Players" Min="1" Max="128" Style="margin-top: 8px;" />
+                <FluentSwitch @bind-Value="_serverConfig.BattlEye" @bind-Value:after="OnServerConfigChanged"
+                             Label="BattlEye" Style="margin-top: 8px;" />
+                <FluentSwitch @bind-Value="_serverConfig.PersistentBattlefield" @bind-Value:after="OnServerConfigChanged"
+                             Label="Persistent Battlefield" Style="margin-top: 8px;" />
+                <FluentTextField @bind-Value="_serverConfig.Motd" @bind-Value:after="OnServerConfigChanged"
+                                Label="MOTD" Style="width: 100%; margin-top: 8px;" />
             </div>
             <div class="kast-card">
                 <h3>Raw Config</h3>
-                <FluentTextArea @bind-Value="_serverCfgRaw" Label="" Rows="20" Style="width: 100%; font-family: monospace; font-size: 13px;"
-                               @oninput="OnRawConfigChanged" />
+                <FluentTextArea @bind-Value="_serverCfgRaw" @bind-Value:after="OnServerCfgRawChanged"
+                               Label="" Rows="20" Style="width: 100%; font-family: monospace; font-size: 13px;" />
             </div>
         </div>
     </FluentTab>
@@ -99,16 +101,23 @@
         <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="kast-card">
                 <h3>Network Settings</h3>
-                <FluentNumberField @bind-Value="_basicConfig.MaxMsgSend" Label="MaxMsgSend" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxSizeGuaranteed" Label="MaxSizeGuaranteed" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxSizeNonguaranteed" Label="MaxSizeNonguaranteed" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MinBandwidth" Label="MinBandwidth" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxBandwidth" Label="MaxBandwidth" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.TerrainGridViewDistance" Label="TerrainGridViewDistance" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxMsgSend" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="MaxMsgSend" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeGuaranteed" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="MaxSizeGuaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeNonguaranteed" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="MaxSizeNonguaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MinBandwidth" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="MinBandwidth" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxBandwidth" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="MaxBandwidth" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.TerrainGridViewDistance" @bind-Value:after="OnBasicConfigChanged"
+                                   Label="TerrainGridViewDistance" Style="margin-top: 8px;" />
             </div>
             <div class="kast-card">
                 <h3>Raw Config</h3>
-                <FluentTextArea @bind-Value="_basicCfgRaw" Label="" Rows="16" Style="width: 100%; font-family: monospace; font-size: 13px;" />
+                <FluentTextArea @bind-Value="_basicCfgRaw" @bind-Value:after="OnBasicCfgRawChanged"
+                               Label="" Rows="16" Style="width: 100%; font-family: monospace; font-size: 13px;" />
             </div>
         </div>
     </FluentTab>
@@ -191,16 +200,34 @@
         }
 
         _availableMods = await ModService.GetAllModsAsync();
+
+        // Seed default configs so raw panels are never empty
+        if (string.IsNullOrEmpty(_serverCfgRaw))
+            _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+        if (string.IsNullOrEmpty(_basicCfgRaw))
+            _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
     }
 
-    private void OnConfigFieldChanged()
+    // ── Bidirectional sync: structured fields ↔ raw text ──
+
+    private void OnServerConfigChanged()
     {
         _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
     }
 
-    private void OnRawConfigChanged()
+    private void OnServerCfgRawChanged()
     {
         _serverConfig = ConfigService.ParseServerConfig(_serverCfgRaw);
+    }
+
+    private void OnBasicConfigChanged()
+    {
+        _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+    }
+
+    private void OnBasicCfgRawChanged()
+    {
+        _basicConfig = ConfigService.ParseBasicConfig(_basicCfgRaw);
     }
 
     private async Task Save()
