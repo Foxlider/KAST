@@ -13,13 +13,14 @@ public interface ISteamService
 
     // ── State ──
     bool IsAuthenticated { get; }          // true = logged in with a real account
+    bool IsConnected { get; }              // true = connected (anonymous or real)
     string? CurrentUsername { get; }       // Steam account name (null when anonymous)
     SteamUserProfile? Profile { get; }     // persona info once SteamFriends responds
     event Action? AuthStateChanged;
 
     // ── Steam operations ──
     Task DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default);
-    Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default);
+    Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null, CancellationToken ct = default);
     Task<WorkshopItemInfo?> GetWorkshopItemInfoAsync(long workshopId, CancellationToken ct = default);
     Task<IReadOnlyList<WorkshopItemInfo>> SearchWorkshopAsync(string query, int count = 20, CancellationToken ct = default);
 }
