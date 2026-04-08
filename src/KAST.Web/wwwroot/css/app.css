@@ -495,3 +495,91 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.25);
 }
+
+/* ===== Mod Drag & Drop Columns ===== */
+.kast-mod-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.06));
+    background: var(--neutral-layer-3, #2a2a2a);
+    cursor: grab;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+    font-size: 13px;
+}
+.kast-mod-item:hover {
+    background: var(--neutral-layer-4, #333);
+    border-color: rgba(255, 107, 53, 0.3);
+}
+.kast-mod-item:active { cursor: grabbing; }
+.kast-mod-item.kast-dragging { opacity: 0.4; }
+
+.kast-drop-zone {
+    min-height: 200px;
+    transition: border-color 0.2s, background 0.2s;
+}
+.kast-drop-zone.kast-drop-hover {
+    border-color: var(--kast-primary) !important;
+    background: rgba(255, 107, 53, 0.05) !important;
+}
+
+.kast-drop-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+    color: var(--kast-text-muted, #777);
+    font-size: 13px;
+    border: 2px dashed rgba(255,255,255,0.08);
+    border-radius: 6px;
+}
+
+.kast-mod-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--kast-primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+/* ===== Status Footer (FluentFooter wraps this, styles for console panel) ===== */
+
+/* ── Console side panel (fixed right, slides in) ── */
+/* ── Semi-transparent backdrop — clicking it closes the panel ── */
+.kast-console-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.kast-console-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 680px;
+    max-width: 90vw;
+    background: var(--neutral-layer-floating, #1e1e1e);
+    border-left: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.12));
+    box-shadow: -8px 0 32px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    animation: kast-panel-in 0.18s ease-out;
+}
+@keyframes kast-panel-in {
+    from { opacity: 0; transform: translateX(40px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+

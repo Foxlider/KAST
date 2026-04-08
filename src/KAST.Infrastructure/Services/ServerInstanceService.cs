@@ -242,43 +242,102 @@ public class ServerInstanceService(
         if (!string.IsNullOrEmpty(instance.InstallPath))
             Directory.CreateDirectory(instance.InstallPath);
 
+        // Per-instance config directory
+        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        Directory.CreateDirectory(configDir);
+
         if (instance.ServerCfgContent != null)
         {
-            var path = Path.Combine(instance.InstallPath, "server.cfg");
+            var path = Path.Combine(configDir, "server.cfg");
             File.WriteAllText(path, instance.ServerCfgContent);
         }
 
         if (instance.BasicCfgContent != null)
         {
-            var path = Path.Combine(instance.InstallPath, "basic.cfg");
+            var path = Path.Combine(configDir, "basic.cfg");
             File.WriteAllText(path, instance.BasicCfgContent);
+        }
+
+        if (instance.ArmaProfileContent != null)
+        {
+            // Profile file goes in the profiles directory with instance-specific name
+            var profileDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+            Directory.CreateDirectory(profileDir);
+            var profileName = $"server_{instance.Id}";
+            var path = Path.Combine(profileDir, $"{profileName}.Arma3Profile");
+            File.WriteAllText(path, instance.ArmaProfileContent);
         }
     }
 
     private static string BuildLaunchArguments(ServerInstance instance)
     {
+        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        var profileName = $"server_{instance.Id}";
+
         var args = new List<string>
         {
             $"-port={instance.Port}",
             "-nosplash",
-            "-world=empty"
+            "-world=empty",
+            $"\"-profiles={configDir}\"",
+            $"-name={profileName}"
         };
 
         if (instance.ServerCfgContent != null)
-            args.Add($"-config={Path.Combine(instance.InstallPath, "server.cfg")}");
+            args.Add($"\"-config={Path.Combine(configDir, "server.cfg")}\"");
 
         if (instance.BasicCfgContent != null)
-            args.Add($"-cfg={Path.Combine(instance.InstallPath, "basic.cfg")}");
+            args.Add($"\"-cfg={Path.Combine(configDir, "basic.cfg")}\"");
 
-        // Build mod list
+        // Parse ServerCfg to extract launch-relevant flags
+        if (instance.ServerCfgContent != null)
+        {
+            var cfgService = new ServerConfigService();
+            var cfg = cfgService.ParseServerConfig(instance.ServerCfgContent);
+
+            if (cfg.NetlogEnabled) args.Add("-netlog");
+            if (cfg.AutoInit) args.Add("-autoInit");
+            if (cfg.AllowedFilePatching > 0) args.Add("-filePatching");
+            if (cfg.EnableHT) args.Add("-enableHT");
+            if (cfg.EnableRanking)
+                args.Add($"\"-ranking={Path.Combine(configDir, "ranking.log")}\"");
+            if (cfg.MaxMemOverride && cfg.MaxMem > 0)
+                args.Add($"-maxMem={cfg.MaxMem}");
+            if (cfg.CpuCountOverride && cfg.CpuCount > 0)
+                args.Add($"-cpuCount={cfg.CpuCount}");
+        }
+
+        // DLC mods
+        var dlcMods = new List<string>();
+        if (instance.ContactDlc) dlcMods.Add("contact");
+        if (instance.GmDlc) dlcMods.Add("gm");
+        if (instance.PfDlc) dlcMods.Add("vn");
+        if (instance.CslaDlc) dlcMods.Add("csla");
+        if (instance.WsDlc) dlcMods.Add("ws");
+        if (instance.SpeDlc) dlcMods.Add("spe");
+        if (instance.RfDlc) dlcMods.Add("rf");
+        if (instance.EfDlc) dlcMods.Add("ef");
+
+        // Client-side / player mods (includes DLC)
+        var clientMods = instance.Mods
+            .Where(m => !m.IsServerSide)
+            .OrderBy(m => m.LoadOrder)
+            .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"))
+            .ToList();
+
+        var allPlayerMods = dlcMods.Concat(clientMods).ToList();
+        if (allPlayerMods.Count > 0)
+            args.Add($"\"-mod={string.Join(";", allPlayerMods)}\"");
+
+        // Server-side mods
         var serverMods = instance.Mods
             .Where(m => m.IsServerSide)
             .OrderBy(m => m.LoadOrder)
             .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"));
 
-        var modList = string.Join(";", serverMods);
-        if (!string.IsNullOrEmpty(modList))
-            args.Add($"\"-mod={modList}\"");
+        var serverModList = string.Join(";", serverMods);
+        if (!string.IsNullOrEmpty(serverModList))
+            args.Add($"\"-serverMod={serverModList}\"");
 
         if (!string.IsNullOrEmpty(instance.AdditionalParameters))
             args.Add(instance.AdditionalParameters);

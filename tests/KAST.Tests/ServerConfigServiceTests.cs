@@ -68,10 +68,24 @@ public class ServerConfigServiceTests
     }
 
     [Fact]
-    public void ParseServerConfig_VotingDisabled_WhenNoAllowedVoteCmds()
+    public void ParseServerConfig_VotingEnabled_ByDefault_WhenNoAllowedVoteCmds()
     {
         var raw = """
             hostname = "Test";
+            """;
+
+        var result = _sut.ParseServerConfig(raw);
+
+        // Voting is enabled by default in Arma 3 unless explicitly disabled with empty allowedVoteCmds[]
+        Assert.True(result.VotingEnabled);
+    }
+
+    [Fact]
+    public void ParseServerConfig_VotingDisabled_WhenEmptyAllowedVoteCmds()
+    {
+        var raw = """
+            hostname = "Test";
+            allowedVoteCmds[] = {};
             """;
 
         var result = _sut.ParseServerConfig(raw);
@@ -251,7 +265,7 @@ public class ServerConfigServiceTests
             MinErrorToSend = 0.002;
             MinErrorToSendNear = 0.02;
             MaxCustomFileSize = 1048576;
-            terrainGridViewDistance = 25;
+            terrainGrid = 25;
             """;
 
         var result = _sut.ParseBasicConfig(raw);
@@ -264,7 +278,7 @@ public class ServerConfigServiceTests
         Assert.Equal(0.002, result.MinErrorToSend);
         Assert.Equal(0.02, result.MinErrorToSendNear);
         Assert.Equal(1048576, result.MaxCustomFileSize);
-        Assert.Equal(25, result.TerrainGridViewDistance);
+        Assert.Equal(25, result.TerrainGrid);
     }
 
     [Fact]
@@ -293,7 +307,7 @@ public class ServerConfigServiceTests
             MinErrorToSendNear = 0.02;
             MaxSizeNonguaranteed = 512;
             MaxCustomFileSize = 0;
-            terrainGridViewDistance = 25;
+            terrainGrid = 25;
             """;
 
         var parsed = _sut.ParseBasicConfig(raw);
