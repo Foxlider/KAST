@@ -489,13 +489,10 @@ public class SteamClientService : ISteamService, IDisposable
             if (config != KeyValue.Invalid)
             {
                 var oslist = config["oslist"].AsString();
-                if (!string.IsNullOrEmpty(oslist))
+                if (!string.IsNullOrEmpty(oslist) && !oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
-                    {
-                        logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
-                        continue;
-                    }
+                    logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
+                    continue;
                 }
             }
 
@@ -510,7 +507,7 @@ public class SteamClientService : ISteamService, IDisposable
             if (string.IsNullOrEmpty(manifestIdStr) || !ulong.TryParse(manifestIdStr, out var manifestId))
                 continue;
 
-            depotManifests.Add(((uint)depotId, (ulong)manifestId));
+            depotManifests.Add((depotId, manifestId));
             logger.LogInformation("Depot {DepotId}: ManifestId={ManifestId}", depotId, manifestId);
         }
 

@@ -226,9 +226,8 @@ public class ServerInstanceService(
         var modsDir = Path.Combine(instance.InstallPath, "mods");
         Directory.CreateDirectory(modsDir);
 
-        foreach (var modLink in instance.Mods)
+        foreach (var mod in instance.Mods.Select(modLink => modLink.SteamMod))
         {
-            var mod = modLink.SteamMod;
             if (string.IsNullOrEmpty(mod.LocalPath) || !Directory.Exists(mod.LocalPath))
                 continue;
 
@@ -307,25 +306,51 @@ public class ServerInstanceService(
         if (instance.BasicCfgContent != null)
             args.Add($"\"-cfg={Path.Combine(configDir, "basic.cfg")}\"");
 
-        // Parse ServerCfg to extract launch-relevant flags
-        if (instance.ServerCfgContent != null)
-        {
-            var cfgService = new ServerConfigService();
-            var cfg = cfgService.ParseServerConfig(instance.ServerCfgContent);
+        AddServerConfigArgs(instance, configDir, args);
+        AddModArgs(instance, args);
 
-            if (cfg.NetlogEnabled) args.Add("-netlog");
-            if (cfg.AutoInit) args.Add("-autoInit");
-            if (cfg.AllowedFilePatching > 0) args.Add("-filePatching");
-            if (cfg.EnableHT) args.Add("-enableHT");
-            if (cfg.EnableRanking)
-                args.Add($"\"-ranking={Path.Combine(configDir, "ranking.log")}\"");
-            if (cfg.MaxMemOverride && cfg.MaxMem > 0)
-                args.Add($"-maxMem={cfg.MaxMem}");
-            if (cfg.CpuCountOverride && cfg.CpuCount > 0)
-                args.Add($"-cpuCount={cfg.CpuCount}");
-        }
+        if (!string.IsNullOrEmpty(instance.AdditionalParameters))
+            args.Add(instance.AdditionalParameters);
 
-        // DLC mods
+        return string.Join(" ", args);
+    }
+
+    private static void AddServerConfigArgs(ServerInstance instance, string configDir, List<string> args)
+    {
+        if (instance.ServerCfgContent == null)
+            return;
+
+        var cfgService = new ServerConfigService();
+        var cfg = cfgService.ParseServerConfig(instance.ServerCfgContent);
+
+        if (cfg.NetlogEnabled) args.Add("-netlog");
+        if (cfg.AutoInit) args.Add("-autoInit");
+        if (cfg.AllowedFilePatching > 0) args.Add("-filePatching");
+        if (cfg.EnableHT) args.Add("-enableHT");
+        if (cfg.EnableRanking)
+            args.Add($"\"-ranking={Path.Combine(configDir, "ranking.log")}\"");
+        if (cfg.MaxMemOverride && cfg.MaxMem > 0)
+            args.Add($"-maxMem={cfg.MaxMem}");
+        if (cfg.CpuCountOverride && cfg.CpuCount > 0)
+            args.Add($"-cpuCount={cfg.CpuCount}");
+    }
+
+    private static void AddModArgs(ServerInstance instance, List<string> args)
+    {
+        var dlcMods = GetDlcModsList(instance);
+        var clientMods = GetClientModsList(instance);
+        var allPlayerMods = dlcMods.Concat(clientMods).ToList();
+
+        if (allPlayerMods.Count > 0)
+            args.Add($"\"-mod={string.Join(";", allPlayerMods)}\"");
+
+        var serverMods = GetServerModsList(instance);
+        if (!string.IsNullOrEmpty(serverMods))
+            args.Add($"\"-serverMod={serverMods}\"");
+    }
+
+    private static List<string> GetDlcModsList(ServerInstance instance)
+    {
         var dlcMods = new List<string>();
         if (instance.ContactDlc) dlcMods.Add("contact");
         if (instance.GmDlc) dlcMods.Add("gm");
@@ -335,32 +360,26 @@ public class ServerInstanceService(
         if (instance.SpeDlc) dlcMods.Add("spe");
         if (instance.RfDlc) dlcMods.Add("rf");
         if (instance.EfDlc) dlcMods.Add("ef");
+        return dlcMods;
+    }
 
-        // Client-side / player mods (includes DLC)
-        var clientMods = instance.Mods
+    private static List<string> GetClientModsList(ServerInstance instance)
+    {
+        return instance.Mods
             .Where(m => !m.IsServerSide)
             .OrderBy(m => m.LoadOrder)
             .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"))
             .ToList();
+    }
 
-        var allPlayerMods = dlcMods.Concat(clientMods).ToList();
-        if (allPlayerMods.Count > 0)
-            args.Add($"\"-mod={string.Join(";", allPlayerMods)}\"");
-
-        // Server-side mods
+    private static string GetServerModsList(ServerInstance instance)
+    {
         var serverMods = instance.Mods
             .Where(m => m.IsServerSide)
             .OrderBy(m => m.LoadOrder)
             .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"));
 
-        var serverModList = string.Join(";", serverMods);
-        if (!string.IsNullOrEmpty(serverModList))
-            args.Add($"\"-serverMod={serverModList}\"");
-
-        if (!string.IsNullOrEmpty(instance.AdditionalParameters))
-            args.Add(instance.AdditionalParameters);
-
-        return string.Join(" ", args);
+        return string.Join(";", serverMods);
     }
 
     private static string BuildHeadlessClientArguments(ServerInstance instance)

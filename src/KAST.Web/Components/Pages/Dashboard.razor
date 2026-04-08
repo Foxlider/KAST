@@ -160,7 +160,10 @@ else
                 });
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) 
+        {
+            // If the operation was cancelled, just exit the loop
+        }
     }
 
     private static Appearance GetStatusAppearance(ServerInstanceStatus status) => status switch

@@ -3,7 +3,6 @@
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
 @using Microsoft.AspNetCore.SignalR.Client
-@using Microsoft.FluentUI.AspNetCore.Components
 @using System.Text.Json
 @implements IAsyncDisposable
 @inject IMonitoringService MonitoringService
@@ -150,7 +149,7 @@ else
                 });
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { /* If the operation was cancelled, just exit the loop */ }
     }
 
     private async Task RefreshData()
@@ -199,10 +198,10 @@ else
         await CreateLineChart("chart-host-cpu", "CPU %", "#ff6b35", 100);
         await CreateLineChart("chart-host-mem", "Memory %", "#4fc3f7", 100);
 
-        foreach (var instance in _instances)
+        foreach (var instance in _instances.Select(i => i.Id))
         {
-            await CreateLineChart($"chart-inst-{instance.Id}-cpu", "CPU %", "#ff6b35", 100);
-            await CreateLineChart($"chart-inst-{instance.Id}-mem", "Memory (MB)", "#4fc3f7", null);
+            await CreateLineChart($"chart-inst-{instance}-cpu", "CPU %", "#ff6b35", 100);
+            await CreateLineChart($"chart-inst-{instance}-mem", "Memory (MB)", "#4fc3f7", null);
         }
 
         await UpdateChartsAsync();
@@ -271,16 +270,16 @@ else
             await JS.InvokeVoidAsync("kastCharts.update", "chart-host-cpu", _hostLabels, new[] { _hostCpu });
             await JS.InvokeVoidAsync("kastCharts.update", "chart-host-mem", _hostLabels, new[] { _hostMem });
 
-            foreach (var instance in _instances)
+            foreach (var instance in _instances.Select(i => i.Id))
             {
-                if (_instanceHistory.TryGetValue(instance.Id, out var hist))
+                if (_instanceHistory.TryGetValue(instance, out var hist))
                 {
-                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance.Id}-cpu", _hostLabels, new[] { hist.Cpu });
-                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance.Id}-mem", _hostLabels, new[] { hist.Mem });
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance}-cpu", _hostLabels, new[] { hist.Cpu });
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{instance}-mem", _hostLabels, new[] { hist.Mem });
                 }
             }
         }
-        catch (JSDisconnectedException) { }
+        catch (JSDisconnectedException) { /* If the JS runtime is disconnected, just skip updating */ }
     }
 
     private static string FormatBytes(long bytes)
@@ -302,13 +301,13 @@ else
         {
             await JS.InvokeVoidAsync("kastCharts.destroy", "chart-host-cpu");
             await JS.InvokeVoidAsync("kastCharts.destroy", "chart-host-mem");
-            foreach (var instance in _instances)
+            foreach (var instance in _instances.Select(i => i.Id))
             {
-                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance.Id}-cpu");
-                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance.Id}-mem");
+                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance}-cpu");
+                await JS.InvokeVoidAsync("kastCharts.destroy", $"chart-inst-{instance}-mem");
             }
         }
-        catch (JSDisconnectedException) { }
+        catch (JSDisconnectedException) { /* If the JS runtime is disconnected, just skip destroying */ }
 
         if (_hubConnection != null) await _hubConnection.DisposeAsync();
     }
