@@ -5,11 +5,19 @@ using KAST.Infrastructure.Steam;
 using KAST.Web.Hubs;
 using KAST.Web.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Logging;
 using Microsoft.FluentUI.AspNetCore.Components;
 using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// In-memory log store (captures logs from startup for the UI console)
+var kastLogStore = new KastLogStore();
+builder.Services.AddSingleton(kastLogStore);
+builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore));
+
+// Health checks
+builder.Services.AddHealthChecks();
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db";
@@ -26,6 +34,12 @@ builder.Services.AddEndpointsApiExplorer();
 
 // SignalR
 builder.Services.AddSignalR();
+
+// HttpClient for health checks (status footer)
+builder.Services.AddHttpClient("HealthCheck", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
 // Background services
@@ -76,6 +90,10 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAntiforgery();
+
+// Health check endpoints
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/alive");
 
 // Map API controllers under /api
 app.MapControllers();

@@ -1,0 +1,236 @@
+@using Microsoft.Extensions.Logging
+@using KAST.Web.Services
+@implements IDisposable
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject KastLogStore LogStore
+
+@* ─── Footer bar ─────────────────────────────────────────────────── *@
+<FluentFooter Style="height: 32px; padding: 0 16px; border-top: 1px solid var(--neutral-stroke-divider-rest);">
+    <FluentStack HorizontalAlignment="HorizontalAlignment.SpaceBetween"
+                 VerticalAlignment="VerticalAlignment.Center"
+                 Style="height: 100%;">
+
+        @* Left: health indicators *@
+        <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="12">
+            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
+                <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
+                            Color="@(_backendAlive ? Color.Success : Color.Error)"
+                            Style="flex-shrink:0;" />
+                <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
+                    Backend: <strong>@(_backendAlive ? "Online" : "Offline")</strong>
+                </span>
+            </FluentStack>
+            <span style="color: var(--neutral-stroke-divider-rest);">│</span>
+            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
+                <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
+                            Color="@(_apiAlive ? Color.Success : Color.Error)"
+                            Style="flex-shrink:0;" />
+                <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
+                    API: <strong>@(_apiAlive ? "Online" : "Offline")</strong>
+                </span>
+            </FluentStack>
+        </FluentStack>
+
+        @* Right: console toggle *@
+        <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="0">
+            <FluentButton Appearance="Appearance.Stealth"
+                          Style="height: 26px; padding: 0 8px; font-size: 12px; gap: 4px;"
+                          Title="Open console"
+                          OnClick="OpenPanel">
+                <FluentIcon Value="@(new Icons.Regular.Size16.TextBulletListSquare())"
+                            Color="@(_hasErrors ? Color.Error : Color.Neutral)" />
+                Console
+                @if (_warnErrorCount > 0)
+                {
+                    <FluentBadge Appearance="@(_hasErrors ? Appearance.Accent : Appearance.Neutral)"
+                                 Style="font-size: 10px; min-width: 18px; height: 16px; line-height: 16px; padding: 0 4px; border-radius: 8px; margin-left: 2px;">
+                        @(_warnErrorCount > 999 ? "999+" : _warnErrorCount.ToString())
+                    </FluentBadge>
+                }
+            </FluentButton>
+        </FluentStack>
+    </FluentStack>
+</FluentFooter>
+
+@* ─── Console side panel ─────────────────────────────────────────── *@
+@if (_showPanel)
+{
+    <div class="kast-console-backdrop" @onclick="ClosePanel"></div>
+    <div class="kast-console-panel" style="z-index: 1000;" @onclick:stopPropagation="true">
+        @* Panel header *@
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--neutral-stroke-divider-rest); flex-shrink: 0;">
+            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="8">
+                <FluentIcon Value="@(new Icons.Regular.Size20.TextBulletListSquare())" Color="Color.Neutral" />
+                <FluentLabel Typo="Typography.H6" Style="margin: 0;">Console</FluentLabel>
+            </FluentStack>
+            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
+                <FluentButton Size="ButtonSize.ExtraSmall" Appearance="Appearance.Stealth"
+                              Title="Clear log" OnClick="ClearLogs">
+                    <FluentIcon Value="@(new Icons.Regular.Size16.Delete())" Color="Color.Neutral" />
+                </FluentButton>
+                <FluentButton Size="ButtonSize.ExtraSmall" Appearance="Appearance.Stealth"
+                              Title="Close" OnClick="ClosePanel">
+                    <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Neutral" />
+                </FluentButton>
+            </FluentStack>
+        </div>
+        @* Filter bar *@
+        <div style="display: flex; gap: 4px; padding: 8px 16px; flex-shrink: 0; flex-wrap: wrap; border-bottom: 1px solid var(--neutral-stroke-divider-rest);">
+            <FluentButton Size="ButtonSize.ExtraSmall"
+                          Appearance="@(_filterLevel == null ? Appearance.Accent : Appearance.Outline)"
+                          OnClick="@(() => _filterLevel = null)">
+                All (@_logEntries.Count)
+            </FluentButton>
+            <FluentButton Size="ButtonSize.ExtraSmall"
+                          Appearance="@(_filterLevel == LogLevel.Information ? Appearance.Accent : Appearance.Outline)"
+                          OnClick="@(() => _filterLevel = LogLevel.Information)">
+                Info (@_logEntries.Count(e => e.Level == LogLevel.Information))
+            </FluentButton>
+            <FluentButton Size="ButtonSize.ExtraSmall"
+                          Appearance="@(_filterLevel == LogLevel.Warning ? Appearance.Accent : Appearance.Outline)"
+                          OnClick="@(() => _filterLevel = LogLevel.Warning)">
+                Warn (@_logEntries.Count(e => e.Level == LogLevel.Warning))
+            </FluentButton>
+            <FluentButton Size="ButtonSize.ExtraSmall"
+                          Appearance="@(_filterLevel == LogLevel.Error ? Appearance.Accent : Appearance.Outline)"
+                          OnClick="@(() => _filterLevel = LogLevel.Error)">
+                Error (@_logEntries.Count(e => e.Level is LogLevel.Error or LogLevel.Critical))
+            </FluentButton>
+        </div>
+        @* Log entries *@
+        <div style="overflow-y: auto; flex: 1; padding: 4px 16px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 11px;">
+            @if (FilteredEntries.Count == 0)
+            {
+                <FluentLabel Style="display: block; text-align: center; padding: 48px 0; color: var(--neutral-foreground-hint);">
+                    No log entries
+                </FluentLabel>
+            }
+            else
+            {
+                @foreach (var entry in FilteredEntries)
+                {
+                    <div style="display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid var(--neutral-stroke-divider-rest);">
+                        <span style="color: var(--neutral-foreground-hint); flex-shrink: 0; width: 58px;">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                        <span style="flex-shrink: 0; width: 32px; @LevelStyle(entry.Level)">@LevelLabel(entry.Level)</span>
+                        <span style="color: var(--neutral-foreground-hint); flex-shrink: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                              title="@entry.Category">@ShortCategory(entry.Category)</span>
+                        <span style="word-break: break-all;">@entry.Message</span>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _backendAlive;
+    private bool _apiAlive;
+    private bool _showPanel;
+    private LogLevel? _filterLevel;
+    private List<AppLogEntry> _logEntries = [];
+    private System.Timers.Timer? _healthTimer;
+    private bool _disposed;
+    private bool _hasErrors => _logEntries.Any(e => e.Level is LogLevel.Error or LogLevel.Critical);
+    private int _warnErrorCount => _logEntries.Count(e => e.Level is LogLevel.Warning or LogLevel.Error or LogLevel.Critical);
+
+    private List<AppLogEntry> FilteredEntries
+    {
+        get
+        {
+            var source = _logEntries.AsEnumerable();
+            if (_filterLevel == LogLevel.Error)
+                source = source.Where(e => e.Level is LogLevel.Error or LogLevel.Critical);
+            else if (_filterLevel != null)
+                source = source.Where(e => e.Level == _filterLevel);
+            return source.OrderByDescending(e => e.Timestamp).Take(500).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load all entries already captured from startup
+        _logEntries = LogStore.GetAll().ToList();
+
+        LogStore.OnNewEntry += OnLogStoreUpdated;
+
+        await CheckHealth();
+
+        _healthTimer = new System.Timers.Timer(15_000);
+        _healthTimer.Elapsed += async (_, _) =>
+        {
+            if (_disposed) return;
+            await CheckHealth();
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        };
+        _healthTimer.Start();
+    }
+
+    private void OnLogStoreUpdated()
+    {
+        if (_disposed) return;
+        _logEntries = LogStore.GetAll().ToList();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CheckHealth()
+    {
+        var client = HttpClientFactory.CreateClient("HealthCheck");
+        client.BaseAddress = new Uri(Nav.BaseUri);
+        try
+        {
+            var r = await client.GetAsync("/health");
+            _backendAlive = r.IsSuccessStatusCode;
+        }
+        catch
+        {
+            _backendAlive = false;
+        }
+
+        try
+        {
+            var r = await client.GetAsync("/api/monitoring/host");
+            _apiAlive = r.IsSuccessStatusCode;
+        }
+        catch
+        {
+            _apiAlive = false;
+        }
+    }
+
+    private void OpenPanel() => _showPanel = true;
+    private void ClosePanel() => _showPanel = false;
+    private void ClearLogs() { _logEntries.Clear(); }
+
+    private static string LevelLabel(LogLevel l) => l switch
+    {
+        LogLevel.Trace => "TRC",
+        LogLevel.Debug => "DBG",
+        LogLevel.Information => "INF",
+        LogLevel.Warning => "WRN",
+        LogLevel.Error => "ERR",
+        LogLevel.Critical => "CRT",
+        _ => "???"
+    };
+
+    private static string LevelStyle(LogLevel l) => l switch
+    {
+        LogLevel.Warning => "color: var(--warning-foreground-rest, #d97706);",
+        LogLevel.Error or LogLevel.Critical => "color: var(--error-foreground-rest, #dc2626);",
+        _ => "color: var(--success-foreground-rest, #16a34a);"
+    };
+
+    private static string ShortCategory(string cat)
+    {
+        var parts = cat.Split('.');
+        return parts.Length > 1 ? parts[^1] : cat;
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        LogStore.OnNewEntry -= OnLogStoreUpdated;
+        _healthTimer?.Stop();
+        _healthTimer?.Dispose();
+    }
+}
