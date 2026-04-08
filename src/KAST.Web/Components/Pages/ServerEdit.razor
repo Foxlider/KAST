@@ -4,6 +4,7 @@
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
 @using Microsoft.FluentUI.AspNetCore.Components
+@implements IDisposable
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject IModService ModService
@@ -18,6 +19,8 @@
 </div>
 
 <FluentTabs Style="margin-top: 20px;">
+
+    @* ════════════ GENERAL TAB ════════════ *@
     <FluentTab Label="General">
         <div class="kast-card" style="margin-top: 16px;">
             <FluentGrid Spacing="3">
@@ -47,6 +50,20 @@
         </div>
 
         <div class="kast-card" style="margin-top: 16px;">
+            <h3>Creator DLC</h3>
+            <FluentGrid Spacing="3">
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.ContactDlc" Label="Contact" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.GmDlc" Label="Global Mobilization" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.PfDlc" Label="Prairie Fire" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.CslaDlc" Label="CSLA Iron Curtain" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.WsDlc" Label="Western Sahara" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.SpeDlc" Label="Spearhead 1944" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.RfDlc" Label="Reaction Forces" /></FluentGridItem>
+                <FluentGridItem xs="6" sm="3"><FluentSwitch @bind-Value="_instance.EfDlc" Label="Expeditionary Force" /></FluentGridItem>
+            </FluentGrid>
+        </div>
+
+        <div class="kast-card" style="margin-top: 16px;">
             <h3>Schedule</h3>
             <FluentSwitch @bind-Value="_instance.ScheduleEnabled" Label="Enable Schedule" />
             @if (_instance.ScheduleEnabled)
@@ -63,95 +80,532 @@
         </div>
 
         <div class="kast-card" style="margin-top: 16px;">
+            <h3>Performance</h3>
+            <FluentGrid Spacing="3">
+                <FluentGridItem xs="6" sm="3">
+                    <FluentSwitch @bind-Value="_serverConfig.EnableHT" Label="Enable HT" />
+                </FluentGridItem>
+                <FluentGridItem xs="6" sm="3">
+                    <FluentSwitch @bind-Value="_serverConfig.MaxMemOverride" Label="Override MaxMem" />
+                </FluentGridItem>
+                @if (_serverConfig.MaxMemOverride)
+                {
+                    <FluentGridItem xs="6" sm="3">
+                        <FluentNumberField @bind-Value="_serverConfig.MaxMem" Label="MaxMem (MB)" Min="512" />
+                    </FluentGridItem>
+                }
+                <FluentGridItem xs="6" sm="3">
+                    <FluentSwitch @bind-Value="_serverConfig.CpuCountOverride" Label="Override CPU Count" />
+                </FluentGridItem>
+                @if (_serverConfig.CpuCountOverride)
+                {
+                    <FluentGridItem xs="6" sm="3">
+                        <FluentNumberField @bind-Value="_serverConfig.CpuCount" Label="CPU Count" Min="1" />
+                    </FluentGridItem>
+                }
+                <FluentGridItem xs="6" sm="3">
+                    <FluentSwitch @bind-Value="_serverConfig.EnableRanking" Label="Enable Ranking" />
+                </FluentGridItem>
+            </FluentGrid>
+        </div>
+
+        <div class="kast-card" style="margin-top: 16px;">
             <FluentTextField @bind-Value="_instance.AdditionalParameters"
                             Label="Additional Launch Parameters"
                             Style="width: 100%;"
-                            Placeholder="-enableHT -hugepages" />
+                            Placeholder="-hugepages" />
         </div>
     </FluentTab>
 
+    @* ════════════ SERVER CONFIG TAB ════════════ *@
     <FluentTab Label="Server Config">
         <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div class="kast-card">
-                <h3>Settings</h3>
-                <FluentTextField @bind-Value="_serverConfig.Hostname" @bind-Value:after="OnServerConfigChanged"
-                                Label="Hostname" Style="width: 100%;" />
-                <FluentTextField @bind-Value="_serverConfig.Password" @bind-Value:after="OnServerConfigChanged"
-                                Label="Server Password" Style="width: 100%; margin-top: 8px;" />
-                <FluentTextField @bind-Value="_serverConfig.PasswordAdmin" @bind-Value:after="OnServerConfigChanged"
-                                Label="Admin Password" Style="width: 100%; margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_serverConfig.MaxPlayers" @bind-Value:after="OnServerConfigChanged"
-                                   Label="Max Players" Min="1" Max="128" Style="margin-top: 8px;" />
-                <FluentSwitch @bind-Value="_serverConfig.BattlEye" @bind-Value:after="OnServerConfigChanged"
-                             Label="BattlEye" Style="margin-top: 8px;" />
-                <FluentSwitch @bind-Value="_serverConfig.PersistentBattlefield" @bind-Value:after="OnServerConfigChanged"
-                             Label="Persistent Battlefield" Style="margin-top: 8px;" />
-                <FluentTextField @bind-Value="_serverConfig.Motd" @bind-Value:after="OnServerConfigChanged"
-                                Label="MOTD" Style="width: 100%; margin-top: 8px;" />
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+
+                <div class="kast-card">
+                    <h3>Server Options</h3>
+                    <FluentTextField @bind-Value="_serverConfig.Hostname" @bind-Value:after="OnServerConfigChanged"
+                                    Label="Hostname" Style="width: 100%;" />
+                    <FluentTextField @bind-Value="_serverConfig.Password" @bind-Value:after="OnServerConfigChanged"
+                                    Label="Server Password" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.PasswordAdmin" @bind-Value:after="OnServerConfigChanged"
+                                    Label="Admin Password" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.ServerCommandPassword" @bind-Value:after="OnServerConfigChanged"
+                                    Label="Server Command Password" Style="width: 100%; margin-top: 8px;" />
+                    <FluentNumberField @bind-Value="_serverConfig.MaxPlayers" @bind-Value:after="OnServerConfigChanged"
+                                       Label="Max Players" Min="1" Max="128" Style="margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.LogFile" @bind-Value:after="OnServerConfigChanged"
+                                    Label="Log File" Style="width: 100%; margin-top: 8px;" />
+                </div>
+
+                <div class="kast-card">
+                    <h3>MOTD &amp; Admins</h3>
+                    <FluentTextArea @bind-Value="_serverConfig.Motd" @bind-Value:after="OnServerConfigChanged"
+                                   Label="MOTD (one line per entry)" Rows="3" Style="width: 100%;" />
+                    <FluentNumberField @bind-Value="_serverConfig.MotdInterval" @bind-Value:after="OnServerConfigChanged"
+                                       Label="MOTD Interval (seconds)" Style="margin-top: 8px;" />
+                    <FluentTextArea @bind-Value="_serverConfig.Admins" @bind-Value:after="OnServerConfigChanged"
+                                   Label="Admin UIDs (one per line)" Rows="3" Style="width: 100%; margin-top: 8px;" />
+                </div>
+
+                <div class="kast-card">
+                    <h3>Joining Rules</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6">
+                            <FluentSwitch @bind-Value="_serverConfig.KickDuplicate" @bind-Value:after="OnServerConfigChanged" Label="Kick Duplicate IDs" />
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_serverConfig.VerifySignatures.ToString()" ValueChanged="@(v => { _serverConfig.VerifySignatures = int.Parse(v); OnServerConfigChanged(); })" Label="Verify Signatures">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption>
+                                <FluentOption TOption="string" Value="1">Deprecated (v1+v2)</FluentOption>
+                                <FluentOption TOption="string" Value="2">Activated (v2 only)</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_serverConfig.AllowedFilePatching.ToString()" ValueChanged="@(v => { _serverConfig.AllowedFilePatching = int.Parse(v); OnServerConfigChanged(); })" Label="File Patching">
+                                <FluentOption TOption="string" Value="0">No Clients</FluentOption>
+                                <FluentOption TOption="string" Value="1">HC Only</FluentOption>
+                                <FluentOption TOption="string" Value="2">All Clients</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentNumberField @bind-Value="_serverConfig.SteamProtocolMaxDataSize" @bind-Value:after="OnServerConfigChanged" Label="Steam Protocol Max Data Size" />
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSwitch @bind-Value="_serverConfig.Loopback" @bind-Value:after="OnServerConfigChanged" Label="LAN Mode (loopback)" />
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSwitch @bind-Value="_serverConfig.Upnp" @bind-Value:after="OnServerConfigChanged" Label="UPnP" />
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Voting</h3>
+                    <FluentSwitch @bind-Value="_serverConfig.VotingEnabled" @bind-Value:after="OnServerConfigChanged" Label="Voting Enabled" />
+                    @if (_serverConfig.VotingEnabled)
+                    {
+                        <FluentGrid Spacing="3" Style="margin-top: 8px;">
+                            <FluentGridItem xs="6">
+                                <FluentNumberField @bind-Value="_serverConfig.VoteMissionPlayers" @bind-Value:after="OnServerConfigChanged" Label="Vote Mission Players" Min="1" />
+                            </FluentGridItem>
+                            <FluentGridItem xs="6">
+                                <FluentNumberField @bind-Value="_serverConfig.VoteThreshold" @bind-Value:after="OnServerConfigChanged" Label="Vote Threshold" Step="0.01" />
+                            </FluentGridItem>
+                        </FluentGrid>
+                    }
+                    <FluentNumberField @bind-Value="_serverConfig.VotingTimeOut" @bind-Value:after="OnServerConfigChanged" Label="Voting Timeout (s)" Style="margin-top: 8px;" />
+                </div>
+
+                <div class="kast-card">
+                    <h3>In-game Settings</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.BattlEye" @bind-Value:after="OnServerConfigChanged" Label="BattlEye" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.PersistentBattlefield" @bind-Value:after="OnServerConfigChanged" Label="Persistent" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.AutoInit" @bind-Value:after="OnServerConfigChanged" Label="Auto Init" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.SkipLobby" @bind-Value:after="OnServerConfigChanged" Label="Skip Lobby" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.DrawingInMap" @bind-Value:after="OnServerConfigChanged" Label="Drawing in Map" /></FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_serverConfig.ForcedDifficulty" ValueChanged="@(v => { _serverConfig.ForcedDifficulty = v; OnServerConfigChanged(); })" Label="Forced Difficulty">
+                                <FluentOption TOption="string" Value="Recruit">Recruit</FluentOption>
+                                <FluentOption TOption="string" Value="Regular">Regular</FluentOption>
+                                <FluentOption TOption="string" Value="Veteran">Veteran</FluentOption>
+                                <FluentOption TOption="string" Value="Custom">Custom</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_serverConfig.TimeStampFormat" ValueChanged="@(v => { _serverConfig.TimeStampFormat = v; OnServerConfigChanged(); })" Label="Timestamp Format">
+                                <FluentOption TOption="string" Value="none">None</FluentOption>
+                                <FluentOption TOption="string" Value="short">Short</FluentOption>
+                                <FluentOption TOption="string" Value="full">Full</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Voice over Network</h3>
+                    <FluentSwitch @bind-Value="_serverConfig.DisableVoN" @bind-Value:after="OnServerConfigChanged" Label="Disable VoN" />
+                    @if (!_serverConfig.DisableVoN)
+                    {
+                        <FluentGrid Spacing="3" Style="margin-top: 8px;">
+                            <FluentGridItem xs="6">
+                                <FluentSelect TOption="string" Value="@_serverConfig.VonCodec.ToString()" ValueChanged="@(v => { _serverConfig.VonCodec = int.Parse(v); OnServerConfigChanged(); })" Label="VoN Codec">
+                                    <FluentOption TOption="string" Value="0">SPEEX</FluentOption>
+                                    <FluentOption TOption="string" Value="1">OPUS</FluentOption>
+                                </FluentSelect>
+                            </FluentGridItem>
+                            <FluentGridItem xs="6">
+                                <FluentNumberField @bind-Value="_serverConfig.VonCodecQuality" @bind-Value:after="OnServerConfigChanged" Label="VoN Quality (1-30)" Min="1" Max="30" />
+                            </FluentGridItem>
+                        </FluentGrid>
+                    }
+                </div>
+
+                <div class="kast-card">
+                    <h3>Timeouts &amp; Kick Thresholds</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.DisconnectTimeout" @bind-Value:after="OnServerConfigChanged" Label="Disconnect Timeout" Min="5" Max="90" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.MaxDesync" @bind-Value:after="OnServerConfigChanged" Label="Max Desync" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.MaxPing" @bind-Value:after="OnServerConfigChanged" Label="Max Ping" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.MaxPacketLoss" @bind-Value:after="OnServerConfigChanged" Label="Max Packet Loss" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.KickClientOnSlowNetwork" @bind-Value:after="OnServerConfigChanged" Label="Kick on Slow Network" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.LobbyIdleTimeout" @bind-Value:after="OnServerConfigChanged" Label="Lobby Idle Timeout" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.BriefingTimeOut" @bind-Value:after="OnServerConfigChanged" Label="Briefing Timeout" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.RoleTimeOut" @bind-Value:after="OnServerConfigChanged" Label="Role Timeout" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.DebriefingTimeOut" @bind-Value:after="OnServerConfigChanged" Label="Debriefing Timeout" /></FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Mission Rotation</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.AutoSelectMission" @bind-Value:after="OnServerConfigChanged" Label="Auto Select Mission" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.RandomMissionOrder" @bind-Value:after="OnServerConfigChanged" Label="Random Mission Order" /></FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Headless Clients</h3>
+                    <FluentTextArea @bind-Value="_serverConfig.HeadlessClients" @bind-Value:after="OnServerConfigChanged"
+                                   Label="HC IPs (one per line)" Rows="2" Style="width: 100%;" Placeholder="127.0.0.1" />
+                    <FluentTextArea @bind-Value="_serverConfig.LocalClient" @bind-Value:after="OnServerConfigChanged"
+                                   Label="Local Client IPs (one per line)" Rows="2" Style="width: 100%; margin-top: 8px;" Placeholder="127.0.0.1" />
+                </div>
+
+                <div class="kast-card">
+                    <h3>Scripting Hooks</h3>
+                    <FluentTextField @bind-Value="_serverConfig.OnUserConnected" @bind-Value:after="OnServerConfigChanged" Label="onUserConnected" Style="width: 100%;" />
+                    <FluentTextField @bind-Value="_serverConfig.OnUserDisconnected" @bind-Value:after="OnServerConfigChanged" Label="onUserDisconnected" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.DoubleIdDetected" @bind-Value:after="OnServerConfigChanged" Label="doubleIdDetected" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.OnHackedData" @bind-Value:after="OnServerConfigChanged" Label="onHackedData" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.OnDifferentData" @bind-Value:after="OnServerConfigChanged" Label="onDifferentData" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.OnUnsignedData" @bind-Value:after="OnServerConfigChanged" Label="onUnsignedData" Style="width: 100%; margin-top: 8px;" />
+                    <FluentTextField @bind-Value="_serverConfig.OnUserKicked" @bind-Value:after="OnServerConfigChanged" Label="onUserKicked" Style="width: 100%; margin-top: 8px;" />
+                </div>
+
+                <div class="kast-card">
+                    <h3>Logging</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.NetlogEnabled" @bind-Value:after="OnServerConfigChanged" Label="Network Log (-netlog)" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.LogObjectNotFound" @bind-Value:after="OnServerConfigChanged" Label="Log Object Not Found" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.SkipDescriptionParsing" @bind-Value:after="OnServerConfigChanged" Label="Skip Description Parsing" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSwitch @bind-Value="_serverConfig.IgnoreMissionLoadErrors" @bind-Value:after="OnServerConfigChanged" Label="Ignore Mission Load Errors" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.ArmaUnitsTimeout" @bind-Value:after="OnServerConfigChanged" Label="Arma Units Timeout" /></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentNumberField @bind-Value="_serverConfig.QueueSizeLogG" @bind-Value:after="OnServerConfigChanged" Label="Queue Size Log Threshold" /></FluentGridItem>
+                    </FluentGrid>
+                </div>
             </div>
-            <div class="kast-card">
-                <h3>Raw Config</h3>
+
+            <div class="kast-card" style="position: sticky; top: 16px; align-self: start;">
+                <h3>Raw server.cfg</h3>
                 <FluentTextArea @bind-Value="_serverCfgRaw" @bind-Value:after="OnServerCfgRawChanged"
+                               Label="" Rows="40" Style="width: 100%; font-family: monospace; font-size: 13px;" />
+            </div>
+        </div>
+    </FluentTab>
+
+    @* ════════════ BASIC CONFIG TAB ════════════ *@
+    <FluentTab Label="Basic Config">
+        <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="kast-card">
+                <h3>View &amp; Terrain</h3>
+                <FluentNumberField @bind-Value="_basicConfig.ViewDistance" @bind-Value:after="OnBasicConfigChanged" Label="View Distance" />
+                <FluentNumberField @bind-Value="_basicConfig.TerrainGrid" @bind-Value:after="OnBasicConfigChanged" Label="Terrain Grid" Step="0.125" Style="margin-top: 8px;" />
+
+                <h3 style="margin-top: 16px;">Network Performance</h3>
+                <FluentNumberField @bind-Value="_basicConfig.MaxMsgSend" @bind-Value:after="OnBasicConfigChanged" Label="MaxMsgSend" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeGuaranteed" @bind-Value:after="OnBasicConfigChanged" Label="MaxSizeGuaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxSizeNonguaranteed" @bind-Value:after="OnBasicConfigChanged" Label="MaxSizeNonguaranteed" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MinBandwidth" @bind-Value:after="OnBasicConfigChanged" Label="MinBandwidth (bps)" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxBandwidth" @bind-Value:after="OnBasicConfigChanged" Label="MaxBandwidth (bps)" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MinErrorToSend" @bind-Value:after="OnBasicConfigChanged" Label="MinErrorToSend" Step="0.001" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MinErrorToSendNear" @bind-Value:after="OnBasicConfigChanged" Label="MinErrorToSendNear" Step="0.01" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxCustomFileSize" @bind-Value:after="OnBasicConfigChanged" Label="MaxCustomFileSize (KB)" Style="margin-top: 8px;" />
+                <FluentNumberField @bind-Value="_basicConfig.MaxPacketSize" @bind-Value:after="OnBasicConfigChanged" Label="MaxPacketSize" Style="margin-top: 8px;" />
+            </div>
+            <div class="kast-card" style="position: sticky; top: 16px; align-self: start;">
+                <h3>Raw basic.cfg</h3>
+                <FluentTextArea @bind-Value="_basicCfgRaw" @bind-Value:after="OnBasicCfgRawChanged"
                                Label="" Rows="20" Style="width: 100%; font-family: monospace; font-size: 13px;" />
             </div>
         </div>
     </FluentTab>
 
-    <FluentTab Label="Basic Config">
+    @* ════════════ DIFFICULTY TAB ════════════ *@
+    <FluentTab Label="Difficulty">
         <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div class="kast-card">
-                <h3>Network Settings</h3>
-                <FluentNumberField @bind-Value="_basicConfig.MaxMsgSend" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="MaxMsgSend" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxSizeGuaranteed" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="MaxSizeGuaranteed" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxSizeNonguaranteed" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="MaxSizeNonguaranteed" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MinBandwidth" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="MinBandwidth" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.MaxBandwidth" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="MaxBandwidth" Style="margin-top: 8px;" />
-                <FluentNumberField @bind-Value="_basicConfig.TerrainGridViewDistance" @bind-Value:after="OnBasicConfigChanged"
-                                   Label="TerrainGridViewDistance" Style="margin-top: 8px;" />
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="kast-card">
+                    <h3>Simulation</h3>
+                    <FluentSelect TOption="string" Value="@_profileData.ReducedDamage.ToString()" ValueChanged="@(v => { _profileData.ReducedDamage = int.Parse(v); OnProfileChanged(); })" Label="Reduced Damage">
+                        <FluentOption TOption="string" Value="0">Disabled</FluentOption>
+                        <FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                    </FluentSelect>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Situational Awareness</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.GroupIndicators.ToString()" ValueChanged="@(v => { _profileData.GroupIndicators = int.Parse(v); OnProfileChanged(); })" Label="Group Indicators">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Limited Distance</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.FriendlyTags.ToString()" ValueChanged="@(v => { _profileData.FriendlyTags = int.Parse(v); OnProfileChanged(); })" Label="Friendly Tags">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Limited Distance</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.EnemyTags.ToString()" ValueChanged="@(v => { _profileData.EnemyTags = int.Parse(v); OnProfileChanged(); })" Label="Enemy Tags">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Limited Distance</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.DetectedMines.ToString()" ValueChanged="@(v => { _profileData.DetectedMines = int.Parse(v); OnProfileChanged(); })" Label="Detected Mines">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Limited Distance</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.Commands.ToString()" ValueChanged="@(v => { _profileData.Commands = int.Parse(v); OnProfileChanged(); })" Label="Commands">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Fade Out</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.Waypoints.ToString()" ValueChanged="@(v => { _profileData.Waypoints = int.Parse(v); OnProfileChanged(); })" Label="Waypoints">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption>
+                                <FluentOption TOption="string" Value="1">Fade Out</FluentOption>
+                                <FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.TacticalPing.ToString()" ValueChanged="@(v => { _profileData.TacticalPing = int.Parse(v); OnProfileChanged(); })" Label="Tactical Ping">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption>
+                                <FluentOption TOption="string" Value="1">3D Only</FluentOption>
+                                <FluentOption TOption="string" Value="2">Map Only</FluentOption>
+                                <FluentOption TOption="string" Value="3">Both</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Personal Awareness</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.WeaponInfo.ToString()" ValueChanged="@(v => { _profileData.WeaponInfo = int.Parse(v); OnProfileChanged(); })" Label="Weapon Info">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption><FluentOption TOption="string" Value="1">Fade Out</FluentOption><FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.StanceIndicator.ToString()" ValueChanged="@(v => { _profileData.StanceIndicator = int.Parse(v); OnProfileChanged(); })" Label="Stance Indicator">
+                                <FluentOption TOption="string" Value="0">Never</FluentOption><FluentOption TOption="string" Value="1">Fade Out</FluentOption><FluentOption TOption="string" Value="2">Always</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.StaminaBar.ToString()" ValueChanged="@(v => { _profileData.StaminaBar = int.Parse(v); OnProfileChanged(); })" Label="Stamina Bar">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.WeaponCrosshair.ToString()" ValueChanged="@(v => { _profileData.WeaponCrosshair = int.Parse(v); OnProfileChanged(); })" Label="Weapon Crosshair">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.VisionAid.ToString()" ValueChanged="@(v => { _profileData.VisionAid = int.Parse(v); OnProfileChanged(); })" Label="Vision Aid">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>View</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.ThirdPersonView.ToString()" ValueChanged="@(v => { _profileData.ThirdPersonView = int.Parse(v); OnProfileChanged(); })" Label="3rd Person View">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption><FluentOption TOption="string" Value="2">Vehicles Only</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6">
+                            <FluentSelect TOption="string" Value="@_profileData.CameraShake.ToString()" ValueChanged="@(v => { _profileData.CameraShake = int.Parse(v); OnProfileChanged(); })" Label="Camera Shake">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Multiplayer</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="4">
+                            <FluentSelect TOption="string" Value="@_profileData.ScoreTable.ToString()" ValueChanged="@(v => { _profileData.ScoreTable = int.Parse(v); OnProfileChanged(); })" Label="Score Table">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="4">
+                            <FluentSelect TOption="string" Value="@_profileData.DeathMessages.ToString()" ValueChanged="@(v => { _profileData.DeathMessages = int.Parse(v); OnProfileChanged(); })" Label="Death Messages">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                        <FluentGridItem xs="4">
+                            <FluentSelect TOption="string" Value="@_profileData.VonID.ToString()" ValueChanged="@(v => { _profileData.VonID = int.Parse(v); OnProfileChanged(); })" Label="VoN ID">
+                                <FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption>
+                            </FluentSelect>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>Map &amp; Misc</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="4"><FluentSelect TOption="string" Value="@_profileData.MapContentFriendly.ToString()" ValueChanged="@(v => { _profileData.MapContentFriendly = int.Parse(v); OnProfileChanged(); })" Label="Map Friendlies"><FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption></FluentSelect></FluentGridItem>
+                        <FluentGridItem xs="4"><FluentSelect TOption="string" Value="@_profileData.MapContentEnemy.ToString()" ValueChanged="@(v => { _profileData.MapContentEnemy = int.Parse(v); OnProfileChanged(); })" Label="Map Enemies"><FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption></FluentSelect></FluentGridItem>
+                        <FluentGridItem xs="4"><FluentSelect TOption="string" Value="@_profileData.MapContentMines.ToString()" ValueChanged="@(v => { _profileData.MapContentMines = int.Parse(v); OnProfileChanged(); })" Label="Map Mines"><FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption></FluentSelect></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSelect TOption="string" Value="@_profileData.AutoReport.ToString()" ValueChanged="@(v => { _profileData.AutoReport = int.Parse(v); OnProfileChanged(); })" Label="Auto Report"><FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption></FluentSelect></FluentGridItem>
+                        <FluentGridItem xs="6"><FluentSelect TOption="string" Value="@_profileData.MultipleSaves.ToString()" ValueChanged="@(v => { _profileData.MultipleSaves = int.Parse(v); OnProfileChanged(); })" Label="Multiple Saves"><FluentOption TOption="string" Value="0">Disabled</FluentOption><FluentOption TOption="string" Value="1">Enabled</FluentOption></FluentSelect></FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                <div class="kast-card">
+                    <h3>AI</h3>
+                    <FluentSelect TOption="string" Value="@_profileData.AiLevelPreset.ToString()" ValueChanged="@(v => { _profileData.AiLevelPreset = int.Parse(v); OnProfileChanged(); })" Label="AI Preset">
+                        <FluentOption TOption="string" Value="0">Low</FluentOption>
+                        <FluentOption TOption="string" Value="1">Normal</FluentOption>
+                        <FluentOption TOption="string" Value="2">High</FluentOption>
+                        <FluentOption TOption="string" Value="3">Custom</FluentOption>
+                    </FluentSelect>
+                    @if (_profileData.AiLevelPreset == 3)
+                    {
+                        <FluentNumberField @bind-Value="_profileData.SkillAi" @bind-Value:after="OnProfileChanged" Label="AI Skill (0-1)" Step="0.01" Style="margin-top: 8px;" />
+                        <FluentNumberField @bind-Value="_profileData.PrecisionAi" @bind-Value:after="OnProfileChanged" Label="AI Precision (0-1)" Step="0.01" Style="margin-top: 8px;" />
+                    }
+                </div>
             </div>
-            <div class="kast-card">
-                <h3>Raw Config</h3>
-                <FluentTextArea @bind-Value="_basicCfgRaw" @bind-Value:after="OnBasicCfgRawChanged"
-                               Label="" Rows="16" Style="width: 100%; font-family: monospace; font-size: 13px;" />
+
+            <div class="kast-card" style="position: sticky; top: 16px; align-self: start;">
+                <h3>Raw Arma3Profile</h3>
+                <FluentTextArea @bind-Value="_profileRaw" @bind-Value:after="OnProfileRawChanged"
+                               Label="" Rows="40" Style="width: 100%; font-family: monospace; font-size: 13px;" />
             </div>
         </div>
     </FluentTab>
 
+    @* ════════════ MODS TAB ════════════ *@
     <FluentTab Label="Mods">
-        <div class="kast-card" style="margin-top: 16px;">
-            <h3>Assigned Mods</h3>
-            @if (!_isNew && _instance.Mods.Count > 0)
-            {
-                <FluentDataGrid Items="@_instance.Mods.AsQueryable()" Style="margin-top: 12px;">
-                    <PropertyColumn Title="Mod" Property="@(m => m.SteamMod.Name)" />
-                    <PropertyColumn Title="Load Order" Property="@(m => m.LoadOrder)" Sortable="true" />
-                    <TemplateColumn Title="Actions">
-                        <FluentButton Size="ButtonSize.Small" OnClick="@(() => RemoveMod(context.SteamModId))">
-                            Remove
-                        </FluentButton>
-                    </TemplateColumn>
-                </FluentDataGrid>
-            }
-            else
-            {
-                <p style="color: var(--kast-text-muted);">No mods assigned.</p>
-            }
+        <div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; min-height: 400px;">
 
-            <h4 style="margin-top: 20px;">Available Mods</h4>
-            @foreach (var mod in _availableMods)
-            {
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span>@mod.Name</span>
-                    <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Accent" OnClick="@(() => AddMod(mod.Id))">
-                        Add
-                    </FluentButton>
-                </div>
-            }
+            @* ── Available Mods Column ── *@
+            <div class="kast-card kast-drop-zone" @ref="_availableDropZone">
+                <h3 style="margin-top: 0;">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.PuzzlePiece())" Style="vertical-align: middle;" />
+                    Available Mods
+                </h3>
+                <p style="font-size: 12px; color: var(--kast-text-muted); margin: 0 0 12px;">Drag mods to assign them</p>
+                @foreach (var mod in _unassignedMods)
+                {
+                    <div class="kast-mod-item" draggable="true"
+                         @ondragstart="@(async () => await OnDragStart(mod.Id, ColAvailable))">
+                        <span style="opacity: 0.4; cursor: grab; flex-shrink: 0;">⠿</span>
+                        @if (!string.IsNullOrEmpty(mod.ThumbnailUrl))
+                        {
+                            <img src="@mod.ThumbnailUrl" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; flex-shrink: 0;" />
+                        }
+                        else
+                        {
+                            <FluentIcon Value="@(new Icons.Regular.Size16.PuzzlePiece())" Style="flex-shrink: 0; opacity: 0.4;" />
+                        }
+                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@mod.Name</span>
+                        <span style="font-size: 11px; color: var(--kast-text-muted); flex-shrink: 0;">@mod.WorkshopId</span>
+                    </div>
+                }
+                @if (_unassignedMods.Count == 0)
+                {
+                    <p style="color: var(--kast-text-muted); text-align: center; padding: 40px 0;">All mods assigned</p>
+                }
+            </div>
+
+            @* ── Client-Side Mods Column ── *@
+            <div class="kast-card kast-drop-zone" @ref="_clientDropZone">
+                <h3 style="margin-top: 0;">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Desktop())" Style="vertical-align: middle;" />
+                    Client-Side Mods
+                    <span class="kast-mod-count">@_clientMods.Count</span>
+                </h3>
+                <p style="font-size: 12px; color: var(--kast-text-muted); margin: 0 0 12px;">Loaded by server &amp; clients (-mod=)</p>
+                @foreach (var sim in _clientMods)
+                {
+                    <div class="kast-mod-item" draggable="true"
+                         @ondragstart="@(async () => await OnDragStart(sim.SteamModId, ColClient))">
+                        <span style="opacity: 0.4; cursor: grab; flex-shrink: 0;">⠿</span>
+                        @if (!string.IsNullOrEmpty(sim.SteamMod.ThumbnailUrl))
+                        {
+                            <img src="@sim.SteamMod.ThumbnailUrl" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; flex-shrink: 0;" />
+                        }
+                        else
+                        {
+                            <FluentIcon Value="@(new Icons.Regular.Size16.PuzzlePiece())" Style="flex-shrink: 0; opacity: 0.4;" />
+                        }
+                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@sim.SteamMod.Name</span>
+                        <span style="font-size: 11px; color: var(--kast-text-muted); margin-right: 4px; flex-shrink: 0;">#@sim.LoadOrder</span>
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                                      Title="Remove" OnClick="@(() => RemoveMod(sim.SteamModId))">
+                            <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Error" />
+                        </FluentButton>
+                    </div>
+                }
+                @if (_clientMods.Count == 0)
+                {
+                    <div class="kast-drop-placeholder">Drop client mods here</div>
+                }
+            </div>
+
+            @* ── Server-Side Mods Column ── *@
+            <div class="kast-card kast-drop-zone" @ref="_serverDropZone">
+                <h3 style="margin-top: 0;">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Server())" Style="vertical-align: middle;" />
+                    Server-Side Mods
+                    <span class="kast-mod-count">@_serverMods.Count</span>
+                </h3>
+                <p style="font-size: 12px; color: var(--kast-text-muted); margin: 0 0 12px;">Server only (-serverMod=)</p>
+                @foreach (var sim in _serverMods)
+                {
+                    <div class="kast-mod-item" draggable="true"
+                         @ondragstart="@(async () => await OnDragStart(sim.SteamModId, ColServer))">
+                        <span style="opacity: 0.4; cursor: grab; flex-shrink: 0;">⠿</span>
+                        @if (!string.IsNullOrEmpty(sim.SteamMod.ThumbnailUrl))
+                        {
+                            <img src="@sim.SteamMod.ThumbnailUrl" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; flex-shrink: 0;" />
+                        }
+                        else
+                        {
+                            <FluentIcon Value="@(new Icons.Regular.Size16.PuzzlePiece())" Style="flex-shrink: 0; opacity: 0.4;" />
+                        }
+                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@sim.SteamMod.Name</span>
+                        <span style="font-size: 11px; color: var(--kast-text-muted); margin-right: 4px; flex-shrink: 0;">#@sim.LoadOrder</span>
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                                      Title="Remove" OnClick="@(() => RemoveMod(sim.SteamModId))">
+                            <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Error" />
+                        </FluentButton>
+                    </div>
+                }
+                @if (_serverMods.Count == 0)
+                {
+                    <div class="kast-drop-placeholder">Drop server mods here</div>
+                }
+            </div>
         </div>
     </FluentTab>
 </FluentTabs>
@@ -171,87 +625,148 @@
 
     private ServerConfigData _serverConfig = new();
     private BasicConfigData _basicConfig = new();
+    private Arma3ProfileData _profileData = new();
     private string _serverCfgRaw = "";
     private string _basicCfgRaw = "";
+    private string _profileRaw = "";
+
+    // ── Mod drag-drop state ──
+    private const string ColAvailable = "available";
+    private const string ColClient = "client";
+    private const string ColServer = "server";
+    private ElementReference _availableDropZone;
+    private ElementReference _clientDropZone;
+    private ElementReference _serverDropZone;
+    private DotNetObjectReference<ServerEdit>? _selfRef;
+
+    private List<SteamMod> _unassignedMods => _availableMods
+        .Where(m => !_instance.Mods.Any(im => im.SteamModId == m.Id)).ToList();
+    private List<ServerInstanceMod> _clientMods => _instance.Mods
+        .Where(m => !m.IsServerSide).OrderBy(m => m.LoadOrder).ToList();
+    private List<ServerInstanceMod> _serverMods => _instance.Mods
+        .Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder).ToList();
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
         if (!_isNew)
         {
             var instance = await ServerService.GetInstanceByIdAsync(Id!.Value);
-            if (instance == null)
-            {
-                Nav.NavigateTo("/servers");
-                return;
-            }
+            if (instance == null) { Nav.NavigateTo("/servers"); return; }
             _instance = instance;
 
-            // Parse configs
             if (!string.IsNullOrEmpty(_instance.ServerCfgContent))
-            {
-                _serverConfig = ConfigService.ParseServerConfig(_instance.ServerCfgContent);
-                _serverCfgRaw = _instance.ServerCfgContent;
-            }
+            { _serverConfig = ConfigService.ParseServerConfig(_instance.ServerCfgContent); _serverCfgRaw = _instance.ServerCfgContent; }
             if (!string.IsNullOrEmpty(_instance.BasicCfgContent))
-            {
-                _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent);
-                _basicCfgRaw = _instance.BasicCfgContent;
-            }
+            { _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent); _basicCfgRaw = _instance.BasicCfgContent; }
+            if (!string.IsNullOrEmpty(_instance.ArmaProfileContent))
+            { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
+        }
+        else
+        {
+            _instance.Name = $"Server-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+            _serverConfig.Hostname = _instance.Name;
         }
 
         _availableMods = await ModService.GetAllModsAsync();
 
-        // Seed default configs so raw panels are never empty
-        if (string.IsNullOrEmpty(_serverCfgRaw))
-            _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
-        if (string.IsNullOrEmpty(_basicCfgRaw))
-            _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+        if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+        if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+        if (string.IsNullOrEmpty(_profileRaw)) _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
     }
 
-    // ── Bidirectional sync: structured fields ↔ raw text ──
-
-    private void OnServerConfigChanged()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+        if (firstRender)
+        {
+            _selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("kastDragDrop.initDropZone", _availableDropZone, _selfRef, "available");
+            await JS.InvokeVoidAsync("kastDragDrop.initDropZone", _clientDropZone, _selfRef, "client");
+            await JS.InvokeVoidAsync("kastDragDrop.initDropZone", _serverDropZone, _selfRef, "server");
+        }
     }
 
-    private void OnServerCfgRawChanged()
+    private async Task OnDragStart(int modId, string source)
     {
-        _serverConfig = ConfigService.ParseServerConfig(_serverCfgRaw);
+        await JS.InvokeVoidAsync("kastDragDrop.startDrag", modId, source);
     }
 
-    private void OnBasicConfigChanged()
+    [JSInvokable]
+    public async Task OnModDropped(int modId, string fromSource, string toTarget)
     {
-        _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+        if (fromSource == toTarget) return;
+
+        if (fromSource == "available")
+        {
+            bool serverSide = toTarget == "server";
+            await AddMod(modId, serverSide);
+            return;
+        }
+
+        if (toTarget == "available")
+        {
+            await RemoveMod(modId);
+            return;
+        }
+
+        // Moving between client ↔ server columns
+        var instanceMod = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+        if (instanceMod != null)
+        {
+            instanceMod.IsServerSide = toTarget == "server";
+            ReindexMods();
+        }
+        StateHasChanged();
     }
 
-    private void OnBasicCfgRawChanged()
+    private void ReindexMods()
     {
-        _basicConfig = ConfigService.ParseBasicConfig(_basicCfgRaw);
+        var clientIdx = 0;
+        foreach (var m in _instance.Mods.Where(m => !m.IsServerSide).OrderBy(m => m.LoadOrder))
+            m.LoadOrder = clientIdx++;
+        var serverIdx = 0;
+        foreach (var m in _instance.Mods.Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder))
+            m.LoadOrder = serverIdx++;
     }
+
+    private void OnServerConfigChanged() => _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+    private void OnServerCfgRawChanged() => _serverConfig = ConfigService.ParseServerConfig(_serverCfgRaw);
+    private void OnBasicConfigChanged() => _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+    private void OnBasicCfgRawChanged() => _basicConfig = ConfigService.ParseBasicConfig(_basicCfgRaw);
+    private void OnProfileChanged() => _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
+    private void OnProfileRawChanged() => _profileData = ConfigService.ParseArma3Profile(_profileRaw);
 
     private async Task Save()
     {
         _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
         _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
 
-        if (_isNew)
-            await ServerService.CreateInstanceAsync(_instance);
-        else
-            await ServerService.UpdateInstanceAsync(_instance);
+        if (_isNew) await ServerService.CreateInstanceAsync(_instance);
+        else await ServerService.UpdateInstanceAsync(_instance);
 
         ToastService.ShowSuccess("Server saved");
         Nav.NavigateTo("/servers");
     }
 
-    private async Task AddMod(int modId)
+    private async Task AddMod(int modId, bool serverSide = false)
     {
         if (!_isNew)
         {
             await ServerService.AddModToInstanceAsync(_instance.Id, modId);
             _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-            StateHasChanged();
+            var added = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+            if (added != null) added.IsServerSide = serverSide;
         }
+        else
+        {
+            var mod = _availableMods.FirstOrDefault(m => m.Id == modId);
+            if (mod != null)
+                _instance.Mods.Add(new ServerInstanceMod { SteamModId = modId, SteamMod = mod, IsServerSide = serverSide, LoadOrder = _instance.Mods.Count });
+        }
+        ReindexMods();
+        StateHasChanged();
     }
 
     private async Task RemoveMod(int modId)
@@ -260,7 +775,18 @@
         {
             await ServerService.RemoveModFromInstanceAsync(_instance.Id, modId);
             _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-            StateHasChanged();
         }
+        else
+        {
+            var toRemove = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+            if (toRemove != null) _instance.Mods.Remove(toRemove);
+        }
+        ReindexMods();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _selfRef?.Dispose();
     }
 }
