@@ -8,6 +8,7 @@
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject IModService ModService
+@inject ISettingsService SettingsService
 @inject IToastService ToastService
 @inject NavigationManager Nav
 
@@ -25,7 +26,7 @@
         <div class="kast-card" style="margin-top: 16px;">
             <FluentGrid Spacing="3">
                 <FluentGridItem xs="12" sm="6">
-                    <FluentTextField @bind-Value="_instance.Name" Label="Instance Name" Style="width: 100%;" />
+                    <FluentTextField @bind-Value="_instance.Name" @bind-Value:after="OnNameChanged" Label="Instance Name" Style="width: 100%;" />
                 </FluentGridItem>
                 <FluentGridItem xs="12" sm="6">
                     <FluentTextField @bind-Value="_instance.InstallPath" Label="Install Path" Style="width: 100%;" />
@@ -616,6 +617,7 @@
     private ServerInstance _instance = new();
     private bool _isNew => Id == null || Id == 0;
     private IReadOnlyList<SteamMod> _availableMods = [];
+    private string _serversDirectory = "./servers";
 
     private string _restartPolicyStr
     {
@@ -665,7 +667,10 @@
         }
         else
         {
+            var settings = await SettingsService.GetSettingsAsync();
+            _serversDirectory = settings.ServersDirectory;
             _instance.Name = $"Server-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
             _serverConfig.Hostname = _instance.Name;
         }
 
@@ -728,6 +733,13 @@
         var serverIdx = 0;
         foreach (var m in _instance.Mods.Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder))
             m.LoadOrder = serverIdx++;
+    }
+
+    private void OnNameChanged()
+    {
+        // Keep InstallPath in sync with the name for new servers (before the user manually edits it)
+        if (_isNew && !string.IsNullOrWhiteSpace(_instance.Name))
+            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
     }
 
     private void OnServerConfigChanged() => _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);

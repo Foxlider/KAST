@@ -27,11 +27,19 @@ public class ServerInstanceService(
         => await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
             .Include(s => s.HeadlessClients)
+            .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == id, ct);
 
     public async Task<ServerInstance> CreateInstanceAsync(ServerInstance instance, CancellationToken ct = default)
     {
         instance.CreatedAt = DateTime.UtcNow;
+
+        // Clear SteamMod navigations — EF only needs the FK (SteamModId) to write the join rows.
+        // The navigation objects may already be tracked by this context from a prior query,
+        // which causes an identity-map conflict when db.Add() walks the object graph.
+        foreach (var sim in instance.Mods)
+            sim.SteamMod = null!;
+
         db.ServerInstances.Add(instance);
         await db.SaveChangesAsync(ct);
         return instance;
@@ -63,6 +71,7 @@ public class ServerInstanceService(
         var instance = await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
             .Include(s => s.HeadlessClients)
+            .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new InvalidOperationException($"Server instance {id} not found");
 
@@ -103,7 +112,12 @@ public class ServerInstanceService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to start server instance {Id}", id);
-            instance.Status = ServerInstanceStatus.Crashed;
+            // If the process never got a PID the server never actually ran — reset to Stopped
+            // so the user can try again. Crashed is reserved for processes that ran and then died.
+            instance.Status = instance.ProcessId.HasValue
+                ? ServerInstanceStatus.Crashed
+                : ServerInstanceStatus.Stopped;
+            instance.StartedAt = null;
             throw;
         }
         finally
@@ -117,6 +131,7 @@ public class ServerInstanceService(
     {
         var instance = await db.ServerInstances
             .Include(s => s.HeadlessClients)
+            .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new InvalidOperationException($"Server instance {id} not found");
 
@@ -177,6 +192,7 @@ public class ServerInstanceService(
     public async Task RemoveModFromInstanceAsync(int instanceId, int modId, CancellationToken ct = default)
     {
         var link = await db.ServerInstanceMods
+            .OrderBy(m => m.ServerInstanceId)
             .FirstOrDefaultAsync(m => m.ServerInstanceId == instanceId && m.SteamModId == modId, ct);
 
         if (link != null)
@@ -189,6 +205,7 @@ public class ServerInstanceService(
     public async Task UpdateModLoadOrderAsync(int instanceId, int modId, int newOrder, CancellationToken ct = default)
     {
         var link = await db.ServerInstanceMods
+            .OrderBy(m => m.ServerInstanceId)
             .FirstOrDefaultAsync(m => m.ServerInstanceId == instanceId && m.SteamModId == modId, ct);
 
         if (link != null)
@@ -202,6 +219,7 @@ public class ServerInstanceService(
     {
         var instance = await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
+            .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == instanceId, ct)
             ?? throw new InvalidOperationException($"Server instance {instanceId} not found");
 

@@ -12,7 +12,8 @@ public static class DependencyInjection
     public static IServiceCollection AddKastInfrastructure(this IServiceCollection services, string connectionString)
     {
         services.AddDbContext<KastDbContext>(options =>
-            options.UseSqlite(connectionString));
+            options.UseSqlite(connectionString,
+                o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
         // Steam services
         services.AddSingleton<ISteamService>(sp =>

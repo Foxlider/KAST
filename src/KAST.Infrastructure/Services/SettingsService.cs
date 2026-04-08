@@ -10,7 +10,7 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
 {
     public async Task<KastSettings> GetSettingsAsync(CancellationToken ct = default)
     {
-        var settings = await db.Settings.FirstOrDefaultAsync(ct);
+        var settings = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);
         if (settings == null)
         {
             // Seed from appsettings.json on first run
@@ -36,7 +36,7 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
 
     public async Task UpdateSettingsAsync(KastSettings settings, CancellationToken ct = default)
     {
-        var existing = await db.Settings.FirstOrDefaultAsync(ct);
+        var existing = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);
         if (existing == null)
         {
             db.Settings.Add(settings);

@@ -158,7 +158,10 @@ else
         try
         {
             _hostMetrics = await MonitoringService.GetHostMetricsAsync();
-            _instances = await ServerService.GetAllInstancesAsync();
+            var all = await ServerService.GetAllInstancesAsync();
+            _instances = all
+                .Where(s => s.Status != ServerInstanceStatus.Stopped)
+                .ToList();
             var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync();
             _instanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
         }
