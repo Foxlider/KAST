@@ -35,6 +35,10 @@ public class ServerInstance
     public bool RfDlc { get; set; }
     public bool EfDlc { get; set; }
 
+    // Installation tracking
+    public DateTime? InstalledAt { get; set; }
+    public string? InstalledBuildId { get; set; }
+
     // Process tracking
     public int? ProcessId { get; set; }
     public DateTime? StartedAt { get; set; }

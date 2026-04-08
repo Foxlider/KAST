@@ -1,6 +1,12 @@
 // Drag-and-drop interop for mod columns
 // Uses a global variable to pass drag data since Blazor's ondragstart
 // doesn't allow setting dataTransfer. The drop zones call back to .NET.
+
+// Utility: scroll an element ref to the bottom
+window.kastScrollToBottom = function (el) {
+    if (el) el.scrollTop = el.scrollHeight;
+};
+
 window.kastDragDrop = {
     _dragModId: null,
     _dragSource: null,
