@@ -19,7 +19,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         => await db.Mods.FindAsync([id], ct);
 
     public async Task<SteamMod?> GetModByWorkshopIdAsync(long workshopId, CancellationToken ct = default)
-        => await db.Mods.FirstOrDefaultAsync(m => m.WorkshopId == workshopId, ct);
+        => await db.Mods.OrderBy(m => m.Id).FirstOrDefaultAsync(m => m.WorkshopId == workshopId, ct);
 
     public async Task<SteamMod> AddWorkshopModAsync(long workshopId, CancellationToken ct = default)
     {

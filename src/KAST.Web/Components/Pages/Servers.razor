@@ -97,11 +97,14 @@ else
         {
             await ServerService.StartInstanceAsync(id);
             ToastService.ShowSuccess("Server started");
-            await RefreshInstances();
         }
         catch (Exception ex)
         {
             ToastService.ShowError($"Failed to start: {ex.Message}");
+        }
+        finally
+        {
+            await RefreshInstances();
         }
     }
 
@@ -111,11 +114,14 @@ else
         {
             await ServerService.StopInstanceAsync(id);
             ToastService.ShowSuccess("Server stopped");
-            await RefreshInstances();
         }
         catch (Exception ex)
         {
             ToastService.ShowError($"Failed to stop: {ex.Message}");
+        }
+        finally
+        {
+            await RefreshInstances();
         }
     }
 
@@ -125,11 +131,14 @@ else
         {
             await ServerService.RestartInstanceAsync(id);
             ToastService.ShowSuccess("Server restarted");
-            await RefreshInstances();
         }
         catch (Exception ex)
         {
             ToastService.ShowError($"Failed to restart: {ex.Message}");
+        }
+        finally
+        {
+            await RefreshInstances();
         }
     }
 

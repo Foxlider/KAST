@@ -33,7 +33,18 @@
 }
 else
 {
-    <FluentDataGrid Items="@_mods.AsQueryable()" Style="margin-top: 20px;" GridTemplateColumns="1fr 120px 140px 120px 260px">
+    <FluentDataGrid Items="@_mods.AsQueryable()" Style="margin-top: 20px;" GridTemplateColumns="48px 1fr 120px 140px 120px 260px">
+        <TemplateColumn Title="" Style="padding: 4px 8px;">
+            @if (!string.IsNullOrEmpty(context.ThumbnailUrl))
+            {
+                <img src="@context.ThumbnailUrl" alt=""
+                     style="width: 36px; height: 36px; object-fit: cover; border-radius: 4px; display: block;" />
+            }
+            else
+            {
+                <FluentIcon Value="@(new Icons.Regular.Size20.PuzzlePiece())" Style="opacity: 0.35; display: block;" />
+            }
+        </TemplateColumn>
         <TemplateColumn Title="Name" Sortable="true" SortBy="@(GridSort<SteamMod>.ByAscending(m => m.Name))">
             <a href="javascript:void(0)" @onclick="@(() => ShowModDetails(context))" @onclick:stopPropagation
                style="cursor: pointer; text-decoration: none; color: var(--accent-foreground-rest, #ff8c5a);">
