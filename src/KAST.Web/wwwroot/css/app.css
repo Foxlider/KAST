@@ -583,3 +583,26 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
     to   { opacity: 1; transform: translateX(0); }
 }
 
+/* ── Install log console ─────────────────────────────────────────── */
+.kast-install-log {
+    background: #0d0d0d;
+    border: 1px solid var(--neutral-stroke-rest);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #c8c8c8;
+    overflow-y: auto;
+    max-height: 320px;
+    scroll-behavior: smooth;
+}
+
+.kast-install-log > div {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.kast-install-log-error {
+    color: #f87171;
+}

@@ -44,6 +44,7 @@ public class SteamClientService : ISteamService, IDisposable
     private SteamUserProfile? _profile;
 
     public bool IsAuthenticated => _isConnected && CurrentUsername != null;
+    public bool IsConnected => _isConnected;
     public string? CurrentUsername { get; private set; }
     public SteamUserProfile? Profile => _profile;
     public event Action? AuthStateChanged;
@@ -475,17 +476,20 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task DownloadAppAsync(
         uint appId, string destinationPath,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        IProgress<double>? progress = null, IProgress<string>? logProgress = null, CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
+        // Anonymous login is sufficient for free dedicated server tools (e.g. AppId 233780)
         if (!IsAuthenticated)
-            throw new InvalidOperationException("Must be signed in with a Steam account to download app content");
+            _logger.LogWarning("Downloading AppId {AppId} without a real account — may fail for paid content", appId);
 
         _logger.LogInformation("Starting app download for AppId {AppId} → {Path}", appId, destinationPath);
+        logProgress?.Report($"Starting download for AppId {appId}...");
         progress?.Report(0);
 
         // 1. Get product info to discover depots and their manifests
+        logProgress?.Report("Fetching product info from Steam...");
         var picsRequest = new SteamApps.PICSRequest(appId);
         var productInfo = await _steamApps.PICSGetProductInfo(new[] { picsRequest }, Enumerable.Empty<SteamApps.PICSRequest>());
         if (productInfo.Failed || !productInfo.Results?.Any() == true)
@@ -504,6 +508,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 2. Collect all relevant depots (numeric keys only, skip branches/etc.)
         var depotManifests = new List<(uint DepotId, ulong ManifestId)>();
+        var currentOs = OperatingSystem.IsWindows() ? "windows" : "linux";
 
         foreach (var depot in depots.Children)
         {
@@ -517,7 +522,6 @@ public class SteamClientService : ISteamService, IDisposable
                 var oslist = config["oslist"].AsString();
                 if (!string.IsNullOrEmpty(oslist))
                 {
-                    var currentOs = OperatingSystem.IsWindows() ? "windows" : "linux";
                     if (!oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
                     {
                         _logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
@@ -543,10 +547,14 @@ public class SteamClientService : ISteamService, IDisposable
         }
 
         if (depotManifests.Count == 0)
-            throw new InvalidOperationException($"No downloadable depots found for AppId {appId}");
+            throw new InvalidOperationException($"No downloadable depots found for AppId {appId} (OS: {currentOs})");
+
+        logProgress?.Report($"Found {depotManifests.Count} depot(s) for {currentOs}.");
 
         // 3. Download each depot
+        logProgress?.Report("Connecting to CDN servers...");
         var servers = await GetCdnServersAsync(ct);
+        logProgress?.Report($"Using CDN server: {servers.First().Host}");
         Directory.CreateDirectory(destinationPath);
 
         long totalDownloaded = 0;
@@ -558,6 +566,7 @@ public class SteamClientService : ISteamService, IDisposable
         foreach (var (depotId, manifestId) in depotManifests)
         {
             ct.ThrowIfCancellationRequested();
+            logProgress?.Report($"Fetching manifest for depot {depotId}...");
 
             // Get depot key
             byte[]? depotKey = null;
@@ -579,6 +588,7 @@ public class SteamClientService : ISteamService, IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "CDN download manifest failed for depot {DepotId}, trying next server", depotId);
+                logProgress?.Report($"Retrying depot {depotId} on fallback server...");
                 if (servers.Length > 1)
                 {
                     server = servers[1];
@@ -592,10 +602,13 @@ public class SteamClientService : ISteamService, IDisposable
 
             manifests.Add((depotId, depotKey, manifest));
             totalSize += (long)(manifest.TotalUncompressedSize);
+            var sizeMb = manifest.TotalUncompressedSize / 1_048_576.0;
+            logProgress?.Report($"Depot {depotId}: {manifest.Files?.Count ?? 0} files, {sizeMb:F0} MB");
         }
 
-        _logger.LogInformation("Total download size: {Size} bytes across {Count} depots",
-            totalSize, manifests.Count);
+        var totalMb = totalSize / 1_048_576.0;
+        _logger.LogInformation("Total download size: {Size} bytes across {Count} depots", totalSize, manifests.Count);
+        logProgress?.Report($"Total download size: {totalMb:F0} MB across {manifests.Count} depot(s). Starting...");
 
         // Second pass: download files from each depot
         foreach (var (depotId, depotKey, manifest) in manifests)
@@ -605,6 +618,8 @@ public class SteamClientService : ISteamService, IDisposable
                 .ToList() ?? [];
 
             var server = servers.First();
+            logProgress?.Report($"Downloading depot {depotId} ({files.Count} files)...");
+            int fileIndex = 0;
 
             foreach (var file in files)
             {
@@ -633,12 +648,19 @@ public class SteamClientService : ISteamService, IDisposable
                     if (totalSize > 0)
                         progress?.Report((double)totalDownloaded / totalSize * 100.0);
                 }
+
+                fileIndex++;
+                // Log every ~50 files and always the last one
+                if (fileIndex % 50 == 0 || fileIndex == files.Count)
+                    logProgress?.Report($"  [{fileIndex}/{files.Count}] {relativePath}");
             }
 
             _logger.LogInformation("Depot {DepotId} download complete ({FileCount} files)", depotId, files.Count);
+            logProgress?.Report($"Depot {depotId} complete.");
         }
 
         _logger.LogInformation("App {AppId} download complete → {Path}", appId, destinationPath);
+        logProgress?.Report("All files downloaded successfully.");
         progress?.Report(100);
     }
 

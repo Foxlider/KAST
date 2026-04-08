@@ -4,6 +4,7 @@
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
 @using Microsoft.FluentUI.AspNetCore.Components
+@using KAST.Web.Services
 @implements IDisposable
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
@@ -11,6 +12,8 @@
 @inject ISettingsService SettingsService
 @inject IToastService ToastService
 @inject NavigationManager Nav
+@inject ServerInstallService InstallService
+@inject ServerInstallProgressStore InstallStore
 
 <PageTitle>KAST — @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
@@ -609,6 +612,148 @@
             </div>
         </div>
     </FluentTab>
+
+    @* ════════════ INSTALL TAB ════════════ *@
+    <FluentTab Label="Install">
+        <div class="kast-card" style="margin-top: 16px;">
+            @if (_isNew)
+            {
+                <div style="display:flex; align-items:center; gap:8px; color: var(--kast-text-muted);">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Info())" />
+                    <span>Save the server first before downloading server files.</span>
+                </div>
+            }
+            else
+            {
+                @* ── Install status badge ── *@
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+                    @if (_installState?.IsDownloading == true)
+                    {
+                        <FluentIcon Value="@(new Icons.Regular.Size20.ArrowDownload())" Color="Color.Accent" />
+                        <span><strong>Downloading…</strong> @(_installState.Progress.ToString("F0"))%</span>
+                    }
+                    else if (_instance.InstalledAt.HasValue)
+                    {
+                        <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Success" />
+                        <span>Installed <strong>@_instance.InstalledAt.Value.ToLocalTime().ToString("g")</strong></span>
+                        @if (!string.IsNullOrEmpty(_instance.InstalledBuildId))
+                        {
+                            <FluentBadge Appearance="Appearance.Lightweight">Build @_instance.InstalledBuildId</FluentBadge>
+                        }
+                        <span style="color:var(--kast-text-muted); font-size:12px;">@_instance.InstallPath</span>
+                    }
+                    else
+                    {
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Warning())" Color="Color.Warning" />
+                        <span style="color:var(--kast-text-muted);">Not installed — server files have not been downloaded yet.</span>
+                    }
+                    @if (!string.IsNullOrEmpty(_installState?.ErrorMessage) && _installState.ErrorMessage != "Cancelled")
+                    {
+                        <span style="font-size:12px; color:var(--error); display:inline-flex; align-items:center; gap:4px;">
+                            <FluentIcon Value="@(new Icons.Regular.Size12.Warning())" Color="Color.Error" />
+                            Failed: @_installState.ErrorMessage
+                        </span>
+                    }
+                </div>
+
+                @* ── Progress bar (always visible while downloading) ── *@
+                @if (_installState?.IsDownloading == true)
+                {
+                    <FluentProgress Value="@((int)_installState.Progress)" Max="100"
+                                    Style="width:100%; margin-bottom:16px;" />
+                }
+
+                @* ── Action buttons ── *@
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+                    @if (_installState?.IsDownloading == true)
+                    {
+                        <FluentButton Appearance="Appearance.Outline"
+                                      IconStart="@(new Icons.Regular.Size16.Stop())"
+                                      OnClick="CancelInstall">
+                            Cancel Download
+                        </FluentButton>
+                    }
+                    else
+                    {
+                        <FluentButton Appearance="Appearance.Accent"
+                                      IconStart="@(new Icons.Regular.Size16.ArrowDownload())"
+                                      OnClick="StartInstall"
+                                      Disabled="@(_instance.Status == ServerInstanceStatus.Running)">
+                            @(_instance.InstalledAt.HasValue ? "Re-download Server Files" : "Download Server Files")
+                        </FluentButton>
+                        <FluentButton Appearance="Appearance.Outline"
+                                      IconStart="@(new Icons.Regular.Size16.Checkmark())"
+                                      OnClick="ValidateInstall">
+                            Validate Files
+                        </FluentButton>
+                    }
+                </div>
+
+                @* ── DLC enabled on this instance ── *@
+                @if (_instance.ContactDlc || _instance.GmDlc || _instance.PfDlc ||
+                     _instance.CslaDlc || _instance.WsDlc || _instance.SpeDlc ||
+                     _instance.RfDlc || _instance.EfDlc)
+                {
+                    <div style="margin-bottom:16px;">
+                        <div style="font-size:12px; font-weight:600; color:var(--kast-text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">Creator DLC</div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            @if (_instance.ContactDlc)  { <FluentBadge Appearance="Appearance.Neutral">Contact</FluentBadge> }
+                            @if (_instance.GmDlc)       { <FluentBadge Appearance="Appearance.Neutral">Global Mobilization</FluentBadge> }
+                            @if (_instance.PfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Prairie Fire</FluentBadge> }
+                            @if (_instance.CslaDlc)     { <FluentBadge Appearance="Appearance.Neutral">CSLA Iron Curtain</FluentBadge> }
+                            @if (_instance.WsDlc)       { <FluentBadge Appearance="Appearance.Neutral">Western Sahara</FluentBadge> }
+                            @if (_instance.SpeDlc)      { <FluentBadge Appearance="Appearance.Neutral">S.O.G. Prairie Fire</FluentBadge> }
+                            @if (_instance.RfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Reaction Forces</FluentBadge> }
+                            @if (_instance.EfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Expeditionary Forces</FluentBadge> }
+                        </div>
+                    </div>
+                }
+
+                @* ── Validation results ── *@
+                @if (_validationResults != null)
+                {
+                    <div style="margin-bottom:16px;">
+                        <div style="font-size:12px; font-weight:600; color:var(--kast-text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;">File Validation</div>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            @foreach (var r in _validationResults)
+                            {
+                                <div style="display:flex; align-items:center; gap:8px; font-size:13px;">
+                                    @if (r.OK)
+                                    {
+                                        <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Success" />
+                                    }
+                                    else
+                                    {
+                                        <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Error" />
+                                    }
+                                    <span>@r.Label</span>
+                                    @if (!string.IsNullOrEmpty(r.Detail))
+                                    {
+                                        <span style="color:var(--kast-text-muted); font-size:12px;">— @r.Detail</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* ── Install log console ── *@
+                @if (_installState?.Log.Count > 0)
+                {
+                    <div>
+                        <div style="font-size:12px; font-weight:600; color:var(--kast-text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">Install Log</div>
+                        <div class="kast-install-log" @ref="_installLogRef">
+                            @foreach (var line in _installState.Log)
+                            {
+                                <div class="@(line.Contains("ERROR") ? "kast-install-log-error" : "")">@line</div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </FluentTab>
+
 </FluentTabs>
 
 @code {
@@ -618,6 +763,12 @@
     private bool _isNew => Id == null || Id == 0;
     private IReadOnlyList<SteamMod> _availableMods = [];
     private string _serversDirectory = "./servers";
+
+    // ── Install state ──
+    private ServerInstallState? _installState;
+    private ElementReference _installLogRef;
+    private IReadOnlyList<ServerInstallService.ValidationResult>? _validationResults;
+    private bool _disposed;
 
     private string _restartPolicyStr
     {
@@ -675,6 +826,13 @@
         }
 
         _availableMods = await ModService.GetAllModsAsync();
+
+        // Subscribe to install progress for this instance (only when editing an existing server)
+        if (!_isNew)
+        {
+            _installState = InstallStore.GetOrCreate(_instance.Id);
+            _installState.Changed += OnInstallStateChanged;
+        }
 
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
         if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
@@ -797,8 +955,50 @@
         StateHasChanged();
     }
 
+    private void StartInstall()
+    {
+        if (_isNew || _installState is null) return;
+        _validationResults = null;
+        InstallService.StartDownload(_instance.Id, _instance.InstallPath);
+    }
+
+    private void CancelInstall()
+    {
+        if (_isNew) return;
+        InstallService.CancelDownload(_instance.Id);
+    }
+
+    private void ValidateInstall()
+    {
+        _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath);
+        StateHasChanged();
+    }
+
+    private void OnInstallStateChanged()
+    {
+        if (_disposed) return;
+        InvokeAsync(async () =>
+        {
+            if (_disposed) return;
+            // If the download just finished successfully, reload _instance from DB
+            // so InstalledAt / InstalledBuildId are reflected without a page reload.
+            if (_installState?.IsComplete == true && !_instance.InstalledAt.HasValue)
+            {
+                var fresh = await ServerService.GetInstanceByIdAsync(_instance.Id);
+                if (fresh != null) _instance = fresh;
+            }
+
+            StateHasChanged();
+            if (_installState?.Log.Count > 0)
+                await JS.InvokeVoidAsync("kastScrollToBottom", _installLogRef);
+        });
+    }
+
     public void Dispose()
     {
+        _disposed = true;
+        if (_installState is not null)
+            _installState.Changed -= OnInstallStateChanged;
         _selfRef?.Dispose();
     }
 }

@@ -42,6 +42,10 @@ builder.Services.AddHttpClient("HealthCheck", client =>
 });
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
+// Server install services
+builder.Services.AddSingleton<ServerInstallProgressStore>();
+builder.Services.AddSingleton<ServerInstallService>();
+
 // Background services
 builder.Services.AddHostedService<MetricsBackgroundService>();
 builder.Services.AddHostedService<ProcessWatchdogService>();

@@ -7,5 +7,6 @@ public enum ServerInstanceStatus
     Running,
     Stopping,
     Crashed,
-    Restarting
+    Restarting,
+    Downloading
 }
