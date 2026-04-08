@@ -71,6 +71,9 @@ public class ServerInstanceService(
 
         await LinkModsAsync(id, ct);
 
+        // Write config files to disk before launch
+        WriteConfigFiles(instance);
+
         instance.Status = ServerInstanceStatus.Starting;
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
@@ -232,6 +235,24 @@ public class ServerInstanceService(
             return Path.Combine(instance.InstallPath, "arma3server_x64.exe");
 
         return Path.Combine(instance.InstallPath, "arma3server_x64");
+    }
+
+    private static void WriteConfigFiles(ServerInstance instance)
+    {
+        if (!string.IsNullOrEmpty(instance.InstallPath))
+            Directory.CreateDirectory(instance.InstallPath);
+
+        if (instance.ServerCfgContent != null)
+        {
+            var path = Path.Combine(instance.InstallPath, "server.cfg");
+            File.WriteAllText(path, instance.ServerCfgContent);
+        }
+
+        if (instance.BasicCfgContent != null)
+        {
+            var path = Path.Combine(instance.InstallPath, "basic.cfg");
+            File.WriteAllText(path, instance.BasicCfgContent);
+        }
     }
 
     private static string BuildLaunchArguments(ServerInstance instance)
