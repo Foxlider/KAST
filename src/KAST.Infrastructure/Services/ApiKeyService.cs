@@ -33,18 +33,15 @@ public class ApiKeyService(KastDbContext db) : IApiKeyService
     public async Task<bool> ValidateKeyAsync(string rawKey, CancellationToken ct = default)
     {
         var prefix = rawKey[..8];
-        var candidates = await db.ApiKeys
+        var candidate = await db.ApiKeys
             .Where(k => k.KeyPrefix == prefix && k.IsActive)
-            .ToListAsync(ct);
+            .FirstOrDefaultAsync(k => VerifyKey(rawKey, k.KeyHash), ct);
 
-        foreach (var candidate in candidates)
+        if (candidate != null)
         {
-            if (VerifyKey(rawKey, candidate.KeyHash))
-            {
-                candidate.LastUsedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync(ct);
-                return true;
-            }
+            candidate.LastUsedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return true;
         }
 
         return false;

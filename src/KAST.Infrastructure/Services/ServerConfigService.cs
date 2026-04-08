@@ -525,10 +525,8 @@ public partial class ServerConfigService : IServerConfigService
         // Also check inside "class sockets" for maxPacketSize
         foreach (var node in ast)
         {
-            if (node is ClassNode cls && cls.Name.Equals("sockets", StringComparison.OrdinalIgnoreCase))
-            {
-                if (int.TryParse(FindValue(cls.Children, "maxPacketSize"), out var ps)) data.MaxPacketSize = ps;
-            }
+            if (node is ClassNode cls && cls.Name.Equals("sockets", StringComparison.OrdinalIgnoreCase) && int.TryParse(FindValue(cls.Children, "maxPacketSize"), out var ps))
+                data.MaxPacketSize = ps;
         }
 
         return data;
@@ -609,10 +607,8 @@ public partial class ServerConfigService : IServerConfigService
     private static void ParseArma3ProfileAILevels(List<ConfigNode> ast, Arma3ProfileData data)
     {
         var customDiffAst = FindNestedClass(ast, "DifficultyPresets", "CustomDifficulty");
-        if (customDiffAst != null)
-        {
-            if (int.TryParse(FindValue(customDiffAst, "aiLevelPreset"), out var ai)) data.AiLevelPreset = ai;
-        }
+        if (customDiffAst != null && int.TryParse(FindValue(customDiffAst, "aiLevelPreset"), out var ai))
+            data.AiLevelPreset = ai;
 
         var customAiAst = FindNestedClass(ast, "DifficultyPresets", "CustomAILevel");
         if (customAiAst != null)
