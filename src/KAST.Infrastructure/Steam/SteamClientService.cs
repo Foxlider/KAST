@@ -380,7 +380,7 @@ public class SteamClientService : ISteamService, IDisposable
             details.title, appId, depotId, manifestId);
 
         // 2. Get CDN server list
-        var servers = await GetCdnServersAsync(ct);
+        var servers = await GetCdnServersAsync();
         var server = servers.First();
         _logger.LogDebug("Using CDN server: {Host} ({Type})", server.Host, server.Type);
 
@@ -474,6 +474,101 @@ public class SteamClientService : ISteamService, IDisposable
         progress?.Report(100);
     }
 
+    private static List<(uint DepotId, ulong ManifestId)> ExtractDepotManifests(
+        KeyValue depots, string currentOs, ILogger logger)
+    {
+        var depotManifests = new List<(uint DepotId, ulong ManifestId)>();
+
+        foreach (var depot in depots.Children)
+        {
+            if (!uint.TryParse(depot.Name, out var depotId))
+                continue;
+
+            // Filter: only download depots for the current OS
+            var config = depot["config"];
+            if (config != KeyValue.Invalid)
+            {
+                var oslist = config["oslist"].AsString();
+                if (!string.IsNullOrEmpty(oslist))
+                {
+                    if (!oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
+                    {
+                        logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
+                        continue;
+                    }
+                }
+            }
+
+            // Get manifest ID from the "public" branch
+            var depotManifestsKv = depot["manifests"];
+            if (depotManifestsKv == KeyValue.Invalid) continue;
+
+            var publicManifest = depotManifestsKv["public"];
+            if (publicManifest == KeyValue.Invalid) continue;
+
+            var manifestIdStr = publicManifest["gid"].AsString() ?? publicManifest.AsString();
+            if (string.IsNullOrEmpty(manifestIdStr) || !ulong.TryParse(manifestIdStr, out var manifestId))
+                continue;
+
+            depotManifests.Add(((uint)depotId, (ulong)manifestId));
+            logger.LogInformation("Depot {DepotId}: ManifestId={ManifestId}", depotId, manifestId);
+        }
+
+        return depotManifests;
+    }
+
+    private async Task<long> DownloadDepotFilesAsync(
+        uint depotId, byte[]? depotKey, DepotManifest manifest, Server[] servers,
+        string destinationPath, long totalSize, long totalDownloaded,
+        IProgress<double>? progress, IProgress<string>? logProgress, CancellationToken ct)
+    {
+        var files = manifest.Files?
+            .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
+            .ToList() ?? [];
+
+        var server = servers.First();
+        logProgress?.Report($"Downloading depot {depotId} ({files.Count} files)...");
+        int fileIndex = 0;
+
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+            var filePath = Path.Combine(destinationPath, relativePath);
+            var dir = Path.GetDirectoryName(filePath);
+            if (dir != null) Directory.CreateDirectory(dir);
+
+            await using var fs = File.Create(filePath);
+            if (file.TotalSize > 0)
+                fs.SetLength((long)file.TotalSize);
+
+            foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var chunkBuffer = new byte[chunk.UncompressedLength];
+                var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, chunkBuffer, depotKey);
+
+                fs.Position = (long)chunk.Offset;
+                await fs.WriteAsync(chunkBuffer.AsMemory(0, written), ct);
+
+                totalDownloaded += chunk.UncompressedLength;
+                if (totalSize > 0)
+                    progress?.Report((double)totalDownloaded / totalSize * 100.0);
+            }
+
+            fileIndex++;
+            if (fileIndex % 50 == 0 || fileIndex == files.Count)
+                logProgress?.Report($"  [{fileIndex}/{files.Count}] {relativePath}");
+        }
+
+        _logger.LogInformation("Depot {DepotId} download complete ({FileCount} files)", depotId, files.Count);
+        logProgress?.Report($"Depot {depotId} complete.");
+        
+        return totalDownloaded;
+    }
+
     public async Task DownloadAppAsync(
         uint appId, string destinationPath,
         IProgress<double>? progress = null, IProgress<string>? logProgress = null, CancellationToken ct = default)
@@ -507,44 +602,8 @@ public class SteamClientService : ISteamService, IDisposable
             throw new InvalidOperationException($"No depots found for AppId {appId}");
 
         // 2. Collect all relevant depots (numeric keys only, skip branches/etc.)
-        var depotManifests = new List<(uint DepotId, ulong ManifestId)>();
         var currentOs = OperatingSystem.IsWindows() ? "windows" : "linux";
-
-        foreach (var depot in depots.Children)
-        {
-            if (!uint.TryParse(depot.Name, out var depotId))
-                continue;
-
-            // Filter: only download depots for the current OS
-            var config = depot["config"];
-            if (config != KeyValue.Invalid)
-            {
-                var oslist = config["oslist"].AsString();
-                if (!string.IsNullOrEmpty(oslist))
-                {
-                    if (!oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogDebug("Skipping depot {DepotId} (OS filter: {OsList})", depotId, oslist);
-                        continue;
-                    }
-                }
-            }
-
-            // Get manifest ID from the "public" branch
-            var depotManifestsKv = depot["manifests"];
-            if (depotManifestsKv == KeyValue.Invalid) continue;
-
-            var publicManifest = depotManifestsKv["public"];
-            if (publicManifest == KeyValue.Invalid) continue;
-
-            // SteamKit2 can store manifest as the value directly or under "gid"
-            var manifestIdStr = publicManifest["gid"].AsString() ?? publicManifest.AsString();
-            if (string.IsNullOrEmpty(manifestIdStr) || !ulong.TryParse(manifestIdStr, out var manifestId))
-                continue;
-
-            depotManifests.Add(((uint)depotId, (ulong)manifestId));
-            _logger.LogInformation("Depot {DepotId}: ManifestId={ManifestId}", depotId, manifestId);
-        }
+        var depotManifests = ExtractDepotManifests(depots, currentOs, _logger);
 
         if (depotManifests.Count == 0)
             throw new InvalidOperationException($"No downloadable depots found for AppId {appId} (OS: {currentOs})");
@@ -553,7 +612,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 3. Download each depot
         logProgress?.Report("Connecting to CDN servers...");
-        var servers = await GetCdnServersAsync(ct);
+        var servers = await GetCdnServersAsync();
         logProgress?.Report($"Using CDN server: {servers.First().Host}");
         Directory.CreateDirectory(destinationPath);
 
@@ -613,50 +672,8 @@ public class SteamClientService : ISteamService, IDisposable
         // Second pass: download files from each depot
         foreach (var (depotId, depotKey, manifest) in manifests)
         {
-            var files = manifest.Files?
-                .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
-                .ToList() ?? [];
-
-            var server = servers.First();
-            logProgress?.Report($"Downloading depot {depotId} ({files.Count} files)...");
-            int fileIndex = 0;
-
-            foreach (var file in files)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
-                var filePath = Path.Combine(destinationPath, relativePath);
-                var dir = Path.GetDirectoryName(filePath);
-                if (dir != null) Directory.CreateDirectory(dir);
-
-                await using var fs = File.Create(filePath);
-                if (file.TotalSize > 0)
-                    fs.SetLength((long)file.TotalSize);
-
-                foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    var chunkBuffer = new byte[chunk.UncompressedLength];
-                    var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, chunkBuffer, depotKey);
-
-                    fs.Position = (long)chunk.Offset;
-                    await fs.WriteAsync(chunkBuffer.AsMemory(0, written), ct);
-
-                    totalDownloaded += chunk.UncompressedLength;
-                    if (totalSize > 0)
-                        progress?.Report((double)totalDownloaded / totalSize * 100.0);
-                }
-
-                fileIndex++;
-                // Log every ~50 files and always the last one
-                if (fileIndex % 50 == 0 || fileIndex == files.Count)
-                    logProgress?.Report($"  [{fileIndex}/{files.Count}] {relativePath}");
-            }
-
-            _logger.LogInformation("Depot {DepotId} download complete ({FileCount} files)", depotId, files.Count);
-            logProgress?.Report($"Depot {depotId} complete.");
+            totalDownloaded = await DownloadDepotFilesAsync(depotId, depotKey, manifest, servers, destinationPath, 
+                totalSize, totalDownloaded, progress, logProgress, ct);
         }
 
         _logger.LogInformation("App {AppId} download complete → {Path}", appId, destinationPath);
@@ -666,7 +683,7 @@ public class SteamClientService : ISteamService, IDisposable
 
     // ───── CDN Server Discovery ─────
 
-    private async Task<Server[]> GetCdnServersAsync(CancellationToken ct)
+    private async Task<Server[]> GetCdnServersAsync()
     {
         if (_cdnServers is { Length: > 0 }) return _cdnServers;
 
@@ -824,10 +841,23 @@ public class SteamClientService : ISteamService, IDisposable
 
     public void Dispose()
     {
-        StopCallbackLoop();
-        _callbackCts?.Dispose();
-        _cdnClient.Dispose();
-        _steamClient.Disconnect();
+        Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            StopCallbackLoop();
+            _callbackCts?.Dispose();
+            _cdnClient.Dispose();
+            _steamClient.Disconnect();
+        }
+    }
+
+    ~SteamClientService()
+    {
+        Dispose(false);
     }
 }

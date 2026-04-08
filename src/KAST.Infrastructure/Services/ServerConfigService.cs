@@ -21,6 +21,80 @@ public partial class ServerConfigService : IServerConfigService
         return ParseLines(lines, ref index);
     }
 
+    private static ConfigNode? TryParseClassLine(string[] lines, string trimmed, ref int index)
+    {
+        var classMatch = ClassNameRegex().Match(trimmed);
+        if (!classMatch.Success)
+            return null;
+
+        var classNode = new ClassNode
+        {
+            Name = classMatch.Groups[1].Value,
+            RawText = lines[index]
+        };
+        index++;
+
+        // Skip to opening brace (may be on the same line via trimmed check or next lines)
+        if (!trimmed.Contains('{'))
+        {
+            while (index < lines.Length)
+            {
+                var nextTrimmed = lines[index].Trim();
+                if (nextTrimmed.StartsWith("{"))
+                {
+                    index++;
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(nextTrimmed))
+                {
+                    index++;
+                    continue;
+                }
+                // Unexpected non-brace line, treat as part of class header
+                index++;
+                break;
+            }
+        }
+
+        classNode.Children.AddRange(ParseLines(lines, ref index));
+        return classNode;
+    }
+
+    private static ConfigNode? TryParseArrayLine(string[] lines, string trimmed, ref int index)
+    {
+        var arrayMatch = ArrayRegex().Match(trimmed);
+        if (!arrayMatch.Success)
+            return null;
+
+        var arrayNode = new ArrayNode
+        {
+            Key = arrayMatch.Groups[1].Value,
+            RawText = lines[index],
+            Comment = arrayMatch.Groups[3].Success ? arrayMatch.Groups[3].Value.Trim() : null
+        };
+        var valuesStr = arrayMatch.Groups[2].Value;
+        arrayNode.Values = ParseArrayValues(valuesStr);
+        index++;
+        return arrayNode;
+    }
+
+    private static ConfigNode? TryParseKeyValueLine(string[] lines, string trimmed, ref int index)
+    {
+        var kvMatch = KeyValueRegex().Match(trimmed);
+        if (!kvMatch.Success)
+            return null;
+
+        var node = new KeyValueNode
+        {
+            Key = kvMatch.Groups[1].Value,
+            Value = kvMatch.Groups[2].Value.Trim(),
+            Comment = kvMatch.Groups[3].Success ? kvMatch.Groups[3].Value.Trim() : null,
+            RawText = lines[index]
+        };
+        index++;
+        return node;
+    }
+
     private static List<ConfigNode> ParseLines(string[] lines, ref int index)
     {
         var nodes = new List<ConfigNode>();
@@ -53,77 +127,27 @@ public partial class ServerConfigService : IServerConfigService
                 break;
             }
 
-            // Class definition: "class ClassName" (opening brace may be same line or next)
-            var classMatch = ClassNameRegex().Match(trimmed);
-            if (classMatch.Success)
+            // Try to parse as class
+            var classNode = TryParseClassLine(lines, trimmed, ref index);
+            if (classNode != null)
             {
-                var classNode = new ClassNode
-                {
-                    Name = classMatch.Groups[1].Value,
-                    RawText = rawLine
-                };
-                index++;
-
-                // Skip to opening brace (may be on the same line via trimmed check or next lines)
-                if (!trimmed.Contains('{'))
-                {
-                    while (index < lines.Length)
-                    {
-                        var nextTrimmed = lines[index].Trim();
-                        if (nextTrimmed.StartsWith("{"))
-                        {
-                            index++;
-                            break;
-                        }
-                        if (string.IsNullOrWhiteSpace(nextTrimmed))
-                        {
-                            index++;
-                            continue;
-                        }
-                        // Unexpected non-brace line, treat as part of class header
-                        index++;
-                        break;
-                    }
-                }
-                else
-                {
-                    // Brace was on the class line itself, already consumed
-                }
-
-                classNode.Children.AddRange(ParseLines(lines, ref index));
                 nodes.Add(classNode);
                 continue;
             }
 
-            // Array definition: key[] = { "val1", "val2" };
-            var arrayMatch = ArrayRegex().Match(trimmed);
-            if (arrayMatch.Success)
+            // Try to parse as array
+            var arrayNode = TryParseArrayLine(lines, trimmed, ref index);
+            if (arrayNode != null)
             {
-                var arrayNode = new ArrayNode
-                {
-                    Key = arrayMatch.Groups[1].Value,
-                    RawText = rawLine,
-                    Comment = arrayMatch.Groups[3].Success ? arrayMatch.Groups[3].Value.Trim() : null
-                };
-                var valuesStr = arrayMatch.Groups[2].Value;
-                arrayNode.Values = ParseArrayValues(valuesStr);
                 nodes.Add(arrayNode);
-                index++;
                 continue;
             }
 
-            // Key-value: key = value;  // optional comment
-            var kvMatch = KeyValueRegex().Match(trimmed);
-            if (kvMatch.Success)
+            // Try to parse as key-value
+            var kvNode = TryParseKeyValueLine(lines, trimmed, ref index);
+            if (kvNode != null)
             {
-                nodes.Add(new KeyValueNode
-                {
-                    Key = kvMatch.Groups[1].Value,
-                    Value = kvMatch.Groups[2].Value.Trim(),
-                    Comment = kvMatch.Groups[3].Success ? kvMatch.Groups[3].Value.Trim() : null,
-                    RawText = rawLine
-                });
-                index++;
+                nodes.Add(kvNode);
                 continue;
             }
 
@@ -245,92 +269,54 @@ public partial class ServerConfigService : IServerConfigService
 
     // ── Server Config (server.cfg) ──
 
-    public ServerConfigData ParseServerConfig(string rawContent)
+    private static void ExtractNumericServerFields(List<ConfigNode> ast, ServerConfigData data)
     {
-        var ast = ParseAst(rawContent);
-        var data = new ServerConfigData
-        {
-            RawContent = rawContent,
-            Ast = ast
-        };
-
-        // Server Options
-        data.Hostname = FindValue(ast, "hostname");
-        data.Password = FindValue(ast, "password");
-        data.PasswordAdmin = FindValue(ast, "passwordAdmin");
-        data.ServerCommandPassword = FindValue(ast, "serverCommandPassword");
-        data.LogFile = FindValue(ast, "logFile") ?? "server_console.log";
-        if (int.TryParse(FindValue(ast, "maxPlayers"), out var mp)) data.MaxPlayers = mp;
-
-        // MOTD
-        var motdValues = FindArrayValues(ast, "motd");
-        if (motdValues is { Count: > 0 })
-            data.Motd = string.Join("\n", motdValues);
-        if (int.TryParse(FindValue(ast, "motdInterval"), out var mi)) data.MotdInterval = mi;
-
-        // Admins
-        var adminValues = FindArrayValues(ast, "admins");
-        if (adminValues is { Count: > 0 })
-            data.Admins = string.Join("\n", adminValues);
-
         // Joining Rules
-        data.KickDuplicate = FindValue(ast, "kickDuplicate") != "0";
+        if (int.TryParse(FindValue(ast, "maxPlayers"), out var mp)) data.MaxPlayers = mp;
         if (int.TryParse(FindValue(ast, "verifySignatures"), out var vs)) data.VerifySignatures = vs;
         if (int.TryParse(FindValue(ast, "allowedFilePatching"), out var afp)) data.AllowedFilePatching = afp;
         if (int.TryParse(FindValue(ast, "requiredBuild"), out var rb)) data.RequiredBuild = rb;
         if (int.TryParse(FindValue(ast, "steamProtocolMaxDataSize"), out var spmd)) data.SteamProtocolMaxDataSize = spmd;
-        data.Loopback = FindValue(ast, "loopback") == "1";
-        data.Upnp = FindValue(ast, "upnp") == "1";
+
+        // MOTD
+        if (int.TryParse(FindValue(ast, "motdInterval"), out var mi)) data.MotdInterval = mi;
 
         // Voting
-        var allowedVoteCmds = FindArrayValues(ast, "allowedVoteCmds");
-        data.VotingEnabled = allowedVoteCmds == null || allowedVoteCmds.Count > 0;
         if (double.TryParse(FindValue(ast, "voteThreshold"), CultureInfo.InvariantCulture, out var vt)) data.VoteThreshold = vt;
         if (int.TryParse(FindValue(ast, "voteMissionPlayers"), out var vmp)) data.VoteMissionPlayers = vmp;
         if (int.TryParse(FindValue(ast, "votingTimeOut"), out var vto)) data.VotingTimeOut = vto;
 
         // In-game Settings
-        data.DisableVoN = FindValue(ast, "disableVoN") == "1";
         if (int.TryParse(FindValue(ast, "vonCodec"), out var vc)) data.VonCodec = vc;
         if (int.TryParse(FindValue(ast, "vonCodecQuality"), out var vcq)) data.VonCodecQuality = vcq;
-        data.SkipLobby = FindValue(ast, "skipLobby") == "1";
-        data.PersistentBattlefield = FindValue(ast, "persistent") == "1";
-        data.AutoInit = FindValue(ast, "autoInit") is "1" or "true";
-        data.BattlEye = FindValue(ast, "BattlEye") != "0";
-        data.TimeStampFormat = FindValue(ast, "timeStampFormat") ?? "short";
-        data.ForcedDifficulty = FindValue(ast, "forcedDifficulty") ?? "Custom";
-        data.DrawingInMap = FindValue(ast, "drawingInMap") != "0";
 
         // Logging
-        data.LogObjectNotFound = FindValue(ast, "LogObjectNotFound") != "0";
-        data.SkipDescriptionParsing = FindValue(ast, "SkipDescriptionParsing") == "1";
-        data.IgnoreMissionLoadErrors = FindValue(ast, "ignoreMissionLoadErrors") == "1";
         if (int.TryParse(FindValue(ast, "armaUnitsTimeout"), out var aut)) data.ArmaUnitsTimeout = aut;
         if (int.TryParse(FindValue(ast, "queueSizeLogG"), out var qslg)) data.QueueSizeLogG = qslg;
-        data.NetlogEnabled = FindValue(ast, "netlog") == "1";
 
         // Timeouts
         if (int.TryParse(FindValue(ast, "disconnectTimeout"), out var dt)) data.DisconnectTimeout = dt;
         if (int.TryParse(FindValue(ast, "maxDesync"), out var md)) data.MaxDesync = md;
         if (int.TryParse(FindValue(ast, "maxPing"), out var mpi)) data.MaxPing = mpi;
         if (int.TryParse(FindValue(ast, "maxPacketLoss"), out var mpl)) data.MaxPacketLoss = mpl;
-        data.KickClientOnSlowNetwork = FindArrayValues(ast, "kickClientsOnSlowNetwork")?.Any(v => v == "1") ?? false;
         if (int.TryParse(FindValue(ast, "lobbyIdleTimeout"), out var lit)) data.LobbyIdleTimeout = lit;
         if (int.TryParse(FindValue(ast, "briefingTimeOut"), out var bto)) data.BriefingTimeOut = bto;
         if (int.TryParse(FindValue(ast, "roleTimeOut"), out var rto)) data.RoleTimeOut = rto;
         if (int.TryParse(FindValue(ast, "debriefingTimeOut"), out var dbt)) data.DebriefingTimeOut = dbt;
+    }
 
-        // Mission
-        data.AutoSelectMission = FindValue(ast, "autoSelectMission") != "0";
-        data.RandomMissionOrder = FindValue(ast, "randomMissionOrder") != "0";
+    private static void ExtractStringServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        // Server Options
+        data.Hostname = FindValue(ast, "hostname");
+        data.Password = FindValue(ast, "password");
+        data.PasswordAdmin = FindValue(ast, "passwordAdmin");
+        data.ServerCommandPassword = FindValue(ast, "serverCommandPassword");
+        data.LogFile = FindValue(ast, "logFile") ?? "server_console.log";
 
-        // Headless clients
-        var hcValues = FindArrayValues(ast, "headlessClients");
-        if (hcValues is { Count: > 0 })
-            data.HeadlessClients = string.Join("\n", hcValues);
-        var lcValues = FindArrayValues(ast, "localClient");
-        if (lcValues is { Count: > 0 })
-            data.LocalClient = string.Join("\n", lcValues);
+        // In-game Settings
+        data.TimeStampFormat = FindValue(ast, "timeStampFormat") ?? "short";
+        data.ForcedDifficulty = FindValue(ast, "forcedDifficulty") ?? "Custom";
 
         // Scripting
         data.DoubleIdDetected = FindValue(ast, "doubleIdDetected");
@@ -340,8 +326,156 @@ public partial class ServerConfigService : IServerConfigService
         data.OnDifferentData = FindValue(ast, "onDifferentData");
         data.OnUnsignedData = FindValue(ast, "onUnsignedData") ?? "kick (_this select 0)";
         data.OnUserKicked = FindValue(ast, "onUserKicked");
+    }
+
+    private static void ExtractBooleanServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        data.KickDuplicate = FindValue(ast, "kickDuplicate") != "0";
+        data.Loopback = FindValue(ast, "loopback") == "1";
+        data.Upnp = FindValue(ast, "upnp") == "1";
+        data.DisableVoN = FindValue(ast, "disableVoN") == "1";
+        data.SkipLobby = FindValue(ast, "skipLobby") == "1";
+        data.PersistentBattlefield = FindValue(ast, "persistent") == "1";
+        data.AutoInit = FindValue(ast, "autoInit") is "1" or "true";
+        data.BattlEye = FindValue(ast, "BattlEye") != "0";
+        data.DrawingInMap = FindValue(ast, "drawingInMap") != "0";
+        data.LogObjectNotFound = FindValue(ast, "LogObjectNotFound") != "0";
+        data.SkipDescriptionParsing = FindValue(ast, "SkipDescriptionParsing") == "1";
+        data.IgnoreMissionLoadErrors = FindValue(ast, "ignoreMissionLoadErrors") == "1";
+        data.NetlogEnabled = FindValue(ast, "netlog") == "1";
+        data.AutoSelectMission = FindValue(ast, "autoSelectMission") != "0";
+        data.RandomMissionOrder = FindValue(ast, "randomMissionOrder") != "0";
+        data.KickClientOnSlowNetwork = FindArrayValues(ast, "kickClientsOnSlowNetwork")?.Any(v => v == "1") ?? false;
+    }
+
+    private static void ExtractArrayServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        var motdValues = FindArrayValues(ast, "motd");
+        if (motdValues is { Count: > 0 })
+            data.Motd = string.Join("\n", motdValues);
+
+        var adminValues = FindArrayValues(ast, "admins");
+        if (adminValues is { Count: > 0 })
+            data.Admins = string.Join("\n", adminValues);
+
+        var allowedVoteCmds = FindArrayValues(ast, "allowedVoteCmds");
+        data.VotingEnabled = allowedVoteCmds == null || allowedVoteCmds.Count > 0;
+
+        var hcValues = FindArrayValues(ast, "headlessClients");
+        if (hcValues is { Count: > 0 })
+            data.HeadlessClients = string.Join("\n", hcValues);
+        var lcValues = FindArrayValues(ast, "localClient");
+        if (lcValues is { Count: > 0 })
+            data.LocalClient = string.Join("\n", lcValues);
+    }
+
+    public ServerConfigData ParseServerConfig(string rawContent)
+    {
+        var ast = ParseAst(rawContent);
+        var data = new ServerConfigData
+        {
+            RawContent = rawContent,
+            Ast = ast
+        };
+
+        ExtractStringServerFields(ast, data);
+        ExtractBooleanServerFields(ast, data);
+        ExtractNumericServerFields(ast, data);
+        ExtractArrayServerFields(ast, data);
 
         return data;
+    }
+
+    private static void SerializeStringServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        if (data.Hostname != null) SetValue(ast, "hostname", data.Hostname, quoted: true);
+        if (data.Password != null) SetValue(ast, "password", data.Password, quoted: true);
+        if (data.PasswordAdmin != null) SetValue(ast, "passwordAdmin", data.PasswordAdmin, quoted: true);
+        if (data.ServerCommandPassword != null) SetValue(ast, "serverCommandPassword", data.ServerCommandPassword, quoted: true);
+        SetValue(ast, "logFile", data.LogFile ?? "server_console.log", quoted: true);
+        SetValue(ast, "timeStampFormat", data.TimeStampFormat, quoted: true);
+        SetValue(ast, "forcedDifficulty", data.ForcedDifficulty, quoted: true);
+    }
+
+    private static void SerializeBooleanServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        SetValue(ast, "kickDuplicate", data.KickDuplicate ? "1" : "0");
+        SetValue(ast, "loopback", data.Loopback ? "1" : "0");
+        SetValue(ast, "upnp", data.Upnp ? "1" : "0");
+        SetValue(ast, "disableVoN", data.DisableVoN ? "1" : "0");
+        SetValue(ast, "skipLobby", data.SkipLobby ? "1" : "0");
+        SetValue(ast, "persistent", data.PersistentBattlefield ? "1" : "0");
+        SetValue(ast, "BattlEye", data.BattlEye ? "1" : "0");
+        SetValue(ast, "drawingInMap", data.DrawingInMap ? "1" : "0");
+        SetValue(ast, "LogObjectNotFound", data.LogObjectNotFound ? "1" : "0");
+        SetValue(ast, "SkipDescriptionParsing", data.SkipDescriptionParsing ? "1" : "0");
+        SetValue(ast, "ignoreMissionLoadErrors", data.IgnoreMissionLoadErrors ? "1" : "0");
+        SetValue(ast, "randomMissionOrder", data.RandomMissionOrder ? "1" : "0");
+        SetValue(ast, "autoSelectMission", data.AutoSelectMission ? "1" : "0");
+    }
+
+    private static void SerializeNumericServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        SetValue(ast, "maxPlayers", data.MaxPlayers.ToString());
+        SetValue(ast, "verifySignatures", data.VerifySignatures.ToString());
+        SetValue(ast, "allowedFilePatching", data.AllowedFilePatching.ToString());
+        if (data.RequiredBuild > 0)
+            SetValue(ast, "requiredBuild", data.RequiredBuild.ToString());
+        SetValue(ast, "steamProtocolMaxDataSize", data.SteamProtocolMaxDataSize.ToString());
+        SetValue(ast, "motdInterval", data.MotdInterval.ToString());
+        SetValue(ast, "vonCodec", data.VonCodec.ToString());
+        SetValue(ast, "vonCodecQuality", data.VonCodecQuality.ToString());
+        SetValue(ast, "armaUnitsTimeout", data.ArmaUnitsTimeout.ToString());
+        SetValue(ast, "queueSizeLogG", data.QueueSizeLogG.ToString());
+        SetValue(ast, "disconnectTimeout", data.DisconnectTimeout.ToString());
+        SetValue(ast, "maxDesync", data.MaxDesync.ToString());
+        SetValue(ast, "maxPing", data.MaxPing.ToString());
+        SetValue(ast, "maxPacketLoss", data.MaxPacketLoss.ToString());
+        SetValue(ast, "lobbyIdleTimeout", data.LobbyIdleTimeout.ToString());
+        SetValue(ast, "briefingTimeOut", data.BriefingTimeOut.ToString());
+        SetValue(ast, "roleTimeOut", data.RoleTimeOut.ToString());
+        SetValue(ast, "debriefingTimeOut", data.DebriefingTimeOut.ToString());
+    }
+
+    private static void SerializeVotingServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        SetValue(ast, "voteMissionPlayers", data.VotingEnabled ? data.VoteMissionPlayers.ToString() : "1");
+        SetValue(ast, "voteThreshold", data.VotingEnabled
+            ? data.VoteThreshold.ToString(CultureInfo.InvariantCulture)
+            : "0");
+        SetValue(ast, "votingTimeOut", data.VotingTimeOut.ToString());
+        if (!data.VotingEnabled)
+        {
+            SetArrayValue(ast, "allowedVoteCmds", []);
+            SetArrayValue(ast, "allowedVotedAdminCmds", []);
+        }
+    }
+
+    private static void SerializeArrayServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        if (data.Motd != null)
+            SetArrayValue(ast, "motd", data.Motd.Split('\n').ToList());
+        if (data.Admins != null)
+            SetArrayValue(ast, "admins", data.Admins.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
+        
+        var kickSlowVal = data.KickClientOnSlowNetwork ? "1" : "0";
+        SetArrayValue(ast, "kickClientsOnSlowNetwork", [kickSlowVal, kickSlowVal, kickSlowVal, kickSlowVal]);
+        
+        if (!string.IsNullOrEmpty(data.HeadlessClients))
+            SetArrayValue(ast, "headlessClients", data.HeadlessClients.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
+        if (!string.IsNullOrEmpty(data.LocalClient))
+            SetArrayValue(ast, "localClient", data.LocalClient.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
+    }
+
+    private static void SerializeScriptingServerFields(List<ConfigNode> ast, ServerConfigData data)
+    {
+        if (data.DoubleIdDetected != null) SetValue(ast, "doubleIdDetected", data.DoubleIdDetected, quoted: true);
+        if (data.OnUserConnected != null) SetValue(ast, "onUserConnected", data.OnUserConnected, quoted: true);
+        if (data.OnUserDisconnected != null) SetValue(ast, "onUserDisconnected", data.OnUserDisconnected, quoted: true);
+        if (data.OnHackedData != null) SetValue(ast, "onHackedData", data.OnHackedData, quoted: true);
+        if (data.OnDifferentData != null) SetValue(ast, "onDifferentData", data.OnDifferentData, quoted: true);
+        if (data.OnUnsignedData != null) SetValue(ast, "onUnsignedData", data.OnUnsignedData, quoted: true);
+        if (data.OnUserKicked != null) SetValue(ast, "onUserKicked", data.OnUserKicked, quoted: true);
     }
 
     public string SerializeServerConfig(ServerConfigData data)
@@ -355,93 +489,12 @@ public partial class ServerConfigService : IServerConfigService
             ast.Add(new WhitespaceNode { RawText = "" });
         }
 
-        // Server Options
-        if (data.Hostname != null) SetValue(ast, "hostname", data.Hostname, quoted: true);
-        if (data.Password != null) SetValue(ast, "password", data.Password, quoted: true);
-        if (data.PasswordAdmin != null) SetValue(ast, "passwordAdmin", data.PasswordAdmin, quoted: true);
-        if (data.ServerCommandPassword != null) SetValue(ast, "serverCommandPassword", data.ServerCommandPassword, quoted: true);
-        SetValue(ast, "maxPlayers", data.MaxPlayers.ToString());
-        SetValue(ast, "logFile", data.LogFile ?? "server_console.log", quoted: true);
-
-        // MOTD
-        if (data.Motd != null)
-            SetArrayValue(ast, "motd", data.Motd.Split('\n').ToList());
-        SetValue(ast, "motdInterval", data.MotdInterval.ToString());
-
-        // Admins
-        if (data.Admins != null)
-            SetArrayValue(ast, "admins", data.Admins.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
-
-        // Joining Rules
-        SetValue(ast, "kickDuplicate", data.KickDuplicate ? "1" : "0");
-        SetValue(ast, "verifySignatures", data.VerifySignatures.ToString());
-        SetValue(ast, "allowedFilePatching", data.AllowedFilePatching.ToString());
-        if (data.RequiredBuild > 0)
-            SetValue(ast, "requiredBuild", data.RequiredBuild.ToString());
-        SetValue(ast, "steamProtocolMaxDataSize", data.SteamProtocolMaxDataSize.ToString());
-        SetValue(ast, "loopback", data.Loopback ? "1" : "0");
-        SetValue(ast, "upnp", data.Upnp ? "1" : "0");
-
-        // Voting
-        SetValue(ast, "voteMissionPlayers", data.VotingEnabled ? data.VoteMissionPlayers.ToString() : "1");
-        SetValue(ast, "voteThreshold", data.VotingEnabled
-            ? data.VoteThreshold.ToString(CultureInfo.InvariantCulture)
-            : "0");
-        SetValue(ast, "votingTimeOut", data.VotingTimeOut.ToString());
-        if (!data.VotingEnabled)
-        {
-            SetArrayValue(ast, "allowedVoteCmds", []);
-            SetArrayValue(ast, "allowedVotedAdminCmds", []);
-        }
-
-        // In-game Settings
-        SetValue(ast, "disableVoN", data.DisableVoN ? "1" : "0");
-        SetValue(ast, "vonCodec", data.VonCodec.ToString());
-        SetValue(ast, "vonCodecQuality", data.VonCodecQuality.ToString());
-        SetValue(ast, "skipLobby", data.SkipLobby ? "1" : "0");
-        SetValue(ast, "persistent", data.PersistentBattlefield ? "1" : "0");
-        SetValue(ast, "BattlEye", data.BattlEye ? "1" : "0");
-        SetValue(ast, "timeStampFormat", data.TimeStampFormat, quoted: true);
-        SetValue(ast, "forcedDifficulty", data.ForcedDifficulty, quoted: true);
-        SetValue(ast, "drawingInMap", data.DrawingInMap ? "1" : "0");
-
-        // Logging
-        SetValue(ast, "LogObjectNotFound", data.LogObjectNotFound ? "1" : "0");
-        SetValue(ast, "SkipDescriptionParsing", data.SkipDescriptionParsing ? "1" : "0");
-        SetValue(ast, "ignoreMissionLoadErrors", data.IgnoreMissionLoadErrors ? "1" : "0");
-        SetValue(ast, "armaUnitsTimeout", data.ArmaUnitsTimeout.ToString());
-        SetValue(ast, "queueSizeLogG", data.QueueSizeLogG.ToString());
-
-        // Timeouts
-        SetValue(ast, "disconnectTimeout", data.DisconnectTimeout.ToString());
-        SetValue(ast, "maxDesync", data.MaxDesync.ToString());
-        SetValue(ast, "maxPing", data.MaxPing.ToString());
-        SetValue(ast, "maxPacketLoss", data.MaxPacketLoss.ToString());
-        var kickSlowVal = data.KickClientOnSlowNetwork ? "1" : "0";
-        SetArrayValue(ast, "kickClientsOnSlowNetwork", [kickSlowVal, kickSlowVal, kickSlowVal, kickSlowVal]);
-        SetValue(ast, "lobbyIdleTimeout", data.LobbyIdleTimeout.ToString());
-        SetValue(ast, "briefingTimeOut", data.BriefingTimeOut.ToString());
-        SetValue(ast, "roleTimeOut", data.RoleTimeOut.ToString());
-        SetValue(ast, "debriefingTimeOut", data.DebriefingTimeOut.ToString());
-
-        // Mission
-        SetValue(ast, "randomMissionOrder", data.RandomMissionOrder ? "1" : "0");
-        SetValue(ast, "autoSelectMission", data.AutoSelectMission ? "1" : "0");
-
-        // Headless clients
-        if (!string.IsNullOrEmpty(data.HeadlessClients))
-            SetArrayValue(ast, "headlessClients", data.HeadlessClients.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
-        if (!string.IsNullOrEmpty(data.LocalClient))
-            SetArrayValue(ast, "localClient", data.LocalClient.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
-
-        // Scripting
-        if (data.DoubleIdDetected != null) SetValue(ast, "doubleIdDetected", data.DoubleIdDetected, quoted: true);
-        if (data.OnUserConnected != null) SetValue(ast, "onUserConnected", data.OnUserConnected, quoted: true);
-        if (data.OnUserDisconnected != null) SetValue(ast, "onUserDisconnected", data.OnUserDisconnected, quoted: true);
-        if (data.OnHackedData != null) SetValue(ast, "onHackedData", data.OnHackedData, quoted: true);
-        if (data.OnDifferentData != null) SetValue(ast, "onDifferentData", data.OnDifferentData, quoted: true);
-        if (data.OnUnsignedData != null) SetValue(ast, "onUnsignedData", data.OnUnsignedData, quoted: true);
-        if (data.OnUserKicked != null) SetValue(ast, "onUserKicked", data.OnUserKicked, quoted: true);
+        SerializeStringServerFields(ast, data);
+        SerializeBooleanServerFields(ast, data);
+        SerializeNumericServerFields(ast, data);
+        SerializeVotingServerFields(ast, data);
+        SerializeArrayServerFields(ast, data);
+        SerializeScriptingServerFields(ast, data);
 
         return SerializeAst(ast).TrimEnd('\r', '\n');
     }
@@ -522,6 +575,53 @@ public partial class ServerConfigService : IServerConfigService
 
     // ── Arma 3 Difficulty Profile ──
 
+    private static void ParseArma3ProfileOptions(List<ConfigNode> ast, Arma3ProfileData data)
+    {
+        var optionsAst = FindNestedClass(ast, "DifficultyPresets", "CustomDifficulty", "Options");
+        if (optionsAst == null)
+            return;
+
+        if (int.TryParse(FindValue(optionsAst, "reducedDamage"), out var v)) data.ReducedDamage = v;
+        if (int.TryParse(FindValue(optionsAst, "groupIndicators"), out v)) data.GroupIndicators = v;
+        if (int.TryParse(FindValue(optionsAst, "friendlyTags"), out v)) data.FriendlyTags = v;
+        if (int.TryParse(FindValue(optionsAst, "enemyTags"), out v)) data.EnemyTags = v;
+        if (int.TryParse(FindValue(optionsAst, "detectedMines"), out v)) data.DetectedMines = v;
+        if (int.TryParse(FindValue(optionsAst, "commands"), out v)) data.Commands = v;
+        if (int.TryParse(FindValue(optionsAst, "waypoints"), out v)) data.Waypoints = v;
+        if (int.TryParse(FindValue(optionsAst, "tacticalPing"), out v)) data.TacticalPing = v;
+        if (int.TryParse(FindValue(optionsAst, "weaponInfo"), out v)) data.WeaponInfo = v;
+        if (int.TryParse(FindValue(optionsAst, "stanceIndicator"), out v)) data.StanceIndicator = v;
+        if (int.TryParse(FindValue(optionsAst, "staminaBar"), out v)) data.StaminaBar = v;
+        if (int.TryParse(FindValue(optionsAst, "weaponCrosshair"), out v)) data.WeaponCrosshair = v;
+        if (int.TryParse(FindValue(optionsAst, "visionAid"), out v)) data.VisionAid = v;
+        if (int.TryParse(FindValue(optionsAst, "thirdPersonView"), out v)) data.ThirdPersonView = v;
+        if (int.TryParse(FindValue(optionsAst, "cameraShake"), out v)) data.CameraShake = v;
+        if (int.TryParse(FindValue(optionsAst, "scoreTable"), out v)) data.ScoreTable = v;
+        if (int.TryParse(FindValue(optionsAst, "deathMessages"), out v)) data.DeathMessages = v;
+        if (int.TryParse(FindValue(optionsAst, "vonID"), out v)) data.VonID = v;
+        if (int.TryParse(FindValue(optionsAst, "mapContentFriendly"), out v)) data.MapContentFriendly = v;
+        if (int.TryParse(FindValue(optionsAst, "mapContentEnemy"), out v)) data.MapContentEnemy = v;
+        if (int.TryParse(FindValue(optionsAst, "mapContentMines"), out v)) data.MapContentMines = v;
+        if (int.TryParse(FindValue(optionsAst, "autoReport"), out v)) data.AutoReport = v;
+        if (int.TryParse(FindValue(optionsAst, "multipleSaves"), out v)) data.MultipleSaves = v;
+    }
+
+    private static void ParseArma3ProfileAILevels(List<ConfigNode> ast, Arma3ProfileData data)
+    {
+        var customDiffAst = FindNestedClass(ast, "DifficultyPresets", "CustomDifficulty");
+        if (customDiffAst != null)
+        {
+            if (int.TryParse(FindValue(customDiffAst, "aiLevelPreset"), out var ai)) data.AiLevelPreset = ai;
+        }
+
+        var customAiAst = FindNestedClass(ast, "DifficultyPresets", "CustomAILevel");
+        if (customAiAst != null)
+        {
+            if (double.TryParse(FindValue(customAiAst, "skillAI"), CultureInfo.InvariantCulture, out var sk)) data.SkillAi = sk;
+            if (double.TryParse(FindValue(customAiAst, "precisionAI"), CultureInfo.InvariantCulture, out var pr)) data.PrecisionAi = pr;
+        }
+    }
+
     public Arma3ProfileData ParseArma3Profile(string rawContent)
     {
         var ast = ParseAst(rawContent);
@@ -531,49 +631,8 @@ public partial class ServerConfigService : IServerConfigService
             Ast = ast
         };
 
-        // Find Options class (nested under DifficultyPresets > CustomDifficulty > Options)
-        var optionsAst = FindNestedClass(ast, "DifficultyPresets", "CustomDifficulty", "Options");
-        if (optionsAst != null)
-        {
-            if (int.TryParse(FindValue(optionsAst, "reducedDamage"), out var v)) data.ReducedDamage = v;
-            if (int.TryParse(FindValue(optionsAst, "groupIndicators"), out v)) data.GroupIndicators = v;
-            if (int.TryParse(FindValue(optionsAst, "friendlyTags"), out v)) data.FriendlyTags = v;
-            if (int.TryParse(FindValue(optionsAst, "enemyTags"), out v)) data.EnemyTags = v;
-            if (int.TryParse(FindValue(optionsAst, "detectedMines"), out v)) data.DetectedMines = v;
-            if (int.TryParse(FindValue(optionsAst, "commands"), out v)) data.Commands = v;
-            if (int.TryParse(FindValue(optionsAst, "waypoints"), out v)) data.Waypoints = v;
-            if (int.TryParse(FindValue(optionsAst, "tacticalPing"), out v)) data.TacticalPing = v;
-            if (int.TryParse(FindValue(optionsAst, "weaponInfo"), out v)) data.WeaponInfo = v;
-            if (int.TryParse(FindValue(optionsAst, "stanceIndicator"), out v)) data.StanceIndicator = v;
-            if (int.TryParse(FindValue(optionsAst, "staminaBar"), out v)) data.StaminaBar = v;
-            if (int.TryParse(FindValue(optionsAst, "weaponCrosshair"), out v)) data.WeaponCrosshair = v;
-            if (int.TryParse(FindValue(optionsAst, "visionAid"), out v)) data.VisionAid = v;
-            if (int.TryParse(FindValue(optionsAst, "thirdPersonView"), out v)) data.ThirdPersonView = v;
-            if (int.TryParse(FindValue(optionsAst, "cameraShake"), out v)) data.CameraShake = v;
-            if (int.TryParse(FindValue(optionsAst, "scoreTable"), out v)) data.ScoreTable = v;
-            if (int.TryParse(FindValue(optionsAst, "deathMessages"), out v)) data.DeathMessages = v;
-            if (int.TryParse(FindValue(optionsAst, "vonID"), out v)) data.VonID = v;
-            if (int.TryParse(FindValue(optionsAst, "mapContentFriendly"), out v)) data.MapContentFriendly = v;
-            if (int.TryParse(FindValue(optionsAst, "mapContentEnemy"), out v)) data.MapContentEnemy = v;
-            if (int.TryParse(FindValue(optionsAst, "mapContentMines"), out v)) data.MapContentMines = v;
-            if (int.TryParse(FindValue(optionsAst, "autoReport"), out v)) data.AutoReport = v;
-            if (int.TryParse(FindValue(optionsAst, "multipleSaves"), out v)) data.MultipleSaves = v;
-        }
-
-        // AI level (under DifficultyPresets > CustomDifficulty)
-        var customDiffAst = FindNestedClass(ast, "DifficultyPresets", "CustomDifficulty");
-        if (customDiffAst != null)
-        {
-            if (int.TryParse(FindValue(customDiffAst, "aiLevelPreset"), out var ai)) data.AiLevelPreset = ai;
-        }
-
-        // Custom AI level (under DifficultyPresets > CustomAILevel)
-        var customAiAst = FindNestedClass(ast, "DifficultyPresets", "CustomAILevel");
-        if (customAiAst != null)
-        {
-            if (double.TryParse(FindValue(customAiAst, "skillAI"), CultureInfo.InvariantCulture, out var sk)) data.SkillAi = sk;
-            if (double.TryParse(FindValue(customAiAst, "precisionAI"), CultureInfo.InvariantCulture, out var pr)) data.PrecisionAi = pr;
-        }
+        ParseArma3ProfileOptions(ast, data);
+        ParseArma3ProfileAILevels(ast, data);
 
         return data;
     }
