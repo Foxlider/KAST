@@ -9,6 +9,8 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   DOCKER_IMAGE: kast
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   build-and-test:
@@ -18,20 +20,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Install SonarCloud scanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
       - name: Restore dependencies
         run: dotnet restore
+
+      - name: Begin SonarCloud analysis
+        run: dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" /d:sonar.token="${{ env.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.coverage.exclusions="**/bin/**,**/obj/**" /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      - name: Test with coverage
+        run: dotnet test --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=test-results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./coverage.opencover.xml
+
+      - name: End SonarCloud analysis
+        run: dotnet sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
+        if: always()
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -39,6 +53,14 @@ jobs:
         with:
           name: test-results
           path: '**/TestResults/*.trx'
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: '**/coverage.opencover.xml'
+          flags: unittests
+          fail_ci_if_error: false
 
   docker:
     name: Docker Build
