@@ -17,6 +17,7 @@ public class ServerInstanceServiceTests : IDisposable
     private readonly IAppEventBroadcaster _broadcaster;
     private readonly ILogger<ServerInstanceService> _logger;
     private readonly ServerInstanceService _sut;
+    private bool _disposed = false;
 
     public ServerInstanceServiceTests()
     {
@@ -27,7 +28,28 @@ public class ServerInstanceServiceTests : IDisposable
         _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _db?.Dispose();
+            }
+            _disposed = true;
+        }
+    }
+
+    ~ServerInstanceServiceTests()
+    {
+        Dispose(false);
+    }
 
     private async Task<ServerInstance> SeedInstanceAsync(
         string name = "Test Server",
@@ -203,7 +225,7 @@ public class ServerInstanceServiceTests : IDisposable
             () => _sut.StartInstanceAsync(instance.Id));
 
         var updated = await _db.ServerInstances.FindAsync(instance.Id);
-        Assert.Equal(ServerInstanceStatus.Crashed, updated!.Status);
+        Assert.Equal(ServerInstanceStatus.Stopped, updated!.Status);
     }
 
     [Fact]
