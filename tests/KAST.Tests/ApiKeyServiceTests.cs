@@ -3,7 +3,7 @@ using KAST.Tests.Helpers;
 
 namespace KAST.Tests;
 
-public class ApiKeyServiceTests : IDisposable
+public class ApiKeyServiceTests : IAsyncLifetime
 {
     private readonly Infrastructure.Data.KastDbContext _db;
     private readonly ApiKeyService _sut;
@@ -14,7 +14,13 @@ public class ApiKeyServiceTests : IDisposable
         _sut = new ApiKeyService(_db);
     }
 
-    public void Dispose() => _db.Dispose();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        _db.Dispose();
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task CreateApiKey_ReturnsKeyWithPrefix()
@@ -117,7 +123,7 @@ public class ApiKeyServiceTests : IDisposable
     [Fact]
     public async Task RevokeKey_NonExistentId_DoesNotThrow()
     {
-        await _sut.RevokeKeyAsync(999);
-        // No exception = pass
+        var exception = await Record.ExceptionAsync(() => _sut.RevokeKeyAsync(999));
+        Assert.Null(exception);
     }
 }

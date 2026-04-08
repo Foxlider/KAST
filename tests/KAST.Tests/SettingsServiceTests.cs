@@ -7,13 +7,35 @@ namespace KAST.Tests;
 public class SettingsServiceTests : IDisposable
 {
     private readonly Infrastructure.Data.KastDbContext _db;
+    private bool _disposed;
 
     public SettingsServiceTests()
     {
         _db = DbHelper.CreateInMemoryDb();
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _db.Dispose();
+            }
+            _disposed = true;
+        }
+    }
+
+    ~SettingsServiceTests()
+    {
+        Dispose(false);
+    }
 
     private SettingsService CreateService(Dictionary<string, string?>? configValues = null)
     {

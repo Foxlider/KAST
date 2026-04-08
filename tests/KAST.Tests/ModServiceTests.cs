@@ -18,6 +18,7 @@ public class ModServiceTests : IDisposable
     private readonly IAppEventBroadcaster _broadcaster;
     private readonly ILogger<ModService> _logger;
     private readonly ModService _sut;
+    private bool _disposed = false;
 
     public ModServiceTests()
     {
@@ -31,7 +32,28 @@ public class ModServiceTests : IDisposable
         _sut = new ModService(_db, _steamService, _settingsService, _broadcaster, _logger);
     }
 
-    public void Dispose() => _db.Dispose();
+    ~ModServiceTests()
+    {
+        Dispose(false);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _db?.Dispose();
+            }
+            _disposed = true;
+        }
+    }
 
     // ── AddWorkshopModAsync ──
 
@@ -172,7 +194,8 @@ public class ModServiceTests : IDisposable
     [Fact]
     public async Task DeleteMod_NonExistentId_DoesNotThrow()
     {
-        await _sut.DeleteModAsync(999);
+        var exception = await Record.ExceptionAsync(() => _sut.DeleteModAsync(999));
+        Assert.Null(exception);
     }
 
     // ── UpdateModAsync ──
