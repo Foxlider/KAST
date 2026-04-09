@@ -254,7 +254,7 @@ public class ServerInstanceService(
         return Path.Combine(instance.InstallPath, "arma3server_x64");
     }
 
-    private static void WriteConfigFiles(ServerInstance instance)
+    public void WriteConfigFiles(ServerInstance instance)
     {
         if (!string.IsNullOrEmpty(instance.InstallPath))
             Directory.CreateDirectory(instance.InstallPath);
@@ -284,6 +284,13 @@ public class ServerInstanceService(
             var path = Path.Combine(profileDir, $"{profileName}.Arma3Profile");
             File.WriteAllText(path, instance.ArmaProfileContent);
         }
+    }
+
+    public string GetCommandLine(ServerInstance instance)
+    {
+        var executable = GetServerExecutable(instance);
+        var args = BuildLaunchArguments(instance);
+        return $"{executable} {args}";
     }
 
     private static string BuildLaunchArguments(ServerInstance instance)

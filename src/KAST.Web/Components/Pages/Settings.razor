@@ -3,6 +3,7 @@
 @using KAST.Core.Models
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IApiKeyService ApiKeyService
+@inject ISettingsService SettingsService
 @inject ISteamService SteamService
 @inject IToastService ToastService
 @implements IDisposable
@@ -12,6 +13,68 @@
 <h1>Settings</h1>
 
 <FluentTabs Style="margin-top: 20px;">
+    <FluentTab Label="General">
+        <div class="kast-card" style="margin-top: 16px;">
+            <h3>Downloads</h3>
+            <div style="display:flex; align-items:center; gap:12px; margin-top:12px;">
+                <FluentNumberField @bind-Value="_parallelDownloads" Min="1" Max="32" Step="1"
+                                   Label="Parallel downloads" Style="width:160px;" />
+                <span style="font-size:12px; color:var(--kast-text-muted);">Number of concurrent file downloads when installing server files (1–32).</span>
+            </div>
+            <FluentButton Appearance="Appearance.Accent" OnClick="SaveGeneralSettings" Style="margin-top:16px;">Save</FluentButton>
+
+            <div style="margin-top:24px; border-top:1px solid var(--neutral-stroke-rest, #444); padding-top:16px;">
+                <h4 style="margin-top:0;">Speed Benchmark</h4>
+                <p style="font-size:12px; color:var(--kast-text-muted); margin-bottom:12px;">
+                    Downloads ~30 MB from Steam CDN at different parallelism levels to find the optimal setting for your connection.
+                </p>
+
+                @if (_benchmarkRunning)
+                {
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <FluentProgressRing Style="width:18px; height:18px;" />
+                        <span style="font-size:13px;">@(_benchmarkStatus ?? "Running benchmark...")</span>
+                    </div>
+                }
+                else
+                {
+                    <FluentButton Appearance="Appearance.Outline" OnClick="RunBenchmark" Disabled="@(!SteamService.IsConnected)">
+                        Run Benchmark
+                    </FluentButton>
+                    @if (!SteamService.IsConnected)
+                    {
+                        <span style="font-size:12px; color:var(--kast-text-muted); margin-left:8px;">Connect to Steam first.</span>
+                    }
+                }
+
+                @if (_benchmarkResults is { Count: > 0 })
+                {
+                    <FluentDataGrid Items="@_benchmarkResults.AsQueryable()" Style="margin-top:12px; max-width:500px;">
+                        <PropertyColumn Title="Threads" Property="@(r => r.Parallelism)" />
+                        <TemplateColumn Title="Speed">
+                            @context.MbPerSecond.ToString("F1") MB/s
+                        </TemplateColumn>
+                        <TemplateColumn Title="Time">
+                            @context.ElapsedSeconds.ToString("F1")s
+                        </TemplateColumn>
+                        <TemplateColumn Title="">
+                            @if (context.Parallelism == GetBestBenchmark().Parallelism)
+                            {
+                                <FluentBadge Appearance="Appearance.Accent">Best</FluentBadge>
+                            }
+                        </TemplateColumn>
+                    </FluentDataGrid>
+
+                    <div style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+                        <FluentButton Appearance="Appearance.Accent" OnClick="@(() => ApplyBenchmark(GetBestBenchmark().Parallelism))">
+                            Apply @GetBestBenchmark().Parallelism parallel downloads (@GetBestBenchmark().MbPerSecond.ToString("F1") MB/s)
+                        </FluentButton>
+                    </div>
+                }
+            </div>
+        </div>
+    </FluentTab>
+
     <FluentTab Label="Steam">
         <div class="kast-card" style="margin-top: 16px;">
             <h3>Steam Account</h3>
@@ -190,11 +253,19 @@
     private IReadOnlyList<ApiKey> _apiKeys = [];
     private string _newKeyName = "";
     private string _newRawKey = "";
+    private int _parallelDownloads = 4;
+
+    // Benchmark state
+    private bool _benchmarkRunning;
+    private string? _benchmarkStatus;
+    private IReadOnlyList<BenchmarkResult>? _benchmarkResults;
 
     protected override async Task OnInitializedAsync()
     {
         SteamService.AuthStateChanged += OnAuthStateChanged;
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        var settings = await SettingsService.GetSettingsAsync();
+        _parallelDownloads = settings.ParallelDownloads;
     }
 
     private void OnAuthStateChanged()
@@ -298,6 +369,58 @@
         await SteamService.LogoutAsync();
         ToastService.ShowInfo("Signed out of Steam");
     }
+
+    private async Task SaveGeneralSettings()
+    {
+        var settings = await SettingsService.GetSettingsAsync();
+        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 32);
+        await SettingsService.UpdateSettingsAsync(settings);
+        ToastService.ShowSuccess("Settings saved");
+    }
+
+    private async Task RunBenchmark()
+    {
+        _benchmarkRunning = true;
+        _benchmarkResults = null;
+        _benchmarkStatus = "Preparing...";
+        StateHasChanged();
+
+        try
+        {
+            if (!SteamService.IsConnected)
+            {
+                _benchmarkStatus = "Connecting to Steam...";
+                StateHasChanged();
+                await SteamService.LoginAnonymousAsync();
+            }
+
+            var log = new Progress<string>(msg =>
+            {
+                InvokeAsync(() => { _benchmarkStatus = msg; StateHasChanged(); });
+            });
+
+            _benchmarkResults = await SteamService.BenchmarkDownloadAsync(log);
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Benchmark failed: {ex.Message}");
+        }
+        finally
+        {
+            _benchmarkRunning = false;
+            _benchmarkStatus = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApplyBenchmark(int parallelism)
+    {
+        _parallelDownloads = parallelism;
+        await SaveGeneralSettings();
+    }
+
+    private BenchmarkResult GetBestBenchmark() =>
+        _benchmarkResults!.OrderByDescending(r => r.MbPerSecond).First();
 
     private async Task CreateApiKey()
     {
