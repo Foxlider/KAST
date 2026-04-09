@@ -6,7 +6,9 @@ namespace KAST.Infrastructure.Services;
 
 public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IProcessManagerService
 {
-    public async Task<int> StartServerProcessAsync(string executablePath, string arguments, CancellationToken ct = default)
+    public async Task<int> StartServerProcessAsync(string executablePath, string arguments,
+        Action<int, string>? onOutputLine = null, Action<int, int>? onProcessExited = null,
+        CancellationToken ct = default)
     {
         logger.LogInformation("Starting process: {Executable} {Args}", executablePath, arguments);
 
@@ -25,14 +27,32 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
 
         logger.LogInformation("Process started with PID {Pid}", process.Id);
 
-        // Don't await the process — it runs in background
+        var pid = process.Id;
+
+        // Stream stdout/stderr lines to the callback
+        if (onOutputLine is not null)
+        {
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) onOutputLine(pid, e.Data);
+            };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) onOutputLine(pid, e.Data);
+            };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
+
+        // Monitor for exit and invoke callback
         _ = Task.Run(async () =>
         {
-            await process.WaitForExitAsync(ct);
-            logger.LogInformation("Process {Pid} exited with code {Code}", process.Id, process.ExitCode);
-        }, ct);
+            await process.WaitForExitAsync(CancellationToken.None);
+            logger.LogInformation("Process {Pid} exited with code {Code}", pid, process.ExitCode);
+            onProcessExited?.Invoke(pid, process.ExitCode);
+        }, CancellationToken.None);
 
-        return await Task.FromResult(process.Id);
+        return await Task.FromResult(pid);
     }
 
     public async Task StopProcessAsync(int processId, CancellationToken ct = default)

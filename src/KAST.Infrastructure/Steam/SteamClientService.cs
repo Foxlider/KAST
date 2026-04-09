@@ -765,6 +765,13 @@ public class SteamClientService : ISteamService, IDisposable
             if (manifest.FilenamesEncrypted && depotKey != null)
                 manifest.DecryptFilenames(depotKey);
 
+            if (manifest.FilenamesEncrypted)
+            {
+                _logger.LogWarning("Depot {DepotId}: filenames are encrypted and no valid depot key — skipping", depotId);
+                logProgress?.Report($"Depot {depotId}: skipped (encrypted filenames, no depot key). Try logging in with a Steam account that owns the game.");
+                continue;
+            }
+
             manifests.Add((depotId, manifestId, depotKey, manifest));
             totalSize += (long)(manifest.TotalUncompressedSize);
             var sizeMb = manifest.TotalUncompressedSize / 1_048_576.0;

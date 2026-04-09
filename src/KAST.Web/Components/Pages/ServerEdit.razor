@@ -1,11 +1,13 @@
 @page "/servers/new"
 @page "/servers/{Id:int}"
 @using KAST.Core.Enums
+@using KAST.Core.Events
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
+@using Microsoft.AspNetCore.SignalR.Client
 @using Microsoft.FluentUI.AspNetCore.Components
 @using KAST.Web.Services
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject IModService ModService
@@ -17,13 +19,28 @@
 
 <PageTitle>KAST — @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
-<div style="display: flex; justify-content: space-between; align-items: center;">
-    <h1>@(_isNew ? "New Server Instance" : $"Edit: {_instance.Name}")</h1>
-    <div style="display: flex; gap: 8px; align-items: center;">
-        <FluentButton Appearance="Appearance.Accent" OnClick="Save">Save</FluentButton>
+@* ════════════ FLOATING HEADER ════════════ *@
+<div class="kast-instance-header">
+    <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+        <span class="status-dot @_instance.Status.ToString().ToLowerInvariant()" style="flex-shrink: 0;"></span>
+        <h1 style="margin: 0; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            @(_isNew ? "New Server Instance" : _instance.Name)
+        </h1>
         @if (!_isNew)
         {
-            @if (_instance.Status == ServerInstanceStatus.Running)
+            <FluentBadge Appearance="@GetStatusAppearance()" Style="flex-shrink: 0;">
+                @_instance.Status
+            </FluentBadge>
+        }
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+        <FluentButton Appearance="Appearance.Accent" OnClick="Save"
+                      IconStart="@(new Icons.Regular.Size16.Save())">
+            Save
+        </FluentButton>
+        @if (!_isNew)
+        {
+            @if (_instance.Status == ServerInstanceStatus.Running || _instance.Status == ServerInstanceStatus.Starting)
             {
                 <FluentButton Appearance="Appearance.Outline" OnClick="StopServer"
                               IconStart="@(new Icons.Regular.Size16.Stop())" Style="color: var(--error);">
@@ -34,7 +51,7 @@
             {
                 <FluentButton Appearance="Appearance.Accent" OnClick="LaunchServer"
                               IconStart="@(new Icons.Regular.Size16.Play())"
-                              Disabled="@(!_instance.InstalledAt.HasValue)">
+                              Disabled="@(!_instance.InstalledAt.HasValue || _instance.Status == ServerInstanceStatus.Downloading)">
                     Launch
                 </FluentButton>
             }
@@ -42,7 +59,7 @@
     </div>
 </div>
 
-<FluentTabs Style="margin-top: 20px;">
+<FluentTabs Style="margin-top: 20px;" @bind-ActiveTabId="_activeTabId">
 
     @* ════════════ GENERAL TAB ════════════ *@
     <FluentTab Label="General">
@@ -826,6 +843,124 @@
         </div>
     </FluentTab>
 
+    @* ════════════ MONITOR TAB ════════════ *@
+    @if (!_isNew)
+    {
+        <FluentTab Label="Monitor" Id="monitor-tab">
+            <div style="margin-top: 16px;">
+
+                @* ── Server Info Tiles ── *@
+                <div class="kast-tiles" style="margin-bottom: 16px;">
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">Status</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">
+                            <span class="status-dot @_instance.Status.ToString().ToLowerInvariant()"></span>
+                            @_instance.Status
+                        </div>
+                    </div>
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">Port</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">@_instance.Port</div>
+                        <div class="kast-tile-subtitle">Query: @_instance.SteamQueryPort</div>
+                    </div>
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">Players</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">@_monitorPlayerCount</div>
+                    </div>
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">Uptime</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">@GetUptime()</div>
+                    </div>
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">CPU</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">@_monitorCpu.ToString("F1")%</div>
+                    </div>
+                    <div class="kast-tile" style="min-height: auto; cursor: default;">
+                        <div class="kast-tile-title">Memory</div>
+                        <div class="kast-tile-value" style="font-size: 20px;">@FormatBytes(_monitorMemory)</div>
+                    </div>
+                </div>
+
+                @* ── Server Details ── *@
+                <div class="kast-card" style="margin-bottom: 16px;">
+                    <h3 style="margin-top: 0;">Server Information</h3>
+                    <FluentGrid Spacing="3">
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">PID</div>
+                            <div style="font-size: 14px; font-weight: 500;">@(_instance.ProcessId?.ToString() ?? "—")</div>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">Mods</div>
+                            <div style="font-size: 14px; font-weight: 500;">@_instance.Mods.Count</div>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">Headless Clients</div>
+                            <div style="font-size: 14px; font-weight: 500;">@_instance.HeadlessClientCount</div>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">Restart Policy</div>
+                            <div style="font-size: 14px; font-weight: 500;">@_instance.RestartPolicy</div>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">Install Path</div>
+                            <div style="font-size: 13px; font-weight: 500; word-break: break-all;">@_instance.InstallPath</div>
+                        </FluentGridItem>
+                        <FluentGridItem xs="6" sm="3">
+                            <div style="font-size: 12px; color: var(--kast-text-muted); text-transform: uppercase; letter-spacing: .5px;">Started At</div>
+                            <div style="font-size: 14px; font-weight: 500;">@(_instance.StartedAt?.ToLocalTime().ToString("g") ?? "—")</div>
+                        </FluentGridItem>
+                    </FluentGrid>
+                </div>
+
+                @* ── Console Log ── *@
+                <div class="kast-card" style="padding: 0; overflow: hidden;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--neutral-stroke-divider-rest);">
+                        <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="8">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.TextBulletListSquare())" Color="Color.Neutral" />
+                            <span style="font-weight: 600;">Server Console</span>
+                            <FluentBadge Appearance="Appearance.Neutral" Style="font-size: 10px;">
+                                @_consoleLines.Count lines
+                            </FluentBadge>
+                        </FluentStack>
+                        <FluentButton Size="ButtonSize.Small" Appearance="Appearance.Stealth"
+                                      Title="Clear" OnClick="ClearConsole">
+                            <FluentIcon Value="@(new Icons.Regular.Size16.Delete())" Color="Color.Neutral" />
+                        </FluentButton>
+                    </div>
+                    <div class="kast-server-console" @ref="_consoleRef">
+                        @if (_consoleLines.Count == 0)
+                        {
+                            <div style="color: var(--kast-text-muted); text-align: center; padding: 60px 0;">
+                                @if (_instance.Status == ServerInstanceStatus.Stopped || _instance.Status == ServerInstanceStatus.Crashed)
+                                {
+                                    <span>Server is not running. Start the server to see console output.</span>
+                                }
+                                else if (_instance.Status == ServerInstanceStatus.Starting)
+                                {
+                                    <span>Server is starting…</span>
+                                }
+                                else
+                                {
+                                    <span>Waiting for output…</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var line in _consoleLines)
+                            {
+                                <div class="kast-console-line">
+                                    <span class="kast-console-ts">@line.Timestamp.ToString("HH:mm:ss")</span>
+                                    <span class="@(line.Line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ? "kast-console-error" : "")">@line.Line</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </FluentTab>
+    }
+
 </FluentTabs>
 
 @* ════════════ COMMAND LINE FOOTER ════════════ *@
@@ -864,6 +999,17 @@
     private IReadOnlyList<ServerInstallService.ValidationResult>? _validationResults;
     private bool _disposed;
     private bool _cmdExpanded;
+
+    // ── Monitor state ──
+    private HubConnection? _hubConnection;
+    private readonly List<ConsoleEntry> _consoleLines = new();
+    private ElementReference _consoleRef;
+    private double _monitorCpu;
+    private long _monitorMemory;
+    private int _monitorPlayerCount;
+    private string _activeTabId = "";
+
+    private record ConsoleEntry(DateTime Timestamp, string Line);
 
     private string _restartPolicyStr
     {
@@ -910,6 +1056,9 @@
             { _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent); _basicCfgRaw = _instance.BasicCfgContent; }
             if (!string.IsNullOrEmpty(_instance.ArmaProfileContent))
             { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
+
+            // Set up SignalR for real-time monitoring
+            await InitializeSignalR();
         }
         else
         {
@@ -1047,7 +1196,9 @@
             // Save first to ensure config files and symlinks are up to date
             await Save();
             await ServerService.StartInstanceAsync(_instance.Id);
-            Nav.NavigateTo("/monitoring");
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            _activeTabId = "monitor-tab";
+            StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -1062,6 +1213,9 @@
         {
             await ServerService.StopInstanceAsync(_instance.Id);
             _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            _monitorCpu = 0;
+            _monitorMemory = 0;
+            _monitorPlayerCount = 0;
             ToastService.ShowSuccess("Server stopped");
         }
         catch (Exception ex)
@@ -1173,11 +1327,102 @@
         return steps;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _disposed = true;
         if (_installState is not null)
             _installState.Changed -= OnInstallStateChanged;
         _selfRef?.Dispose();
+        if (_hubConnection is not null)
+            await _hubConnection.DisposeAsync();
     }
+
+    // ── SignalR setup ──
+    private async Task InitializeSignalR()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
+        {
+            if (entry.ServerInstanceId != _instance.Id) return;
+            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line));
+            // Keep only last 1000 lines
+            while (_consoleLines.Count > 1000)
+                _consoleLines.RemoveAt(0);
+            InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await ScrollConsoleToBottom();
+            });
+        });
+
+        _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
+        {
+            if (evt.ServerInstanceId != _instance.Id) return;
+            if (Enum.TryParse<ServerInstanceStatus>(evt.NewStatus, out var status))
+            {
+                _instance.Status = status;
+                if (status == ServerInstanceStatus.Stopped || status == ServerInstanceStatus.Crashed)
+                {
+                    _instance.ProcessId = null;
+                    _instance.StartedAt = null;
+                    _monitorCpu = 0;
+                    _monitorMemory = 0;
+                    _monitorPlayerCount = 0;
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hubConnection.On<InstanceMetricsUpdatedEvent>("InstanceMetricsUpdated", async evt =>
+        {
+            if (evt.ServerInstanceId != _instance.Id) return;
+            _monitorCpu = evt.CpuPercent;
+            _monitorMemory = evt.MemoryBytes;
+            _monitorPlayerCount = evt.PlayerCount;
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+        await _hubConnection.InvokeAsync("SubscribeToInstance", _instance.Id);
+    }
+
+    private async Task ScrollConsoleToBottom()
+    {
+        try { await JS.InvokeVoidAsync("kastScrollToBottom", _consoleRef); } catch { }
+    }
+
+    private void ClearConsole()
+    {
+        _consoleLines.Clear();
+        StateHasChanged();
+    }
+
+    private string GetUptime()
+    {
+        if (_instance.StartedAt is null) return "—";
+        var elapsed = DateTime.UtcNow - _instance.StartedAt.Value;
+        if (elapsed.TotalDays >= 1) return $"{elapsed.Days}d {elapsed.Hours}h";
+        if (elapsed.TotalHours >= 1) return $"{elapsed.Hours}h {elapsed.Minutes}m";
+        return $"{elapsed.Minutes}m {elapsed.Seconds}s";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    private Appearance GetStatusAppearance() => _instance.Status switch
+    {
+        ServerInstanceStatus.Running => Appearance.Accent,
+        ServerInstanceStatus.Starting or ServerInstanceStatus.Restarting => Appearance.Neutral,
+        ServerInstanceStatus.Crashed => Appearance.Accent,
+        _ => Appearance.Lightweight
+    };
 }

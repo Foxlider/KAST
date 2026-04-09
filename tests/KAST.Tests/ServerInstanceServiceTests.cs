@@ -179,7 +179,7 @@ public class ServerInstanceServiceTests : IDisposable
         await _sut.StartInstanceAsync(instance.Id);
 
         await _processManager.DidNotReceive()
-            .StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Action<int, string>?>(), Arg.Any<Action<int, int>?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public class ServerInstanceServiceTests : IDisposable
     {
         var instance = await SeedInstanceAsync();
 
-        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Action<int, string>?>(), Arg.Any<Action<int, int>?>(), Arg.Any<CancellationToken>())
             .Returns(42);
 
         await _sut.StartInstanceAsync(instance.Id);
@@ -203,7 +203,7 @@ public class ServerInstanceServiceTests : IDisposable
     {
         var instance = await SeedInstanceAsync();
 
-        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Action<int, string>?>(), Arg.Any<Action<int, int>?>(), Arg.Any<CancellationToken>())
             .Returns(42);
 
         await _sut.StartInstanceAsync(instance.Id);
@@ -218,7 +218,7 @@ public class ServerInstanceServiceTests : IDisposable
     {
         var instance = await SeedInstanceAsync();
 
-        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Action<int, string>?>(), Arg.Any<Action<int, int>?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Failed to start"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
