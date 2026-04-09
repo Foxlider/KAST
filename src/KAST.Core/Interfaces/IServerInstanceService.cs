@@ -19,4 +19,10 @@ public interface IServerInstanceService
     Task UpdateModLoadOrderAsync(int instanceId, int modId, int newOrder, CancellationToken ct = default);
 
     Task LinkModsAsync(int instanceId, CancellationToken ct = default);
+
+    /// <summary>Writes server.cfg, basic.cfg and Arma3Profile to the instance config directory.</summary>
+    void WriteConfigFiles(ServerInstance instance);
+
+    /// <summary>Returns the full command line (executable + args) for previewing.</summary>
+    string GetCommandLine(ServerInstance instance);
 }

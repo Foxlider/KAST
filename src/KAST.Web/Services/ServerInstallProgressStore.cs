@@ -14,6 +14,11 @@ public class ServerInstallState
     public bool IsComplete { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>1-based index of the step currently being downloaded. 0 = not started.</summary>
+    public int CurrentStep { get; private set; }
+    public int TotalSteps { get; private set; }
+    public string? CurrentStepName { get; private set; }
+
     /// <summary>Fires on every log line and on meaningful progress increments.</summary>
     public event Action? Changed;
 
@@ -33,6 +38,14 @@ public class ServerInstallState
 
     public void NotifyChanged() => Changed?.Invoke();
 
+    public void SetStep(int step, int total, string name)
+    {
+        CurrentStep = step;
+        TotalSteps = total;
+        CurrentStepName = name;
+        Changed?.Invoke();
+    }
+
     public void Reset()
     {
         _log.Clear();
@@ -40,6 +53,9 @@ public class ServerInstallState
         IsDownloading = false;
         IsComplete = false;
         ErrorMessage = null;
+        CurrentStep = 0;
+        TotalSteps = 0;
+        CurrentStepName = null;
     }
 }
 

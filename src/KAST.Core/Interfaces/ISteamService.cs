@@ -20,9 +20,15 @@ public interface ISteamService
 
     // ── Steam operations ──
     Task DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default);
-    Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null, CancellationToken ct = default);
+    Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null, bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 4, CancellationToken ct = default);
     Task<WorkshopItemInfo?> GetWorkshopItemInfoAsync(long workshopId, CancellationToken ct = default);
     Task<IReadOnlyList<WorkshopItemInfo>> SearchWorkshopAsync(string query, int count = 20, CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads a sample of chunks from the Arma 3 DS depot at varying parallelism levels
+    /// and returns throughput measurements so the user can pick the optimal setting.
+    /// </summary>
+    Task<IReadOnlyList<BenchmarkResult>> BenchmarkDownloadAsync(IProgress<string>? log = null, CancellationToken ct = default);
 }
 
 public class SteamUserProfile
@@ -52,4 +58,12 @@ public class WorkshopItemInfo
     public uint ConsumerAppId { get; set; }
     public ulong ManifestId { get; set; }
     public List<string> Tags { get; set; } = [];
+}
+
+public class BenchmarkResult
+{
+    public int Parallelism { get; set; }
+    public double MbPerSecond { get; set; }
+    public long BytesDownloaded { get; set; }
+    public double ElapsedSeconds { get; set; }
 }

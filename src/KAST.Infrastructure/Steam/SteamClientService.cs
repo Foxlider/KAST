@@ -475,18 +475,28 @@ public class SteamClientService : ISteamService, IDisposable
     }
 
     private static List<(uint DepotId, ulong ManifestId)> ExtractDepotManifests(
-        KeyValue depots, string currentOs, ILogger logger)
+        KeyValue depots, string currentOs, ILogger logger, bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null)
     {
         var depotManifests = new List<(uint DepotId, ulong ManifestId)>();
+        var filterSet = depotFilter is { Length: > 0 } ? new HashSet<uint>(depotFilter) : null;
 
         foreach (var depot in depots.Children)
         {
             if (!uint.TryParse(depot.Name, out var depotId))
                 continue;
 
-            // Filter: only download depots for the current OS
+            // If a depot filter is supplied, only include explicitly listed depots
+            if (filterSet != null && !filterSet.Contains(depotId))
+            {
+                logger.LogDebug("Skipping depot {DepotId} (not in depot filter)", depotId);
+                continue;
+            }
+
+            // Filter: only download depots for the current OS.
+            // ignorePlatformFilter=true bypasses this for Creator DLC apps whose depots are
+            // marked Windows-only even though their PBO content runs on Linux servers.
             var config = depot["config"];
-            if (config != KeyValue.Invalid)
+            if (!ignorePlatformFilter && config != KeyValue.Invalid)
             {
                 var oslist = config["oslist"].AsString();
                 if (!string.IsNullOrEmpty(oslist) && !oslist.Contains(currentOs, StringComparison.OrdinalIgnoreCase))
@@ -496,79 +506,176 @@ public class SteamClientService : ISteamService, IDisposable
                 }
             }
 
-            // Get manifest ID from the "public" branch
+            // Get manifest ID from the requested branch (fall back to "public" if not found)
             var depotManifestsKv = depot["manifests"];
             if (depotManifestsKv == KeyValue.Invalid) continue;
 
-            var publicManifest = depotManifestsKv["public"];
-            if (publicManifest == KeyValue.Invalid) continue;
+            var branchManifest = depotManifestsKv[branch];
+            if (branchManifest == KeyValue.Invalid)
+            {
+                // If the requested branch has no manifest for this depot, skip it
+                // (don't fall back to public — we only want depots that exist on the target branch)
+                if (branch != "public")
+                {
+                    logger.LogDebug("Skipping depot {DepotId} (no manifest on branch '{Branch}')", depotId, branch);
+                    continue;
+                }
+                continue;
+            }
 
-            var manifestIdStr = publicManifest["gid"].AsString() ?? publicManifest.AsString();
+            var manifestIdStr = branchManifest["gid"].AsString() ?? branchManifest.AsString();
             if (string.IsNullOrEmpty(manifestIdStr) || !ulong.TryParse(manifestIdStr, out var manifestId))
                 continue;
 
             depotManifests.Add((depotId, manifestId));
-            logger.LogInformation("Depot {DepotId}: ManifestId={ManifestId}", depotId, manifestId);
+            logger.LogInformation("Depot {DepotId} (branch '{Branch}'): ManifestId={ManifestId}", depotId, branch, manifestId);
         }
 
         return depotManifests;
     }
 
-    private async Task<long> DownloadDepotFilesAsync(
+    private async Task<(long TotalDownloaded, int Verified, int Downloaded)> DownloadDepotFilesAsync(
         uint depotId, byte[]? depotKey, DepotManifest manifest, Server[] servers,
         string destinationPath, long totalSize, long totalDownloaded,
-        IProgress<double>? progress, IProgress<string>? logProgress, CancellationToken ct)
+        IProgress<double>? progress, IProgress<string>? logProgress, int maxParallelDownloads, CancellationToken ct)
     {
+        int maxParallelHash = Math.Max(1, Environment.ProcessorCount);
+
         var files = manifest.Files?
             .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
             .ToList() ?? [];
 
-        var server = servers.First();
-        logProgress?.Report($"Downloading depot {depotId} ({files.Count} files)...");
-        int fileIndex = 0;
+        int verifiedCount = 0, downloadedCount = 0;
+
+        // ── Phase 1: Quick scan — existence + size only (no hashing) ─────────
+        logProgress?.Report($"Scanning depot {depotId} ({files.Count} files)...");
+        var toDownload = new List<DepotManifest.FileData>();
+        var toVerify = new List<DepotManifest.FileData>();
 
         foreach (var file in files)
         {
-            ct.ThrowIfCancellationRequested();
-
-            var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
-            var filePath = Path.Combine(destinationPath, relativePath);
+            var filePath = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
             var dir = Path.GetDirectoryName(filePath);
             if (dir != null) Directory.CreateDirectory(dir);
 
-            await using var fs = File.Create(filePath);
-            if (file.TotalSize > 0)
-                fs.SetLength((long)file.TotalSize);
-
-            foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var chunkBuffer = new byte[chunk.UncompressedLength];
-                var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, chunkBuffer, depotKey);
-
-                fs.Position = (long)chunk.Offset;
-                await fs.WriteAsync(chunkBuffer.AsMemory(0, written), ct);
-
-                totalDownloaded += chunk.UncompressedLength;
-                if (totalSize > 0)
-                    progress?.Report((double)totalDownloaded / totalSize * 100.0);
-            }
-
-            fileIndex++;
-            if (fileIndex % 50 == 0 || fileIndex == files.Count)
-                logProgress?.Report($"  [{fileIndex}/{files.Count}] {relativePath}");
+            if (!File.Exists(filePath) || new FileInfo(filePath).Length != (long)file.TotalSize)
+                toDownload.Add(file);
+            else
+                toVerify.Add(file);
         }
 
-        _logger.LogInformation("Depot {DepotId} download complete ({FileCount} files)", depotId, files.Count);
-        logProgress?.Report($"Depot {depotId} complete.");
-        
-        return totalDownloaded;
+        if (toDownload.Count > 0)
+            logProgress?.Report($"  {toDownload.Count} file(s) missing or wrong size.");
+
+        // ── Phase 2: Parallel hash verification of size-matched files ────────
+        if (toVerify.Count > 0)
+        {
+            logProgress?.Report($"Verifying {toVerify.Count} existing file(s)...");
+            using var hashSem = new SemaphoreSlim(maxParallelHash);
+            var hashTasks = toVerify.Select(async file =>
+            {
+                if (file.FileHash is not { Length: > 0 }) return (file, Match: true);
+                await hashSem.WaitAsync(ct);
+                try
+                {
+                    var path = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                    var match = await Task.Run(() =>
+                    {
+                        using var sha1 = System.Security.Cryptography.SHA1.Create();
+                        using var fs = File.OpenRead(path);
+                        return sha1.ComputeHash(fs).SequenceEqual(file.FileHash);
+                    }, ct);
+                    return (file, Match: match);
+                }
+                finally { hashSem.Release(); }
+            }).ToArray();
+
+            var results = await Task.WhenAll(hashTasks);
+            int hashFailed = 0;
+            foreach (var (file, match) in results)
+            {
+                if (match)
+                {
+                    verifiedCount++;
+                    totalDownloaded += (long)file.TotalSize;
+                }
+                else
+                {
+                    toDownload.Add(file);
+                    hashFailed++;
+                }
+            }
+
+            if (hashFailed > 0)
+                logProgress?.Report($"  {hashFailed} file(s) failed hash check — queued for download.");
+        }
+
+        if (totalSize > 0)
+            progress?.Report((double)totalDownloaded / totalSize * 100.0);
+
+        // ── Phase 3: Parallel chunk download ─────────────────────────────────
+        if (toDownload.Count > 0)
+        {
+            logProgress?.Report($"Downloading {toDownload.Count} file(s)...");
+            using var dlSem = new SemaphoreSlim(Math.Max(1, maxParallelDownloads));
+            var server = servers.First();
+            long bytesDownloaded = 0;
+            int filesDone = 0;
+
+            var tasks = toDownload.Select(async file =>
+            {
+                await dlSem.WaitAsync(ct);
+                try
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+                    var filePath = Path.Combine(destinationPath, relativePath);
+                    var dir = Path.GetDirectoryName(filePath);
+                    if (dir != null) Directory.CreateDirectory(dir);
+
+                    await using var fs = File.Create(filePath);
+                    if (file.TotalSize > 0)
+                        fs.SetLength((long)file.TotalSize);
+
+                    foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var buf = new byte[chunk.UncompressedLength];
+                        var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
+                        fs.Position = (long)chunk.Offset;
+                        await fs.WriteAsync(buf.AsMemory(0, written), ct);
+
+                        var newBytes = Interlocked.Add(ref bytesDownloaded, chunk.UncompressedLength);
+                        if (totalSize > 0)
+                            progress?.Report((double)(totalDownloaded + newBytes) / totalSize * 100.0);
+                    }
+
+                    var done = Interlocked.Increment(ref filesDone);
+                    if (done % 25 == 0 || done == toDownload.Count)
+                        logProgress?.Report($"  [{done}/{toDownload.Count}] {relativePath}");
+                }
+                finally { dlSem.Release(); }
+            }).ToArray();
+
+            await Task.WhenAll(tasks);
+            totalDownloaded += Interlocked.Read(ref bytesDownloaded);
+            downloadedCount = toDownload.Count;
+        }
+
+        if (totalSize > 0)
+            progress?.Report((double)totalDownloaded / totalSize * 100.0);
+
+        _logger.LogInformation("Depot {DepotId}: {Verified} verified, {Downloaded} downloaded ({FileCount} total)",
+            depotId, verifiedCount, downloadedCount, files.Count);
+        logProgress?.Report($"Depot {depotId}: {verifiedCount} up-to-date, {downloadedCount} updated.");
+
+        return (totalDownloaded, verifiedCount, downloadedCount);
     }
 
     public async Task DownloadAppAsync(
         uint appId, string destinationPath,
-        IProgress<double>? progress = null, IProgress<string>? logProgress = null, CancellationToken ct = default)
+        IProgress<double>? progress = null, IProgress<string>? logProgress = null,
+        bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 4, CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -600,7 +707,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 2. Collect all relevant depots (numeric keys only, skip branches/etc.)
         var currentOs = OperatingSystem.IsWindows() ? "windows" : "linux";
-        var depotManifests = ExtractDepotManifests(depots, currentOs, _logger);
+        var depotManifests = ExtractDepotManifests(depots, currentOs, _logger, ignorePlatformFilter, branch, depotFilter);
 
         if (depotManifests.Count == 0)
             throw new InvalidOperationException($"No downloadable depots found for AppId {appId} (OS: {currentOs})");
@@ -616,8 +723,10 @@ public class SteamClientService : ISteamService, IDisposable
         long totalDownloaded = 0;
         long totalSize = 0;
 
-        // First pass: collect total size from all manifests
-        var manifests = new List<(uint DepotId, byte[]? DepotKey, DepotManifest Manifest)>();
+        // First pass: fetch all manifests and collect total size
+        var manifestCache    = LoadManifestCache(destinationPath);
+        var newManifestCache = new Dictionary<uint, ulong>(manifestCache);
+        var manifests = new List<(uint DepotId, ulong ManifestId, byte[]? DepotKey, DepotManifest Manifest)>();
 
         foreach (var (depotId, manifestId) in depotManifests)
         {
@@ -656,26 +765,93 @@ public class SteamClientService : ISteamService, IDisposable
             if (manifest.FilenamesEncrypted && depotKey != null)
                 manifest.DecryptFilenames(depotKey);
 
-            manifests.Add((depotId, depotKey, manifest));
+            manifests.Add((depotId, manifestId, depotKey, manifest));
             totalSize += (long)(manifest.TotalUncompressedSize);
             var sizeMb = manifest.TotalUncompressedSize / 1_048_576.0;
             logProgress?.Report($"Depot {depotId}: {manifest.Files?.Count ?? 0} files, {sizeMb:F0} MB");
         }
 
         var totalMb = totalSize / 1_048_576.0;
-        _logger.LogInformation("Total download size: {Size} bytes across {Count} depots", totalSize, manifests.Count);
-        logProgress?.Report($"Total download size: {totalMb:F0} MB across {manifests.Count} depot(s). Starting...");
+        _logger.LogInformation("Total size: {Size} bytes across {Count} depots", totalSize, manifests.Count);
+        logProgress?.Report($"Total: {totalMb:F0} MB across {manifests.Count} depot(s). Checking for changes...");
 
-        // Second pass: download files from each depot
-        foreach (var (depotId, depotKey, manifest) in manifests)
+        // Second pass: skip unchanged depots (manifest ID cache hit), verify + repair the rest
+        int grandVerified = 0, grandDownloaded = 0, skippedDepots = 0;
+
+        foreach (var (depotId, manifestId, depotKey, manifest) in manifests)
         {
-            totalDownloaded = await DownloadDepotFilesAsync(depotId, depotKey, manifest, servers, destinationPath, 
-                totalSize, totalDownloaded, progress, logProgress, ct);
+            ct.ThrowIfCancellationRequested();
+
+            if (manifestCache.TryGetValue(depotId, out var cachedManifestId) && cachedManifestId == manifestId)
+            {
+                // Manifest ID unchanged — all files in this depot are guaranteed current
+                skippedDepots++;
+                totalDownloaded += (long)manifest.TotalUncompressedSize;
+                if (totalSize > 0) progress?.Report((double)totalDownloaded / totalSize * 100.0);
+                logProgress?.Report($"Depot {depotId}: no changes (manifest {manifestId}) — skipped.");
+                newManifestCache[depotId] = manifestId;
+                continue;
+            }
+
+            var (newTotal, verified, downloaded) = await DownloadDepotFilesAsync(
+                depotId, depotKey, manifest, servers, destinationPath,
+                totalSize, totalDownloaded, progress, logProgress, maxParallelDownloads, ct);
+
+            totalDownloaded = newTotal;
+            grandVerified  += verified;
+            grandDownloaded += downloaded;
+            newManifestCache[depotId] = manifestId;
         }
 
-        _logger.LogInformation("App {AppId} download complete → {Path}", appId, destinationPath);
-        logProgress?.Report("All files downloaded successfully.");
+        // Persist updated manifest IDs so subsequent runs can skip unchanged depots
+        SaveManifestCache(destinationPath, newManifestCache);
+
+        var summary = (grandDownloaded == 0 && skippedDepots > 0)
+            ? $"Already up-to-date — {skippedDepots} depot(s) unchanged, {grandVerified} file(s) verified."
+            : $"Complete — {grandVerified} file(s) already up-to-date, {grandDownloaded} file(s) updated, {skippedDepots} depot(s) skipped.";
+
+        _logger.LogInformation("App {AppId} complete → {Path}", appId, destinationPath);
+        logProgress?.Report(summary);
         progress?.Report(100);
+    }
+
+    // ───── Manifest Cache & File Verification ─────
+
+    private static string ManifestCachePath(string installPath) =>
+        Path.Combine(installPath, ".kast_manifests.json");
+
+    private static Dictionary<uint, ulong> LoadManifestCache(string installPath)
+    {
+        var path = ManifestCachePath(installPath);
+        if (!File.Exists(path)) return [];
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<Dictionary<uint, ulong>>(json) ?? [];
+        }
+        catch { return []; }
+    }
+
+    private static void SaveManifestCache(string installPath, Dictionary<uint, ulong> cache)
+    {
+        try { File.WriteAllText(ManifestCachePath(installPath), JsonSerializer.Serialize(cache)); }
+        catch { /* non-fatal — next run will re-verify */ }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the local file exists, has the correct size, and
+    /// (when the manifest provides one) a matching SHA-1 hash.
+    /// The size check is done first to avoid hashing files that are clearly wrong.
+    /// </summary>
+    private static bool FileMatchesManifest(string filePath, DepotManifest.FileData file)
+    {
+        if (!File.Exists(filePath)) return false;
+        if (new FileInfo(filePath).Length != (long)file.TotalSize) return false;
+        if (file.FileHash is not { Length: > 0 }) return true; // no hash in manifest — size match is sufficient
+
+        using var sha1 = System.Security.Cryptography.SHA1.Create();
+        using var fs   = File.OpenRead(filePath);
+        return sha1.ComputeHash(fs).SequenceEqual(file.FileHash);
     }
 
     // ───── CDN Server Discovery ─────
@@ -695,6 +871,107 @@ public class SteamClientService : ISteamService, IDisposable
 
         _logger.LogInformation("Discovered {Count} CDN servers", _cdnServers.Length);
         return _cdnServers;
+    }
+
+    // ───── Download Benchmark ─────
+
+    private const uint BenchmarkAppId  = 233780; // Arma 3 DS
+    private const uint BenchmarkDepotId = 233781; // Server Content depot
+    private static readonly int[] BenchmarkLevels = [1, 2, 4, 8, 16, 32, 64];
+
+    public async Task<IReadOnlyList<BenchmarkResult>> BenchmarkDownloadAsync(
+        IProgress<string>? log = null, CancellationToken ct = default)
+    {
+        if (!_isConnected)
+            throw new InvalidOperationException("Not connected to Steam");
+
+        log?.Report("Fetching product info for benchmark...");
+
+        // 1. Get the public-branch manifest for the server content depot
+        var picsReq = new SteamApps.PICSRequest(BenchmarkAppId);
+        var productInfo = await _steamApps.PICSGetProductInfo(new[] { picsReq }, Enumerable.Empty<SteamApps.PICSRequest>());
+        var appInfo = productInfo.Results!.SelectMany(r => r.Apps).First(a => a.Key == BenchmarkAppId).Value;
+        var depots = appInfo.KeyValues["depots"];
+
+        var depotKv = depots[BenchmarkDepotId.ToString()];
+        var manifestIdStr = depotKv["manifests"]["public"]["gid"].AsString()
+                         ?? depotKv["manifests"]["public"].AsString();
+        var manifestId = ulong.Parse(manifestIdStr!);
+
+        // 2. Get depot key + manifest
+        byte[]? depotKey = null;
+        var keyResult = await _steamApps.GetDepotDecryptionKey(BenchmarkDepotId, BenchmarkAppId);
+        if (keyResult.Result == EResult.OK)
+            depotKey = keyResult.DepotKey;
+
+        var servers = await GetCdnServersAsync();
+        var server = servers.First();
+        var reqCode = await _steamContent.GetManifestRequestCode(BenchmarkDepotId, BenchmarkAppId, manifestId);
+        var manifest = await _cdnClient.DownloadManifestAsync(BenchmarkDepotId, manifestId, reqCode, server, depotKey);
+
+        if (manifest.FilenamesEncrypted && depotKey != null)
+            manifest.DecryptFilenames(depotKey);
+
+        // 3. Collect ~30 MB of chunks for the benchmark sample
+        const long TargetBytes = 30 * 1024 * 1024;
+        var sampleChunks = new List<DepotManifest.ChunkData>();
+        long sampleSize = 0;
+
+        foreach (var file in manifest.Files!.Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory)))
+        {
+            foreach (var chunk in file.Chunks)
+            {
+                sampleChunks.Add(chunk);
+                sampleSize += chunk.UncompressedLength;
+                if (sampleSize >= TargetBytes) break;
+            }
+            if (sampleSize >= TargetBytes) break;
+        }
+
+        log?.Report($"Benchmark sample: {sampleChunks.Count} chunks, {sampleSize / 1_048_576.0:F1} MB");
+        var results = new List<BenchmarkResult>();
+
+        // 4. Run each parallelism level
+        foreach (var level in BenchmarkLevels)
+        {
+            ct.ThrowIfCancellationRequested();
+            log?.Report($"Testing {level} parallel download(s)...");
+
+            using var sem = new SemaphoreSlim(level);
+            long bytesDown = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            var tasks = sampleChunks.Select(async chunk =>
+            {
+                await sem.WaitAsync(ct);
+                try
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var buf = new byte[chunk.UncompressedLength];
+                    await _cdnClient.DownloadDepotChunkAsync(BenchmarkDepotId, chunk, server, buf, depotKey);
+                    Interlocked.Add(ref bytesDown, chunk.UncompressedLength);
+                }
+                finally { sem.Release(); }
+            }).ToArray();
+
+            await Task.WhenAll(tasks);
+            sw.Stop();
+
+            var mbps = (bytesDown / 1_048_576.0) / sw.Elapsed.TotalSeconds;
+            results.Add(new BenchmarkResult
+            {
+                Parallelism = level,
+                BytesDownloaded = bytesDown,
+                ElapsedSeconds = sw.Elapsed.TotalSeconds,
+                MbPerSecond = mbps
+            });
+
+            log?.Report($"  {level} thread(s): {mbps:F1} MB/s ({sw.Elapsed.TotalSeconds:F1}s)");
+        }
+
+        var best = results.OrderByDescending(r => r.MbPerSecond).First();
+        log?.Report($"Recommended: {best.Parallelism} parallel downloads ({best.MbPerSecond:F1} MB/s)");
+        return results;
     }
 
     // ───── SteamKit2 Callback Handlers ─────
