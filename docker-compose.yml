@@ -3,12 +3,20 @@ services:
     build: .
     container_name: kast
     ports:
-      - "5000:5000"
+      - "5000:5000"                  # Web UI / API
+      - "2302-2322:2302-2322/udp"    # Arma 3 game + Steam query ports
+      - "2302-2322:2302-2322/tcp"    # BattlEye RCON (TCP)
     volumes:
       - kast-data:/app/data
       - kast-mods:/app/mods
       - kast-servers:/app/servers
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Default=Data Source=/app/data/kast.db
@@ -21,7 +29,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - kast
+      kast:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
