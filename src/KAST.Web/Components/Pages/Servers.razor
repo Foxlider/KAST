@@ -96,14 +96,12 @@ else
         try
         {
             await ServerService.StartInstanceAsync(id);
-            ToastService.ShowSuccess("Server started");
+            // Navigate to the instance page — the monitor tab will activate
+            Nav.NavigateTo($"/servers/{id}");
         }
         catch (Exception ex)
         {
             ToastService.ShowError($"Failed to start: {ex.Message}");
-        }
-        finally
-        {
             await RefreshInstances();
         }
     }
