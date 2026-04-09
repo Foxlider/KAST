@@ -19,7 +19,27 @@
 
 <div style="display: flex; justify-content: space-between; align-items: center;">
     <h1>@(_isNew ? "New Server Instance" : $"Edit: {_instance.Name}")</h1>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Save">Save</FluentButton>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <FluentButton Appearance="Appearance.Accent" OnClick="Save">Save</FluentButton>
+        @if (!_isNew)
+        {
+            @if (_instance.Status == ServerInstanceStatus.Running)
+            {
+                <FluentButton Appearance="Appearance.Outline" OnClick="StopServer"
+                              IconStart="@(new Icons.Regular.Size16.Stop())" Style="color: var(--error);">
+                    Stop
+                </FluentButton>
+            }
+            else
+            {
+                <FluentButton Appearance="Appearance.Accent" OnClick="LaunchServer"
+                              IconStart="@(new Icons.Regular.Size16.Play())"
+                              Disabled="@(!_instance.InstalledAt.HasValue)">
+                    Launch
+                </FluentButton>
+            }
+        }
+    </div>
 </div>
 
 <FluentTabs Style="margin-top: 20px;">
@@ -656,11 +676,62 @@
                     }
                 </div>
 
-                @* ── Progress bar (always visible while downloading) ── *@
-                @if (_installState?.IsDownloading == true)
+                @* ── Stepper (active download or just completed this session) ── *@
+                @if (_installState?.IsDownloading == true || _installState?.IsComplete == true)
                 {
-                    <FluentProgress Value="@((int)_installState.Progress)" Max="100"
-                                    Style="width:100%; margin-bottom:16px;" />
+                    var _steps = GetPlannedSteps();
+                    int _curStep = _installState!.CurrentStep;
+                    bool _allDone = _installState.IsComplete;
+
+                    <div style="margin-bottom:24px;">
+                        <div style="font-size:12px; font-weight:600; color:var(--kast-text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;">Download Progress</div>
+                        <div class="kast-stepper">
+                        @for (int _si = 0; _si < _steps.Count; _si++)
+                        {
+                            int _stepNum = _si + 1;
+                            bool _done   = _allDone || _stepNum < _curStep;
+                            bool _active = !_allDone && _stepNum == _curStep;
+                            bool _skip   = _steps[_si].Detail == "no server depot";
+
+                            var _cls = _done   ? "kast-step kast-step--done"
+                                     : _active ? "kast-step kast-step--active"
+                                     : _skip   ? "kast-step kast-step--skip"
+                                     :           "kast-step kast-step--pending";
+
+                            <div class="@_cls">
+                                <div class="kast-step__circle">
+                                    @if (_done)
+                                    {
+                                        <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#fff" />
+                                    }
+                                    else if (_skip)
+                                    {
+                                        <span>&mdash;</span>
+                                    }
+                                    else
+                                    {
+                                        <span>@_stepNum</span>
+                                    }
+                                </div>
+                                <div class="kast-step__label">@_steps[_si].Name</div>
+                                @if (_active)
+                                {
+                                    <div class="kast-step__detail">@(_installState.Progress.ToString("F0"))%</div>
+                                }
+                                else if (!_done && !_skip)
+                                {
+                                    <div class="kast-step__detail">@_steps[_si].Detail</div>
+                                }
+                            </div>
+                        }
+                        </div>
+                    </div>
+
+                    @if (_installState.IsDownloading)
+                    {
+                        <FluentProgress Value="@((int)_installState.Progress)" Max="100"
+                                        Style="width:100%; margin-bottom:16px;" />
+                    }
                 }
 
                 @* ── Action buttons ── *@
@@ -699,10 +770,10 @@
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             @if (_instance.ContactDlc)  { <FluentBadge Appearance="Appearance.Neutral">Contact</FluentBadge> }
                             @if (_instance.GmDlc)       { <FluentBadge Appearance="Appearance.Neutral">Global Mobilization</FluentBadge> }
-                            @if (_instance.PfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Prairie Fire</FluentBadge> }
+                            @if (_instance.PfDlc)       { <FluentBadge Appearance="Appearance.Neutral">S.O.G. Prairie Fire</FluentBadge> }
                             @if (_instance.CslaDlc)     { <FluentBadge Appearance="Appearance.Neutral">CSLA Iron Curtain</FluentBadge> }
                             @if (_instance.WsDlc)       { <FluentBadge Appearance="Appearance.Neutral">Western Sahara</FluentBadge> }
-                            @if (_instance.SpeDlc)      { <FluentBadge Appearance="Appearance.Neutral">S.O.G. Prairie Fire</FluentBadge> }
+                            @if (_instance.SpeDlc)      { <FluentBadge Appearance="Appearance.Neutral">Spearhead 1944</FluentBadge> }
                             @if (_instance.RfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Reaction Forces</FluentBadge> }
                             @if (_instance.EfDlc)       { <FluentBadge Appearance="Appearance.Neutral">Expeditionary Forces</FluentBadge> }
                         </div>
@@ -740,10 +811,11 @@
                 @* ── Install log console ── *@
                 @if (_installState?.Log.Count > 0)
                 {
+                    var _logSnapshot = _installState.Log.ToArray();
                     <div>
                         <div style="font-size:12px; font-weight:600; color:var(--kast-text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">Install Log</div>
                         <div class="kast-install-log" @ref="_installLogRef">
-                            @foreach (var line in _installState.Log)
+                            @foreach (var line in _logSnapshot)
                             {
                                 <div class="@(line.Contains("ERROR") ? "kast-install-log-error" : "")">@line</div>
                             }
@@ -755,6 +827,28 @@
     </FluentTab>
 
 </FluentTabs>
+
+@* ════════════ COMMAND LINE FOOTER ════════════ *@
+<div class="kast-cmdline-footer @(_cmdExpanded ? "kast-cmdline-footer--expanded" : "")">
+    <div class="kast-cmdline-footer__bar" @onclick="() => _cmdExpanded = !_cmdExpanded">
+        <FluentIcon Value="@(new Icons.Regular.Size16.Code())" Style="flex-shrink: 0; opacity: 0.6;" />
+        <code class="kast-cmdline-footer__text">@GetCommandLinePreview()</code>
+        @if (_cmdExpanded)
+        {
+            <FluentIcon Value="@(new Icons.Regular.Size12.ChevronDown())" Style="flex-shrink: 0; opacity: 0.5; cursor: pointer;" />
+        }
+        else
+        {
+            <FluentIcon Value="@(new Icons.Regular.Size12.ChevronUp())" Style="flex-shrink: 0; opacity: 0.5; cursor: pointer;" />
+        }
+    </div>
+    @if (_cmdExpanded)
+    {
+        <div class="kast-cmdline-footer__detail">
+            <code>@GetCommandLinePreview()</code>
+        </div>
+    }
+</div>
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -769,6 +863,7 @@
     private ElementReference _installLogRef;
     private IReadOnlyList<ServerInstallService.ValidationResult>? _validationResults;
     private bool _disposed;
+    private bool _cmdExpanded;
 
     private string _restartPolicyStr
     {
@@ -832,6 +927,10 @@
         {
             _installState = InstallStore.GetOrCreate(_instance.Id);
             _installState.Changed += OnInstallStateChanged;
+
+            // Auto-validate if the server files are already installed
+            if (_instance.InstalledAt.HasValue)
+                _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
         }
 
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
@@ -913,11 +1012,71 @@
         _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
         _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
 
-        if (_isNew) await ServerService.CreateInstanceAsync(_instance);
-        else await ServerService.UpdateInstanceAsync(_instance);
+        if (_isNew)
+        {
+            await ServerService.CreateInstanceAsync(_instance);
+
+            // Subscribe to install progress now that we have an ID
+            _installState = InstallStore.GetOrCreate(_instance.Id);
+            _installState.Changed += OnInstallStateChanged;
+        }
+        else
+        {
+            await ServerService.UpdateInstanceAsync(_instance);
+        }
+
+        // Symlink mods into the instance mods folder
+        if (!string.IsNullOrEmpty(_instance.InstallPath))
+        {
+            await ServerService.LinkModsAsync(_instance.Id);
+            ServerService.WriteConfigFiles(_instance);
+        }
 
         ToastService.ShowSuccess("Server saved");
-        Nav.NavigateTo("/servers");
+
+        // If this was a new server, update the URL without navigating away
+        if (Id == null || Id == 0)
+            Nav.NavigateTo($"/servers/{_instance.Id}", replace: true);
+    }
+
+    private async Task LaunchServer()
+    {
+        if (_isNew) return;
+        try
+        {
+            // Save first to ensure config files and symlinks are up to date
+            await Save();
+            await ServerService.StartInstanceAsync(_instance.Id);
+            Nav.NavigateTo("/monitoring");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Failed to launch: {ex.Message}");
+        }
+    }
+
+    private async Task StopServer()
+    {
+        if (_isNew) return;
+        try
+        {
+            await ServerService.StopInstanceAsync(_instance.Id);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            ToastService.ShowSuccess("Server stopped");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Failed to stop: {ex.Message}");
+        }
+    }
+
+    private string GetCommandLinePreview()
+    {
+        // Sync in-memory config content so the preview reflects current UI state
+        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
+        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
+        return ServerService.GetCommandLine(_instance);
     }
 
     private async Task AddMod(int modId, bool serverSide = false)
@@ -959,7 +1118,7 @@
     {
         if (_isNew || _installState is null) return;
         _validationResults = null;
-        InstallService.StartDownload(_instance.Id, _instance.InstallPath);
+        InstallService.StartDownload(_instance.Id, _instance.InstallPath, _instance);
     }
 
     private void CancelInstall()
@@ -970,7 +1129,7 @@
 
     private void ValidateInstall()
     {
-        _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath);
+        _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
         StateHasChanged();
     }
 
@@ -988,10 +1147,30 @@
                 if (fresh != null) _instance = fresh;
             }
 
+            // Auto-validate after download completes
+            if (_installState?.IsComplete == true && _validationResults == null)
+                _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
+
             StateHasChanged();
             if (_installState?.Log.Count > 0)
                 await JS.InvokeVoidAsync("kastScrollToBottom", _installLogRef);
         });
+    }
+
+    private IReadOnlyList<(string Name, string Detail)> GetPlannedSteps()
+    {
+        var steps = new List<(string, string)> { ("Arma 3 Dedicated Server", "branch: public") };
+        foreach (var dlc in ServerInstallService.DlcTable)
+        {
+            if (!dlc.Enabled(_instance)) continue;
+            if (dlc.Branch is not null)
+                steps.Add((dlc.Name, $"branch: {dlc.Branch}"));
+            else if (dlc.DepotId == 0)
+                steps.Add((dlc.Name, "no server depot"));
+            else
+                steps.Add((dlc.Name, $"depot {dlc.DepotId}"));
+        }
+        return steps;
     }
 
     public void Dispose()
