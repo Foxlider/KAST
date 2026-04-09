@@ -465,8 +465,8 @@ h1, h2, h3, h4 {
 
 .status-dot.running { background: var(--kast-success); box-shadow: 0 0 6px var(--kast-success); }
 .status-dot.stopped { background: var(--neutral-foreground-hint, #9e9e9e); }
-.status-dot.error { background: var(--kast-error); box-shadow: 0 0 6px var(--kast-error); }
-.status-dot.starting, .status-dot.downloading { background: var(--kast-warning); animation: pulse 1.5s infinite; }
+.status-dot.error, .status-dot.crashed { background: var(--kast-error); box-shadow: 0 0 6px var(--kast-error); }
+.status-dot.starting, .status-dot.downloading, .status-dot.restarting, .status-dot.stopping { background: var(--kast-warning); animation: pulse 1.5s infinite; }
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -604,6 +604,52 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
 }
 
 .kast-install-log-error {
+    color: #f87171;
+}
+
+/* ── Instance floating header ────────────────────────────────────── */
+.kast-instance-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 24px;
+    margin: -24px -24px 16px;
+    background: color-mix(in srgb, var(--neutral-layer-2, #272727) 92%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.08));
+}
+
+/* ── Server console in Monitor tab ───────────────────────────────── */
+.kast-server-console {
+    background: #0a0a0a;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c8c8c8;
+    overflow-y: auto;
+    height: 420px;
+    padding: 8px 16px;
+    scroll-behavior: smooth;
+}
+
+.kast-console-line {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+}
+
+.kast-console-ts {
+    color: var(--neutral-foreground-hint, #666);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.kast-console-error {
     color: #f87171;
 }
 

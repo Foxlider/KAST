@@ -94,7 +94,32 @@ public class ServerInstanceService(
 
             logger.LogInformation("Starting server {Name} with args: {Args}", instance.Name, args);
 
-            var pid = await processManager.StartServerProcessAsync(executable, args, ct);
+            // Callbacks for stdout/stderr lines and process exit
+            void OnOutputLine(int pid, string line)
+            {
+                _ = broadcaster.BroadcastLogEntryAsync(new LogEntryEvent(id, line, DateTime.UtcNow));
+            }
+
+            void OnProcessExited(int pid, int exitCode)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var newStatus = exitCode == 0 ? ServerInstanceStatus.Stopped : ServerInstanceStatus.Crashed;
+                        await broadcaster.BroadcastServerStatusChangedAsync(
+                            new ServerStatusChangedEvent(id, newStatus.ToString()));
+                        await broadcaster.BroadcastLogEntryAsync(
+                            new LogEntryEvent(id, $"Process exited with code {exitCode}", DateTime.UtcNow));
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error handling process exit for instance {Id}", id);
+                    }
+                });
+            }
+
+            var pid = await processManager.StartServerProcessAsync(executable, args, OnOutputLine, OnProcessExited, ct);
             instance.ProcessId = pid;
             instance.Status = ServerInstanceStatus.Running;
             instance.StartedAt = DateTime.UtcNow;
@@ -103,7 +128,7 @@ public class ServerInstanceService(
             foreach (var hc in instance.HeadlessClients)
             {
                 var hcArgs = BuildHeadlessClientArguments(instance);
-                var hcPid = await processManager.StartServerProcessAsync(executable, hcArgs, ct);
+                var hcPid = await processManager.StartServerProcessAsync(executable, hcArgs, OnOutputLine, null, ct);
                 hc.ProcessId = hcPid;
                 hc.Status = ServerInstanceStatus.Running;
                 hc.StartedAt = DateTime.UtcNow;
