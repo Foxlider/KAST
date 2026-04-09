@@ -20,6 +20,15 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# Arma 3 dedicated server runtime dependencies + curl for healthcheck
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        lib32gcc-s1 \
+        lib32stdc++6 \
+        libcap2 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create directories for data persistence
 RUN mkdir -p /app/data /app/mods /app/servers
 
