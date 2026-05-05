@@ -23,6 +23,38 @@ public sealed class KastLogStore
     }
 
     public IReadOnlyList<AppLogEntry> GetAll() => _entries.ToArray();
+
+    /// <summary>
+    /// Clears log entries. If <paramref name="filter"/> is null, clears everything.
+    /// If <paramref name="filter"/> is <see cref="LogLevel.Error"/>, also clears <see cref="LogLevel.Critical"/>.
+    /// </summary>
+    public void Clear(LogLevel? filter = null)
+    {
+        if (filter is null)
+        {
+            while (_entries.TryDequeue(out _)) { }
+        }
+        else
+        {
+            // Rebuild the queue keeping only entries that don't match the filter.
+            var kept = _entries
+                .Where(e => !MatchesFilter(e.Level, filter.Value))
+                .ToArray();
+            while (_entries.TryDequeue(out _)) { }
+            foreach (var e in kept)
+                _entries.Enqueue(e);
+        }
+
+        OnNewEntry?.Invoke();
+    }
+
+    private static bool MatchesFilter(LogLevel entryLevel, LogLevel filter)
+    {
+        // Error filter also matches Critical, matching the UI semantics.
+        if (filter == LogLevel.Error)
+            return entryLevel is LogLevel.Error or LogLevel.Critical;
+        return entryLevel == filter;
+    }
 }
 
 public record AppLogEntry(DateTime Timestamp, LogLevel Level, string Category, string Message);

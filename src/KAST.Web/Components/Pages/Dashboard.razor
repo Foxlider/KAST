@@ -2,11 +2,13 @@
 @using KAST.Core.Enums
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
+@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.FluentUI.AspNetCore.Components
 @implements IAsyncDisposable
 @inject IModService ModService
 @inject IServerInstanceService ServerService
 @inject IMonitoringService MonitoringService
+@inject NavigationManager Nav
 
 <PageTitle>KAST — Dashboard</PageTitle>
 
@@ -97,7 +99,12 @@ else
     <div class="kast-tiles">
         @foreach (var instance in _instances)
         {
-            <div class="kast-tile">
+            <div class="kast-tile"
+                 role="button"
+                 tabindex="0"
+                 title="Open @instance.Name"
+                 @onclick="@(() => Nav.NavigateTo($"/servers/{instance.Id}"))"
+                 @onkeydown="@(e => OnInstanceKey(e, instance.Id))">
                 <div>
                     <div class="kast-tile-title">
                         <span class="status-dot @instance.Status.ToString().ToLowerInvariant()"></span>
@@ -173,6 +180,12 @@ else
         ServerInstanceStatus.Crashed => Appearance.Accent,
         _ => Appearance.Neutral
     };
+
+    private void OnInstanceKey(KeyboardEventArgs e, int instanceId)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+            Nav.NavigateTo($"/servers/{instanceId}");
+    }
 
     private static string FormatBytes(long bytes)
     {

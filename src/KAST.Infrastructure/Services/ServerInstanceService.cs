@@ -55,14 +55,110 @@ public class ServerInstanceService(
 
     public async Task DeleteInstanceAsync(int id, CancellationToken ct = default)
     {
-        var instance = await db.ServerInstances.FindAsync([id], ct);
-        if (instance != null)
-        {
-            if (instance.Status == ServerInstanceStatus.Running)
-                await StopInstanceAsync(id, ct);
+        var instance = await db.ServerInstances
+            .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
 
-            db.ServerInstances.Remove(instance);
-            await db.SaveChangesAsync(ct);
+        if (instance == null)
+            return;
+
+        if (instance.Status == ServerInstanceStatus.Running)
+            await StopInstanceAsync(id, ct);
+
+        // Capture install path & check whether it's shared with other instances
+        // BEFORE we drop this row, so we know if we can safely wipe the game files.
+        var installPath = instance.InstallPath;
+        var isInstallPathShared = !string.IsNullOrEmpty(installPath)
+            && await db.ServerInstances
+                .AnyAsync(s => s.Id != id && s.InstallPath == installPath, ct);
+
+        db.ServerInstances.Remove(instance);
+        await db.SaveChangesAsync(ct);
+
+        // Best-effort filesystem cleanup — never let a stray I/O failure
+        // resurrect the row we just deleted from the DB.
+        try
+        {
+            DeleteInstanceFiles(instance, wipeInstallPath: !isInstallPathShared);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Failed to clean up files for deleted instance {Id} ({Name}) at {Path}",
+                id, instance.Name, installPath);
+        }
+    }
+
+    /// <summary>
+    /// Removes on-disk artefacts owned by the instance: per-instance config dir,
+    /// mod symlinks created for this instance, and optionally the whole install
+    /// directory when no other instance shares it.
+    /// </summary>
+    private void DeleteInstanceFiles(ServerInstance instance, bool wipeInstallPath)
+    {
+        if (string.IsNullOrWhiteSpace(instance.InstallPath))
+            return;
+
+        // 1) Per-instance config/profile directory: {InstallPath}/Servers/{id}
+        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        TryDeleteDirectory(configDir, recursive: true);
+
+        // 2) Mod symlinks created for this instance's mods (don't touch the mod
+        //    source itself — that's shared and owned by ModService).
+        var modsDir = Path.Combine(instance.InstallPath, "mods");
+        if (Directory.Exists(modsDir))
+        {
+            foreach (var modLink in instance.Mods)
+            {
+                var mod = modLink.SteamMod;
+                if (mod == null || string.IsNullOrEmpty(mod.Name))
+                    continue;
+
+                var linkPath = Path.Combine(modsDir, $"@{SanitizeModName(mod.Name)}");
+                if (!Path.Exists(linkPath))
+                    continue;
+
+                try
+                {
+                    // Only delete if it's actually a symlink we created.
+                    if (Directory.ResolveLinkTarget(linkPath, false) != null)
+                        Directory.Delete(linkPath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to remove mod symlink {Path}", linkPath);
+                }
+            }
+        }
+
+        // 3) Full install path — only when no other instance is using it.
+        if (wipeInstallPath)
+        {
+            TryDeleteDirectory(instance.InstallPath, recursive: true);
+            logger.LogInformation(
+                "Wiped install directory {Path} for instance {Id}",
+                instance.InstallPath, instance.Id);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Kept install directory {Path} (shared with other instances) for instance {Id}",
+                instance.InstallPath, instance.Id);
+        }
+    }
+
+    private void TryDeleteDirectory(string path, bool recursive)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            return;
+
+        try
+        {
+            Directory.Delete(path, recursive);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete directory {Path}", path);
         }
     }
 

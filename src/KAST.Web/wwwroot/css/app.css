@@ -335,17 +335,33 @@ html, body {
 .kast-nav {
     flex-shrink: 0;
     overflow-y: auto;
+    position: relative;
+    z-index: 20;
+    /* background: var(--neutral-layer-2, #272727); */
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.35), 1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 .kast-main {
     flex: 1;
     overflow-y: auto;
     background: var(--neutral-layer-1, #1b1b1b);
+    display: flex;
+    flex-direction: column;
 }
 
 .page-content {
     padding: 24px;
-    max-width: 1400px;
+    flex: 1;
+}
+
+/* Only pages that render a command-line footer (ServerEdit) need the
+   flex-column stretch so the footer can stick to the bottom. Other pages
+   keep their natural block flow, so short pages don't grow unnecessarily. */
+.page-content:has(> .kast-cmdline-footer) {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    box-sizing: border-box;
 }
 
 h1, h2, h3, h4 {
@@ -570,13 +586,34 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
     right: 0;
     bottom: 0;
     width: 680px;
-    max-width: 90vw;
+    min-width: 360px;
+    max-width: 95vw;
     background: var(--neutral-layer-floating, #1e1e1e);
     border-left: 1px solid var(--neutral-stroke-divider-rest, rgba(255,255,255,0.12));
     box-shadow: -8px 0 32px rgba(0,0,0,0.4);
     display: flex;
     flex-direction: column;
     animation: kast-panel-in 0.18s ease-out;
+}
+
+/* Drag handle on the panel's left edge */
+.kast-console-panel__resize {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 2;
+    transition: background 0.15s ease;
+}
+
+.kast-console-panel__resize:hover,
+.kast-console-panel__resize:active {
+    background: linear-gradient(to right,
+        rgba(255, 107, 53, 0.35),
+        rgba(255, 107, 53, 0));
 }
 @keyframes kast-panel-in {
     from { opacity: 0; transform: translateX(40px); }
@@ -658,6 +695,9 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
     position: sticky;
     bottom: 0;
     margin: 16px -24px -24px;
+    margin-top: auto;
+    display: flex;
+    flex-direction: column-reverse;
     background: var(--neutral-layer-2, #272727);
     border-top: 1px solid var(--neutral-stroke-divider-rest, rgba(255, 255, 255, 0.08));
     font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
@@ -693,14 +733,14 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
 }
 
 .kast-cmdline-footer__detail {
-    padding: 0 24px 12px;
+    padding: 12px 24px 0;
     font-size: 12px;
     line-height: 1.6;
     word-break: break-all;
     white-space: pre-wrap;
     max-height: 200px;
     overflow-y: auto;
-    border-top: 1px solid var(--neutral-stroke-divider-rest, rgba(255, 255, 255, 0.06));
+    border-bottom: 1px solid var(--neutral-stroke-divider-rest, rgba(255, 255, 255, 0.06));
 }
 
 /* ── Horizontal stepper ──────────────────────────────────────────── */

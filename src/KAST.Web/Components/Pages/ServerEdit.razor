@@ -1307,7 +1307,12 @@
 
             StateHasChanged();
             if (_installState?.Log.Count > 0)
-                await JS.InvokeVoidAsync("kastScrollToBottom", _installLogRef);
+            {
+                try
+                { await JS.InvokeVoidAsync("kastScrollToBottom", _installLogRef); }
+                catch (TaskCanceledException) { /* ignore */ }
+                catch (OperationCanceledException) { /* ignore */ }
+            }
         });
     }
 
