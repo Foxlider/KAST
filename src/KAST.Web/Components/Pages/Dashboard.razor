@@ -129,23 +129,42 @@ else
     private IReadOnlyList<ServerInstance> _instances = [];
     private HostMetrics _hostMetrics = new();
     private CancellationTokenSource? _cts;
+    private Task? _refreshTask;
+    private PeriodicTimer? _refreshTimer;
+    private bool _disposed;
 
     protected override async Task OnInitializedAsync()
     {
         await RefreshData();
 
         _cts = new CancellationTokenSource();
-        _ = RunPeriodicRefresh(_cts.Token);
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _refreshTask = RunPeriodicRefresh(_cts.Token);
     }
 
-    private async Task RefreshData()
+    private async Task RefreshData(CancellationToken ct = default)
     {
-        _mods = await ModService.GetAllModsAsync();
-        _instances = await ServerService.GetAllInstancesAsync();
+        if (_disposed || ct.IsCancellationRequested)
+            return;
 
         try
         {
-            _hostMetrics = await MonitoringService.GetHostMetricsAsync();
+            _mods = await ModService.GetAllModsAsync(ct);
+            _instances = await ServerService.GetAllInstancesAsync(ct);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Circuit/request scope is shutting down.
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        try
+        {
+            _hostMetrics = await MonitoringService.GetHostMetricsAsync(ct);
         }
         catch
         {
@@ -155,21 +174,34 @@ else
 
     private async Task RunPeriodicRefresh(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        var timer = _refreshTimer;
+        if (timer is null)
+            return;
+
         try
         {
-            while (await timer.WaitForNextTickAsync(ct))
+            while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync())
             {
+                if (_disposed) break;
+
                 await InvokeAsync(async () =>
                 {
-                    await RefreshData();
+                    if (_disposed || ct.IsCancellationRequested) return;
+
+                    await RefreshData(ct);
+
+                    if (_disposed || ct.IsCancellationRequested) return;
                     StateHasChanged();
                 });
             }
         }
-        catch (OperationCanceledException) 
+        catch (ObjectDisposedException)
         {
-            // If the operation was cancelled, just exit the loop
+            // Component disposed while loop awaited next tick.
+        }
+        catch (InvalidOperationException)
+        {
+            // Renderer/circuit disposed while scheduling UI work.
         }
     }
 
@@ -202,8 +234,32 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         _cts?.Cancel();
+
+        // Disposing timer makes WaitForNextTickAsync complete cleanly without cancellation exceptions.
+        _refreshTimer?.Dispose();
+
+        if (_refreshTask is not null)
+        {
+            try
+            {
+                await _refreshTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on dispose.
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore disposal race.
+            }
+            catch (InvalidOperationException)
+            {
+                // Ignore renderer disposal race.
+            }
+        }
+
         _cts?.Dispose();
-        await ValueTask.CompletedTask;
     }
 }
