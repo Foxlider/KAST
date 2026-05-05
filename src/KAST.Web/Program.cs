@@ -4,6 +4,7 @@ using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Steam;
 using KAST.Web.Hubs;
 using KAST.Web.Services;
+using KAST.Web.Services.Content;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.FluentUI.AspNetCore.Components;
@@ -42,9 +43,13 @@ builder.Services.AddHttpClient("HealthCheck", client =>
 });
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
-// Server install services
-builder.Services.AddSingleton<ServerInstallProgressStore>();
-builder.Services.AddSingleton<ServerInstallService>();
+// Content install system
+builder.Services.AddSingleton<IFileSystemService, FileSystemService>();
+builder.Services.AddSingleton<IContentInstaller, LocalModInstaller>();
+builder.Services.AddSingleton<IContentInstaller, SteamModInstaller>();
+builder.Services.AddSingleton<IContentInstaller, ServerInstaller>();
+builder.Services.AddSingleton<ContentProgressTracker>();
+builder.Services.AddSingleton<ContentOrchestrator>();
 
 // Background services
 builder.Services.AddHostedService<MetricsBackgroundService>();

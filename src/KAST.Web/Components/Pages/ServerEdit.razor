@@ -6,7 +6,7 @@
 @using KAST.Core.Models
 @using Microsoft.AspNetCore.SignalR.Client
 @using Microsoft.FluentUI.AspNetCore.Components
-@using KAST.Web.Services
+@using KAST.Web.Services.Content
 @implements IAsyncDisposable
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
@@ -14,8 +14,8 @@
 @inject ISettingsService SettingsService
 @inject IToastService ToastService
 @inject NavigationManager Nav
-@inject ServerInstallService InstallService
-@inject ServerInstallProgressStore InstallStore
+@inject KAST.Web.Services.Content.ContentOrchestrator ContentOrchestrator
+@inject KAST.Web.Services.Content.ContentProgressTracker ContentTracker
 
 <PageTitle>KAST — @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
@@ -667,7 +667,7 @@
                     @if (_installState?.IsDownloading == true)
                     {
                         <FluentIcon Value="@(new Icons.Regular.Size20.ArrowDownload())" Color="Color.Accent" />
-                        <span><strong>Downloading…</strong> @(_installState.Progress.ToString("F0"))%</span>
+                        <span><strong>Downloading…</strong> @(_installState.OverallProgress.ToString("F0"))%</span>
                     }
                     else if (_instance.InstalledAt.HasValue)
                     {
@@ -696,8 +696,7 @@
                 @* ── Stepper (active download or just completed this session) ── *@
                 @if (_installState?.IsDownloading == true || _installState?.IsComplete == true)
                 {
-                    var _steps = GetPlannedSteps();
-                    int _curStep = _installState!.CurrentStep;
+                    var _steps = _installState!.Steps;
                     bool _allDone = _installState.IsComplete;
 
                     <div style="margin-bottom:24px;">
@@ -706,13 +705,16 @@
                         @for (int _si = 0; _si < _steps.Count; _si++)
                         {
                             int _stepNum = _si + 1;
-                            bool _done   = _allDone || _stepNum < _curStep;
-                            bool _active = !_allDone && _stepNum == _curStep;
-                            bool _skip   = _steps[_si].Detail == "no server depot";
+                            var _step = _steps[_si];
+                            bool _done   = _step.Status == ContentStepStatus.Completed;
+                            bool _active = _step.Status == ContentStepStatus.InProgress;
+                            bool _skip   = _step.Status == ContentStepStatus.Skipped;
+                            bool _failed = _step.Status == ContentStepStatus.Failed;
 
                             var _cls = _done   ? "kast-step kast-step--done"
                                      : _active ? "kast-step kast-step--active"
                                      : _skip   ? "kast-step kast-step--skip"
+                                     : _failed ? "kast-step kast-step--failed"
                                      :           "kast-step kast-step--pending";
 
                             <div class="@_cls">
@@ -725,19 +727,27 @@
                                     {
                                         <span>&mdash;</span>
                                     }
+                                    else if (_failed)
+                                    {
+                                        <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Custom" CustomColor="#fff" />
+                                    }
                                     else
                                     {
                                         <span>@_stepNum</span>
                                     }
                                 </div>
-                                <div class="kast-step__label">@_steps[_si].Name</div>
+                                <div class="kast-step__label">@_step.Name</div>
                                 @if (_active)
                                 {
-                                    <div class="kast-step__detail">@(_installState.Progress.ToString("F0"))%</div>
+                                    <div class="kast-step__detail">@(_step.Progress.ToString("F0"))%</div>
+                                }
+                                else if (_failed)
+                                {
+                                    <div class="kast-step__detail" style="color:var(--error);">@(_step.Error ?? "Failed")</div>
                                 }
                                 else if (!_done && !_skip)
                                 {
-                                    <div class="kast-step__detail">@_steps[_si].Detail</div>
+                                    <div class="kast-step__detail">@_step.Detail</div>
                                 }
                             </div>
                         }
@@ -746,7 +756,7 @@
 
                     @if (_installState.IsDownloading)
                     {
-                        <FluentProgress Value="@((int)_installState.Progress)" Max="100"
+                        <FluentProgress Value="@((int)_installState.OverallProgress)" Max="100"
                                         Style="width:100%; margin-bottom:16px;" />
                     }
                 }
@@ -994,9 +1004,9 @@
     private string _serversDirectory = "./servers";
 
     // ── Install state ──
-    private ServerInstallState? _installState;
+    private ContentInstallState? _installState;
     private ElementReference _installLogRef;
-    private IReadOnlyList<ServerInstallService.ValidationResult>? _validationResults;
+    private IReadOnlyList<ContentValidationResult>? _validationResults;
     private bool _disposed;
     private bool _cmdExpanded;
 
@@ -1074,12 +1084,19 @@
         // Subscribe to install progress for this instance (only when editing an existing server)
         if (!_isNew)
         {
-            _installState = InstallStore.GetOrCreate(_instance.Id);
-            _installState.Changed += OnInstallStateChanged;
+            var key = ContentProgressTracker.ServerKey(_instance.Id);
+            _installState = ContentTracker.Get(key);
+            if (_installState is not null)
+                _installState.Changed += OnInstallStateChanged;
 
             // Auto-validate if the server files are already installed
             if (_instance.InstalledAt.HasValue)
-                _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
+                _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+                {
+                    Type = ContentType.Server,
+                    DestinationPath = _instance.InstallPath,
+                    Instance = _instance
+                });
         }
 
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
@@ -1164,10 +1181,6 @@
         if (_isNew)
         {
             await ServerService.CreateInstanceAsync(_instance);
-
-            // Subscribe to install progress now that we have an ID
-            _installState = InstallStore.GetOrCreate(_instance.Id);
-            _installState.Changed += OnInstallStateChanged;
         }
         else
         {
@@ -1268,22 +1281,38 @@
         StateHasChanged();
     }
 
-    private void StartInstall()
+    private async Task StartInstall()
     {
-        if (_isNew || _installState is null) return;
+        if (_isNew) return;
         _validationResults = null;
-        InstallService.StartDownload(_instance.Id, _instance.InstallPath, _instance);
+
+        // Detach from previous state if any
+        if (_installState is not null)
+            _installState.Changed -= OnInstallStateChanged;
+
+        var settings = await SettingsService.GetSettingsAsync();
+        int maxPar = Math.Max(1, settings.ParallelDownloads);
+
+        _installState = ContentOrchestrator.StartServerInstall(
+            _instance.Id, _instance.InstallPath, _instance, maxPar);
+        _installState.Changed += OnInstallStateChanged;
+        StateHasChanged();
     }
 
     private void CancelInstall()
     {
         if (_isNew) return;
-        InstallService.CancelDownload(_instance.Id);
+        ContentOrchestrator.Cancel(ContentProgressTracker.ServerKey(_instance.Id));
     }
 
     private void ValidateInstall()
     {
-        _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
+        _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+        {
+            Type = ContentType.Server,
+            DestinationPath = _instance.InstallPath,
+            Instance = _instance
+        });
         StateHasChanged();
     }
 
@@ -1294,7 +1323,6 @@
         {
             if (_disposed) return;
             // If the download just finished successfully, reload _instance from DB
-            // so InstalledAt / InstalledBuildId are reflected without a page reload.
             if (_installState?.IsComplete == true && !_instance.InstalledAt.HasValue)
             {
                 var fresh = await ServerService.GetInstanceByIdAsync(_instance.Id);
@@ -1303,7 +1331,12 @@
 
             // Auto-validate after download completes
             if (_installState?.IsComplete == true && _validationResults == null)
-                _validationResults = InstallService.ValidateServerFiles(_instance.InstallPath, _instance);
+                _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+                {
+                    Type = ContentType.Server,
+                    DestinationPath = _instance.InstallPath,
+                    Instance = _instance
+                });
 
             StateHasChanged();
             if (_installState?.Log.Count > 0)
@@ -1314,22 +1347,6 @@
                 catch (OperationCanceledException) { /* ignore */ }
             }
         });
-    }
-
-    private IReadOnlyList<(string Name, string Detail)> GetPlannedSteps()
-    {
-        var steps = new List<(string, string)> { ("Arma 3 Dedicated Server", "branch: public") };
-        foreach (var dlc in ServerInstallService.DlcTable)
-        {
-            if (!dlc.Enabled(_instance)) continue;
-            if (dlc.Branch is not null)
-                steps.Add((dlc.Name, $"branch: {dlc.Branch}"));
-            else if (dlc.DepotId == 0)
-                steps.Add((dlc.Name, "no server depot"));
-            else
-                steps.Add((dlc.Name, $"depot {dlc.DepotId}"));
-        }
-        return steps;
     }
 
     public async ValueTask DisposeAsync()

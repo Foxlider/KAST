@@ -821,6 +821,12 @@ a { color: var(--accent-foreground-rest, #ff8c5a); }
     color: var(--neutral-foreground-hint, #888);
 }
 
+.kast-step--failed .kast-step__circle {
+    border: 2px solid var(--error, #d32f2f);
+    background: var(--error, #d32f2f);
+    color: #fff;
+}
+
 @keyframes kast-step-pulse {
     0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-fill-rest, #0078d4) 25%, transparent); }
     50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-fill-rest, #0078d4) 0%,  transparent); }

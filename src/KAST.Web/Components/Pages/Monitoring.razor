@@ -89,6 +89,8 @@ else
     private Dictionary<int, InstanceMetrics> _instanceMetrics = new();
     private HubConnection? _hubConnection;
     private CancellationTokenSource? _cts;
+    private Task? _refreshTask;
+    private bool _disposed;
     private bool _chartsInitialized;
 
     // ── History ring buffers (2 h @ 5 s interval = 1 440 points) ──
@@ -105,7 +107,7 @@ else
         PushHostSample();
 
         _cts = new CancellationTokenSource();
-        _ = RunPeriodicRefresh(_cts.Token);
+        _refreshTask = RunPeriodicRefresh(_cts.Token);
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
@@ -137,9 +139,15 @@ else
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
+                if (_disposed || ct.IsCancellationRequested) break;
+
                 await InvokeAsync(async () =>
                 {
-                    await RefreshData();
+                    if (_disposed || ct.IsCancellationRequested) return;
+
+                    await RefreshData(ct);
+
+                    if (_disposed || ct.IsCancellationRequested) return;
                     PushHostSample();
                     PushInstanceSamples();
                     StateHasChanged();
@@ -150,20 +158,27 @@ else
             }
         }
         catch (OperationCanceledException) { /* If the operation was cancelled, just exit the loop */ }
+        catch (ObjectDisposedException) { /* Circuit disposed */ }
+        catch (InvalidOperationException) { /* Renderer disposed */ }
     }
 
-    private async Task RefreshData()
+    private async Task RefreshData(CancellationToken ct = default)
     {
+        if (_disposed || ct.IsCancellationRequested)
+            return;
+
         try
         {
-            _hostMetrics = await MonitoringService.GetHostMetricsAsync();
-            var all = await ServerService.GetAllInstancesAsync();
+            _hostMetrics = await MonitoringService.GetHostMetricsAsync(ct);
+            var all = await ServerService.GetAllInstancesAsync(ct);
             _instances = all
                 .Where(s => s.Status != ServerInstanceStatus.Stopped)
                 .ToList();
-            var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync();
+            var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync(ct);
             _instanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
         }
+        catch (ObjectDisposedException) { /* Circuit disposed */ }
+        catch (OperationCanceledException) { /* Disposing */ }
         catch { /* Monitoring may not be available */ }
     }
 
@@ -293,7 +308,29 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         _cts?.Cancel();
+
+        if (_refreshTask is not null)
+        {
+            try
+            {
+                await _refreshTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on dispose.
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore disposal race.
+            }
+            catch (InvalidOperationException)
+            {
+                // Ignore renderer disposal race.
+            }
+        }
+
         _cts?.Dispose();
 
         // Destroy charts
