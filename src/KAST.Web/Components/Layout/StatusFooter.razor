@@ -1,9 +1,11 @@
 @using Microsoft.Extensions.Logging
 @using KAST.Web.Services
-@implements IDisposable
+@using Microsoft.AspNetCore.Components.Web
+@implements IAsyncDisposable
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @inject KastLogStore LogStore
+@inject IJSRuntime JS
 
 @* ─── Footer bar ─────────────────────────────────────────────────── *@
 <FluentFooter Style="height: 32px; padding: 0 16px; border-top: 1px solid var(--neutral-stroke-divider-rest);">
@@ -12,44 +14,41 @@
                  Style="height: 100%;">
 
         @* Left: health indicators *@
-        <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="12">
-            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
-                <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
-                            Color="@(_backendAlive ? Color.Success : Color.Error)"
-                            Style="flex-shrink:0;" />
-                <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
-                    Backend: <strong>@(_backendAlive ? "Online" : "Offline")</strong>
-                </span>
-            </FluentStack>
+        <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalAlignment="HorizontalAlignment.Stretch" Gap="12">
+            <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
+                        Color="@(_backendAlive ? Color.Success : Color.Error)"
+                        Style="flex-shrink:0;" />
+            <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
+                Backend: <strong>@(_backendAlive ? "Online" : "Offline")</strong>
+            </span>
             <span style="color: var(--neutral-stroke-divider-rest);">│</span>
-            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
-                <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
-                            Color="@(_apiAlive ? Color.Success : Color.Error)"
-                            Style="flex-shrink:0;" />
-                <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
-                    API: <strong>@(_apiAlive ? "Online" : "Offline")</strong>
-                </span>
-            </FluentStack>
+            <FluentIcon Value="@(new Icons.Regular.Size12.Circle())"
+                        Color="@(_apiAlive ? Color.Success : Color.Error)"
+                        Style="flex-shrink:0;" />
+            <span style="font-size: 12px; color: var(--neutral-foreground-rest);">
+                API: <strong>@(_apiAlive ? "Online" : "Offline")</strong>
+            </span>
         </FluentStack>
 
         @* Right: console toggle *@
-        <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="0">
+        
             <FluentButton Appearance="Appearance.Stealth"
                           Style="height: 26px; padding: 0 8px; font-size: 12px; gap: 4px;"
                           Title="Open console"
                           OnClick="OpenPanel">
-                <FluentIcon Value="@(new Icons.Regular.Size16.TextBulletListSquare())"
-                            Color="@(_hasErrors ? Color.Error : Color.Neutral)" />
-                Console
-                @if (_warnErrorCount > 0)
-                {
-                    <FluentBadge Appearance="@(_hasErrors ? Appearance.Accent : Appearance.Neutral)"
-                                 Style="font-size: 10px; min-width: 18px; height: 16px; line-height: 16px; padding: 0 4px; border-radius: 8px; margin-left: 2px;">
-                        @(_warnErrorCount > 999 ? "999+" : _warnErrorCount.ToString())
-                    </FluentBadge>
-                }
+                <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="0">
+                    <FluentIcon Value="@(new Icons.Regular.Size16.TextBulletListSquare())"
+                                Color="@(_hasErrors ? Color.Error : Color.Neutral)" />
+                    Console
+                    @if (_warnErrorCount > 0)
+                    {
+                        <FluentBadge Appearance="@(_hasErrors ? Appearance.Accent : Appearance.Neutral)"
+                                     Style="font-size: 10px; min-width: 18px; height: 16px; line-height: 16px; padding: 0 4px; border-radius: 8px; margin-left: 2px;">
+                            @(_warnErrorCount > 999 ? "999+" : _warnErrorCount.ToString())
+                        </FluentBadge>
+                    }
+                </FluentStack>
             </FluentButton>
-        </FluentStack>
     </FluentStack>
 </FluentFooter>
 
@@ -57,16 +56,23 @@
 @if (_showPanel)
 {
     <div class="kast-console-backdrop" @onclick="ClosePanel"></div>
-    <div class="kast-console-panel" style="z-index: 1000;" @onclick:stopPropagation="true">
+    <div class="kast-console-panel" style="@PanelStyle" @onclick:stopPropagation="true">
+        @* Resize handle (left edge) *@
+        <div class="kast-console-panel__resize"
+             @onmousedown="StartResize"
+             @onmousedown:preventDefault="true"
+             title="Drag to resize"></div>
+
         @* Panel header *@
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--neutral-stroke-divider-rest); flex-shrink: 0;">
             <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="8">
                 <FluentIcon Value="@(new Icons.Regular.Size20.TextBulletListSquare())" Color="Color.Neutral" />
                 <FluentLabel Typo="Typography.H6" Style="margin: 0;">Console</FluentLabel>
             </FluentStack>
-            <FluentStack VerticalAlignment="VerticalAlignment.Center" Gap="4">
+            <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalAlignment="HorizontalAlignment.Right" Gap="4">
                 <FluentButton Size="ButtonSize.ExtraSmall" Appearance="Appearance.Stealth"
-                              Title="Clear log" OnClick="ClearLogs">
+                              Title="@ClearButtonTitle" OnClick="ClearLogs"
+                              Disabled="@(ClearTargetCount == 0)">
                     <FluentIcon Value="@(new Icons.Regular.Size16.Delete())" Color="Color.Neutral" />
                 </FluentButton>
                 <FluentButton Size="ButtonSize.ExtraSmall" Appearance="Appearance.Stealth"
@@ -200,7 +206,58 @@
 
     private void OpenPanel() => _showPanel = true;
     private void ClosePanel() => _showPanel = false;
-    private void ClearLogs() { _logEntries.Clear(); }
+
+    /// <summary>
+    /// Clears log entries according to the currently selected filter.
+    /// When "All" is active, wipes everything; otherwise only clears entries
+    /// matching the active level (Error also clears Critical).
+    /// </summary>
+    private void ClearLogs()
+    {
+        LogStore.Clear(_filterLevel);
+        _logEntries = LogStore.GetAll().ToList();
+    }
+
+    private int ClearTargetCount => _filterLevel switch
+    {
+        null => _logEntries.Count,
+        LogLevel.Error => _logEntries.Count(e => e.Level is LogLevel.Error or LogLevel.Critical),
+        var lvl => _logEntries.Count(e => e.Level == lvl)
+    };
+
+    private string ClearButtonTitle => _filterLevel switch
+    {
+        null => $"Clear all ({ClearTargetCount})",
+        LogLevel.Information => $"Clear info entries ({ClearTargetCount})",
+        LogLevel.Warning => $"Clear warnings ({ClearTargetCount})",
+        LogLevel.Error => $"Clear errors ({ClearTargetCount})",
+        _ => $"Clear {_filterLevel} ({ClearTargetCount})"
+    };
+
+    // ── Resizable panel ──────────────────────────────────────────────
+    private int _panelWidth = 680;
+    private const int MinPanelWidth = 360;
+    private const int MaxPanelWidth = 1400;
+    private IJSObjectReference? _resizeModule;
+    private DotNetObjectReference<StatusFooter>? _selfRef;
+
+    private string PanelStyle => $"z-index: 1000; width: {_panelWidth}px;";
+
+    private async Task StartResize(MouseEventArgs e)
+    {
+        _selfRef ??= DotNetObjectReference.Create(this);
+        _resizeModule ??= await JS.InvokeAsync<IJSObjectReference>(
+            "import", "/js/kast-console-resize.js");
+        await _resizeModule.InvokeVoidAsync(
+            "start", _selfRef, _panelWidth, MinPanelWidth, MaxPanelWidth, e.ClientX);
+    }
+
+    [JSInvokable]
+    public Task SetPanelWidth(int width)
+    {
+        _panelWidth = Math.Clamp(width, MinPanelWidth, MaxPanelWidth);
+        return InvokeAsync(StateHasChanged);
+    }
 
     private static string LevelLabel(LogLevel l) => l switch
     {
@@ -226,11 +283,17 @@
         return parts.Length > 1 ? parts[^1] : cat;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _disposed = true;
         LogStore.OnNewEntry -= OnLogStoreUpdated;
         _healthTimer?.Stop();
         _healthTimer?.Dispose();
+
+        if (_resizeModule is not null)
+        {
+            try { await _resizeModule.DisposeAsync(); } catch { /* ignore */ }
+        }
+        _selfRef?.Dispose();
     }
 }
