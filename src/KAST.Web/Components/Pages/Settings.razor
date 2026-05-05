@@ -275,6 +275,9 @@
 
     private async Task StartQrLogin()
     {
+        if (_loggingIn || _qrPolling)
+            return;
+
         _loggingIn = true;
         _qrCodeBase64 = null;
         _challengeUrl = null;

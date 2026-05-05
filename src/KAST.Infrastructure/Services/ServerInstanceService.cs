@@ -27,6 +27,7 @@ public class ServerInstanceService(
         => await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
             .Include(s => s.HeadlessClients)
+            .AsNoTracking()
             .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == id, ct);
 

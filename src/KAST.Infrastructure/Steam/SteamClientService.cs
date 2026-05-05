@@ -24,6 +24,9 @@ public class SteamClientService : ISteamService, IDisposable
     private bool _isRunning;
     private CancellationTokenSource? _callbackCts;
     private bool _isReconnecting;
+    private readonly SemaphoreSlim _qrAuthLock = new(1, 1);
+    private readonly SemaphoreSlim _anonLoginLock = new(1, 1);
+    private Task<bool>? _anonymousLoginTask;
 
     // Temporary credentials for the login callback flow
     private string? _pendingAccessToken;
@@ -136,24 +139,58 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task<bool> LoginAnonymousAsync(CancellationToken ct = default)
     {
-        _loginTcs = new TaskCompletionSource<bool>();
-        CurrentUsername = null;
-        _pendingAccessToken = null;
-        _currentRefreshToken = null;
-        StartCallbackLoop();
+        // Fast path: already logged in anonymously
+        if (_isConnected && CurrentUsername == null)
+            return true;
 
-        if (_steamClient.IsConnected)
+        await _anonLoginLock.WaitAsync(ct);
+        Task<bool> loginTask;
+        try
         {
-            // Already connected — just send the anonymous logon directly
-            _steamUser.LogOnAnonymous();
+            // Re-check once we own the lock
+            if (_isConnected && CurrentUsername == null)
+                return true;
+
+            // Share a single in-flight anonymous login attempt across callers
+            if (_anonymousLoginTask is { IsCompleted: false })
+            {
+                loginTask = _anonymousLoginTask;
+            }
+            else
+            {
+                _loginTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                CurrentUsername = null;
+                _pendingAccessToken = null;
+                _currentRefreshToken = null;
+                StartCallbackLoop();
+
+                if (_steamClient.IsConnected)
+                {
+                    // Already transport-connected — request anonymous logon.
+                    _steamUser.LogOnAnonymous();
+                }
+                else
+                {
+                    _steamClient.Connect();
+                }
+
+                _anonymousLoginTask = _loginTcs.Task;
+                loginTask = _anonymousLoginTask;
+            }
         }
-        else
+        finally
         {
-            _steamClient.Connect();
+            _anonLoginLock.Release();
         }
 
-        using var reg = ct.Register(() => _loginTcs.TrySetResult(false));
-        return await _loginTcs.Task;
+        using var reg = ct.Register(() => _loginTcs?.TrySetResult(false));
+        var result = await loginTask;
+
+        // Clear finished task so a future reconnect can start a new attempt.
+        if (loginTask.IsCompleted)
+            _anonymousLoginTask = null;
+
+        return result;
     }
 
     public async Task<bool> LoginWithTokenAsync(string username, string refreshToken, CancellationToken ct = default)
@@ -212,18 +249,18 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task<SteamQrAuthSession> BeginQrLoginAsync(CancellationToken ct = default)
     {
-        // Ensure we're connected (may not be if logout's auto-reconnect failed)
-        if (!_isConnected)
-        {
-            _logger.LogWarning("Not connected to Steam — reconnecting before QR auth");
-            await LoginAnonymousAsync(ct);
-        }
-
-        if (!_isConnected)
-            return new SteamQrAuthSession { ErrorMessage = "Failed to connect to Steam" };
-
+        await _qrAuthLock.WaitAsync(ct);
         try
         {
+            // Ensure we're connected (may not be if logout's auto-reconnect failed)
+            if (!_isConnected)
+            {
+                _logger.LogWarning("Not connected to Steam — reconnecting before QR auth");
+                var ok = await LoginAnonymousAsync(ct);
+                if (!ok || !_isConnected)
+                    return new SteamQrAuthSession { ErrorMessage = "Failed to connect to Steam" };
+            }
+
             var qrSession = await _steamClient.Authentication.BeginAuthSessionViaQRAsync(
                 new AuthSessionDetails());
 
@@ -248,6 +285,10 @@ public class SteamClientService : ISteamService, IDisposable
         {
             _logger.LogError(ex, "Failed to begin QR auth session");
             return new SteamQrAuthSession { ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            _qrAuthLock.Release();
         }
     }
 
