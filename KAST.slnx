@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/KAST.Core/KAST.Core.csproj" />
     <Project Path="src/KAST.Infrastructure/KAST.Infrastructure.csproj" />
+    <Project Path="src/KAST.UI/KAST.UI.csproj" />
     <Project Path="src/KAST.Web/KAST.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

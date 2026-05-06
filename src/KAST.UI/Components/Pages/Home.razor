@@ -1,0 +1,207 @@
+@page "/"
+@implements IAsyncDisposable
+@inject IModService ModService
+@inject IServerInstanceService ServerService
+@inject IMonitoringService MonitoringService
+@inject NavigationManager Nav
+
+<PageTitle>KAST -- Dashboard</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Dashboard</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Server Instances</MudText>
+                <MudText Typo="Typo.h4">@_instances.Count</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Total configured</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Running</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Success">@_instances.Count(i => i.Status == ServerInstanceStatus.Running)</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Active servers</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Installed Mods</MudText>
+                <MudText Typo="Typo.h4">@_mods.Count</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Available for use</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Updates Available</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Warning">@_mods.Count(m => m.Status == ModStatus.UpdateAvailable)</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Mods needing update</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudText Typo="Typo.h6" Class="mt-6 mb-3">Host Resources</MudText>
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
+                <MudText Typo="Typo.h5">@_hostMetrics.CpuUsagePercent.ToString("F1")%</MudText>
+                <MudProgressLinear Value="@_hostMetrics.CpuUsagePercent" Color="@GetResourceColor(_hostMetrics.CpuUsagePercent)" Class="mt-2" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
+                <MudText Typo="Typo.h5">@_hostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatBytes(_hostMetrics.UsedMemoryBytes) / @FormatBytes(_hostMetrics.TotalMemoryBytes)</MudText>
+                <MudProgressLinear Value="@_hostMetrics.MemoryUsagePercent" Color="@GetResourceColor(_hostMetrics.MemoryUsagePercent)" Class="mt-2" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Disk</MudText>
+                <MudText Typo="Typo.h5">@_hostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatBytes(_hostMetrics.UsedDiskBytes) / @FormatBytes(_hostMetrics.TotalDiskBytes)</MudText>
+                <MudProgressLinear Value="@_hostMetrics.DiskUsagePercent" Color="@GetResourceColor(_hostMetrics.DiskUsagePercent)" Class="mt-2" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudText Typo="Typo.h6" Class="mt-6 mb-3">Server Instances</MudText>
+
+@if (_instances.Count == 0)
+{
+    <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="1">
+        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+        <MudText Color="Color.Secondary">No server instances configured yet.</MudText>
+        <MudButton Href="/servers" Color="Color.Primary" Class="mt-2">Create one</MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3">
+        @foreach (var instance in _instances)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="2" Style="cursor:pointer;" @onclick="@(() => GoToServer(instance.Id))">
+                    <MudCardContent>
+                        <div class="d-flex align-center gap-2 mb-1">
+                            <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" Size="Size.Small" />
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@instance.Name</MudText>
+                            <MudSpacer />
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(instance.Status)" Variant="Variant.Filled">@instance.Status</MudChip>
+                        </div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Port @instance.Port -- @instance.Mods.Count mods</MudText>
+                        @if (instance.StartedAt.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Running since @instance.StartedAt.Value.ToString("g")
+                            </MudText>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private IReadOnlyList<SteamMod> _mods = [];
+    private IReadOnlyList<ServerInstance> _instances = [];
+    private HostMetrics _hostMetrics = new();
+    private CancellationTokenSource? _cts;
+    private bool _disposed;
+
+    private void GoToServer(int id) => Nav.NavigateTo("/servers/" + id);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+        _cts = new CancellationTokenSource();
+        _ = RunPeriodicRefresh(_cts.Token);
+    }
+
+    private async Task RefreshData(CancellationToken ct = default)
+    {
+        if (_disposed || ct.IsCancellationRequested) return;
+        try
+        {
+            _mods = await ModService.GetAllModsAsync(ct);
+            _instances = await ServerService.GetAllInstancesAsync(ct);
+            _hostMetrics = await MonitoringService.GetHostMetricsAsync(ct);
+        }
+        catch { }
+    }
+
+    private async Task RunPeriodicRefresh(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (!_disposed && await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    if (_disposed) return;
+                    await RefreshData(ct);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Color.Success,
+        ServerInstanceStatus.Crashed => Color.Error,
+        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
+        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.StopCircle
+    };
+
+    private static Color GetResourceColor(double pct) => pct switch
+    {
+        > 90 => Color.Error,
+        > 70 => Color.Warning,
+        _ => Color.Success
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
+        int order = 0; double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
+        return $"{size:F1} {sizes[order]}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        await Task.CompletedTask;
+    }
+}

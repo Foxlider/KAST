@@ -1,0 +1,395 @@
+@page "/settings"
+@implements IDisposable
+@inject IApiKeyService ApiKeyService
+@inject ISettingsService SettingsService
+@inject ISteamService SteamService
+@inject ISnackbar Snackbar
+
+<PageTitle>KAST -- Settings</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
+
+    @* ════ General ════ *@
+    <MudTabPanel Text="General">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Downloads</MudText>
+                <div class="d-flex align-center gap-4 flex-wrap">
+                    <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel Downloads"
+                                     Min="1" Max="32" Step="1" Style="width:160px;" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Number of concurrent file downloads when installing server files (1–32).
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
+
+                <MudDivider Class="my-4" />
+
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Speed Benchmark</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                    Downloads ~30 MB from Steam CDN at different parallelism levels to find the optimal setting for your connection.
+                </MudText>
+
+                @if (_benchmarkRunning)
+                {
+                    <div class="d-flex align-center gap-2">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body2">@(_benchmarkStatus ?? "Running benchmark...")</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Outlined" OnClick="RunBenchmark" Disabled="@(!SteamService.IsConnected)">
+                        Run Benchmark
+                    </MudButton>
+                    @if (!SteamService.IsConnected)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">Connect to Steam first.</MudText>
+                    }
+                }
+
+                @if (_benchmarkResults is { Count: > 0 })
+                {
+                    <MudSimpleTable Style="margin-top:12px; max-width:480px;" Dense="true" Hover="true">
+                        <thead><tr><th>Threads</th><th>Speed</th><th>Time</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _benchmarkResults)
+                            {
+                                <tr>
+                                    <td>@r.Parallelism</td>
+                                    <td>@r.MbPerSecond.ToString("F1") MB/s</td>
+                                    <td>@r.ElapsedSeconds.ToString("F1")s</td>
+                                    <td>
+                                        @if (r.Parallelism == GetBestBenchmark().Parallelism)
+                                        { <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">Best</MudChip> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                               OnClick="@(() => ApplyBenchmark(GetBestBenchmark().Parallelism))">
+                        Apply @GetBestBenchmark().Parallelism parallel downloads (@GetBestBenchmark().MbPerSecond.ToString("F1") MB/s)
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
+
+    @* ════ Steam ════ *@
+    <MudTabPanel Text="Steam">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Steam Account</MudText>
+
+                @if (SteamService.IsAuthenticated)
+                {
+                    <div class="d-flex align-center gap-4 flex-wrap pa-3"
+                         style="border-radius:8px; background:rgba(255,255,255,.04);">
+                        @if (!string.IsNullOrEmpty(SteamService.Profile?.AvatarUrl))
+                        {
+                            <img src="@SteamService.Profile.AvatarUrl" alt="Steam avatar"
+                                 style="width:64px;height:64px;border-radius:50%;object-fit:cover;" />
+                        }
+                        <div>
+                            <MudText Typo="Typo.h6">@(SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername)</MudText>
+                            @if (SteamService.Profile?.PersonaName != SteamService.CurrentUsername)
+                            { <MudText Typo="Typo.caption" Color="Color.Secondary">@SteamService.CurrentUsername</MudText> }
+                            @if (SteamService.Profile?.SteamId > 0)
+                            { <MudText Typo="Typo.caption" Color="Color.Secondary">SteamID: @SteamService.Profile.SteamId</MudText> }
+                        </div>
+                        <MudButton Variant="Variant.Outlined" Class="ml-auto" OnClick="Logout">Sign out</MudButton>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                        Sign in to download and manage mods with your Steam account.
+                    </MudText>
+
+                    @if (_qrCodeBase64 == null && !_loggingIn)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartQrLogin">
+                            Sign in with Steam
+                        </MudButton>
+                    }
+                    else if (_loggingIn && _qrCodeBase64 == null)
+                    {
+                        <div class="d-flex align-center gap-2 mt-2">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Typo="Typo.body2">Connecting to Steam...</MudText>
+                        </div>
+                    }
+                    else if (_qrCodeBase64 != null)
+                    {
+                        <div class="d-flex gap-6 flex-wrap align-center mt-2">
+                            <img src="data:image/png;base64,@_qrCodeBase64" alt="Steam QR Login"
+                                 style="width:200px;height:200px;image-rendering:pixelated;border-radius:8px;" />
+                            <div>
+                                <MudText Typo="Typo.subtitle2" Class="mb-1">Scan with the Steam mobile app</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                                    Open Steam Guard &rarr; tap <b>Confirm sign-in</b>
+                                </MudText>
+                                @if (!string.IsNullOrEmpty(_challengeUrl))
+                                {
+                                    <MudText Typo="Typo.body2" Class="mb-3">
+                                        On mobile? <MudLink Href="@_challengeUrl" Target="_blank">Tap here</MudLink>
+                                        to open directly in the Steam app.
+                                    </MudText>
+                                }
+                                @if (_qrPolling)
+                                {
+                                    <div class="d-flex align-center gap-2">
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                        <MudText Typo="Typo.body2">Waiting for confirmation...</MudText>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudButton Variant="Variant.Text" OnClick="StartQrLogin">Refresh QR Code</MudButton>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
+
+    @* ════ API Keys ════ *@
+    <MudTabPanel Text="API Keys">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-1">API Keys</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                    Generate API keys for bot integrations or custom frontends. Keys are shown only once upon creation.
+                </MudText>
+
+                <div class="d-flex gap-2 mb-3 flex-wrap">
+                    <MudTextField @bind-Value="_newKeyName" Label="Key name (e.g. Discord Bot)"
+                                  Style="width:300px;" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateApiKey">Generate Key</MudButton>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_newRawKey))
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mb-3">
+                        Copy this key — it won't be shown again:
+                        <code style="margin-left:8px; font-family:monospace;">@_newRawKey</code>
+                    </MudAlert>
+                }
+
+                @if (_apiKeys.Count > 0)
+                {
+                    <MudDataGrid T="ApiKey" Items="@_apiKeys" Dense="true" Hover="true">
+                        <Columns>
+                            <PropertyColumn Property="k => k.Name" Title="Name" />
+                            <TemplateColumn Title="Prefix">
+                                <CellTemplate>@context.Item.KeyPrefix...</CellTemplate>
+                            </TemplateColumn>
+                            <TemplateColumn Title="Created">
+                                <CellTemplate>@context.Item.CreatedAt.ToString("g")</CellTemplate>
+                            </TemplateColumn>
+                            <TemplateColumn Title="Last Used">
+                                <CellTemplate>@(context.Item.LastUsedAt?.ToString("g") ?? "Never")</CellTemplate>
+                            </TemplateColumn>
+                            <TemplateColumn Title="Status">
+                                <CellTemplate>
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@(context.Item.IsActive ? Color.Success : Color.Default)"
+                                             Variant="Variant.Outlined">
+                                        @(context.Item.IsActive ? "Active" : "Revoked")
+                                    </MudChip>
+                                </CellTemplate>
+                            </TemplateColumn>
+                            <TemplateColumn Title="Actions">
+                                <CellTemplate>
+                                    @if (context.Item.IsActive)
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                                   OnClick="@(() => RevokeKey(context.Item.Id))">
+                                            Revoke
+                                        </MudButton>
+                                    }
+                                </CellTemplate>
+                            </TemplateColumn>
+                        </Columns>
+                    </MudDataGrid>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
+
+    @* ════ About ════ *@
+    <MudTabPanel Text="About">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent Class="text-center pa-8">
+                <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg" style="width:200px;">
+                    <defs>
+                        <linearGradient id="about-molten" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#ff6b35"/>
+                            <stop offset="50%" style="stop-color:#ff4444"/>
+                            <stop offset="100%" style="stop-color:#cc2200"/>
+                        </linearGradient>
+                    </defs>
+                    <text x="100" y="45" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif"
+                          font-size="48" font-weight="700" fill="url(#about-molten)">KAST</text>
+                </svg>
+                <MudText Typo="Typo.h5" Class="mt-2">Keelah's Arma Server Tool</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">Version 1.0.0</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-3">
+                    Manage your Arma 3 dedicated servers with ease.<br />
+                    Download mods, configure instances, monitor performance.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private bool _loggingIn;
+    private string? _qrCodeBase64;
+    private string? _challengeUrl;
+    private SteamQrAuthSession? _qrSession;
+    private bool _qrPolling;
+    private CancellationTokenSource? _qrCts;
+
+    private IReadOnlyList<ApiKey> _apiKeys = [];
+    private string _newKeyName = "";
+    private string _newRawKey = "";
+    private int _parallelDownloads = 4;
+
+    private bool _benchmarkRunning;
+    private string? _benchmarkStatus;
+    private IReadOnlyList<BenchmarkResult>? _benchmarkResults;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SteamService.AuthStateChanged += OnAuthStateChanged;
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        var settings = await SettingsService.GetSettingsAsync();
+        _parallelDownloads = settings.ParallelDownloads;
+    }
+
+    private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task StartQrLogin()
+    {
+        if (_loggingIn || _qrPolling) return;
+        _loggingIn = true;
+        _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null; _qrPolling = false;
+        StateHasChanged();
+
+        var session = await SteamService.BeginQrLoginAsync();
+        if (!string.IsNullOrEmpty(session.ErrorMessage))
+        {
+            _loggingIn = false;
+            Snackbar.Add($"QR error: {session.ErrorMessage}", Severity.Error);
+            StateHasChanged();
+            return;
+        }
+
+        _challengeUrl = session.ChallengeUrl;
+        _qrCodeBase64 = GenerateQrCodeBase64(session.ChallengeUrl);
+        _qrSession = session;
+        _qrPolling = true;
+        _loggingIn = false;
+
+        session.ChallengeUrlChanged = newUrl =>
+            InvokeAsync(() => { _challengeUrl = newUrl; _qrCodeBase64 = GenerateQrCodeBase64(newUrl); StateHasChanged(); });
+
+        StateHasChanged();
+        _qrCts?.Cancel();
+        _qrCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        _ = PollQrAsync(_qrCts.Token);
+    }
+
+    private async Task PollQrAsync(CancellationToken ct)
+    {
+        try
+        {
+            var success = await SteamService.PollQrLoginAsync(_qrSession!, ct);
+            await InvokeAsync(() =>
+            {
+                _qrPolling = false; _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null;
+                Snackbar.Add(success
+                    ? $"Signed in as {SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername}"
+                    : "QR login expired or failed", success ? Severity.Success : Severity.Error);
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await InvokeAsync(() => { _qrPolling = false; _qrCodeBase64 = null; _challengeUrl = null; StateHasChanged(); });
+        }
+    }
+
+    private static string GenerateQrCodeBase64(string url)
+    {
+        using var qrGenerator = new QRCoder.QRCodeGenerator();
+        using var qrData = qrGenerator.CreateQrCode(url, QRCoder.QRCodeGenerator.ECCLevel.M);
+        using var qrCode = new QRCoder.PngByteQRCode(qrData);
+        return Convert.ToBase64String(qrCode.GetGraphic(8));
+    }
+
+    private async Task Logout()
+    {
+        _qrCts?.Cancel();
+        _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null; _qrPolling = false;
+        await SteamService.LogoutAsync();
+        Snackbar.Add("Signed out of Steam", Severity.Info);
+    }
+
+    private async Task SaveGeneralSettings()
+    {
+        var settings = await SettingsService.GetSettingsAsync();
+        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 32);
+        await SettingsService.UpdateSettingsAsync(settings);
+        Snackbar.Add("Settings saved", Severity.Success);
+    }
+
+    private async Task RunBenchmark()
+    {
+        _benchmarkRunning = true; _benchmarkResults = null; _benchmarkStatus = "Preparing...";
+        StateHasChanged();
+        try
+        {
+            if (!SteamService.IsConnected)
+            { _benchmarkStatus = "Connecting to Steam..."; StateHasChanged(); await SteamService.LoginAnonymousAsync(); }
+            var log = new Progress<string>(msg => InvokeAsync(() => { _benchmarkStatus = msg; StateHasChanged(); }));
+            _benchmarkResults = await SteamService.BenchmarkDownloadAsync(log);
+        }
+        catch (Exception ex) { Snackbar.Add($"Benchmark failed: {ex.Message}", Severity.Error); }
+        finally { _benchmarkRunning = false; _benchmarkStatus = null; StateHasChanged(); }
+    }
+
+    private async Task ApplyBenchmark(int parallelism) { _parallelDownloads = parallelism; await SaveGeneralSettings(); }
+
+    private BenchmarkResult GetBestBenchmark() => _benchmarkResults!.OrderByDescending(r => r.MbPerSecond).First();
+
+    private async Task CreateApiKey()
+    {
+        if (string.IsNullOrWhiteSpace(_newKeyName)) return;
+        var (key, raw) = await ApiKeyService.CreateApiKeyAsync(_newKeyName.Trim());
+        _newRawKey = raw;
+        _ = key;
+        _newKeyName = "";
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+    }
+
+    private async Task RevokeKey(int id)
+    {
+        await ApiKeyService.RevokeKeyAsync(id);
+        _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        Snackbar.Add("API key revoked", Severity.Success);
+    }
+
+    public void Dispose()
+    {
+        SteamService.AuthStateChanged -= OnAuthStateChanged;
+        _qrCts?.Cancel();
+        _qrCts?.Dispose();
+    }
+}

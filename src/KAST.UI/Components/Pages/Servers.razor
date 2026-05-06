@@ -1,0 +1,131 @@
+@page "/servers"
+@inject IServerInstanceService ServerService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>KAST — Servers</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Server Instances</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => Nav.NavigateTo("/servers/new"))">
+        New Instance
+    </MudButton>
+</div>
+
+@if (_instances.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="1">
+        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+        <MudText Typo="Typo.h6" Color="Color.Secondary">No server instances</MudText>
+        <MudText Color="Color.Secondary" Class="mb-3">Create your first Arma 3 server instance to get started.</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Nav.NavigateTo("/servers/new"))">
+            Create Instance
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3">
+        @foreach (var instance in _instances)
+        {
+            <MudItem xs="12" sm="6" lg="4">
+                <MudCard Elevation="2" Style="cursor:pointer;" @onclick="@(() => Nav.NavigateTo($"/servers/{instance.Id}"))">
+                    <MudCardContent>
+                        <div class="d-flex align-center gap-2 mb-2">
+                            <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" />
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                @instance.Name
+                            </MudText>
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(instance.Status)" Variant="Variant.Filled">
+                                @instance.Status
+                            </MudChip>
+                        </div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Port: @instance.Port | Mods: @instance.Mods.Count | HC: @instance.HeadlessClientCount
+                        </MudText>
+                        @if (instance.StartedAt.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Running since @instance.StartedAt.Value.ToString("g")
+                            </MudText>
+                        }
+                    </MudCardContent>
+                    <MudCardActions @onclick:stopPropagation="true">
+                        @if (instance.Status == ServerInstanceStatus.Running)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                                       StartIcon="@Icons.Material.Filled.Stop"
+                                       OnClick="@(() => StopInstance(instance.Id))">Stop</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       OnClick="@(() => RestartInstance(instance.Id))">Restart</MudButton>
+                        }
+                        else if (instance.Status == ServerInstanceStatus.Stopped)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                                       OnClick="@(() => StartInstance(instance.Id))"
+                                       Disabled="@(!instance.InstalledAt.HasValue)">Start</MudButton>
+                        }
+                        <MudSpacer />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteInstance(instance.Id))" />
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private IReadOnlyList<ServerInstance> _instances = [];
+
+    protected override async Task OnInitializedAsync() => await RefreshInstances();
+
+    private async Task RefreshInstances()
+        => _instances = await ServerService.GetAllInstancesAsync();
+
+    private async Task StartInstance(int id)
+    {
+        try { await ServerService.StartInstanceAsync(id); Nav.NavigateTo($"/servers/{id}"); }
+        catch (Exception ex) { Snackbar.Add($"Failed to start: {ex.Message}", Severity.Error); await RefreshInstances(); }
+    }
+
+    private async Task StopInstance(int id)
+    {
+        try { await ServerService.StopInstanceAsync(id); Snackbar.Add("Server stopped", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error); }
+        finally { await RefreshInstances(); }
+    }
+
+    private async Task RestartInstance(int id)
+    {
+        try { await ServerService.RestartInstanceAsync(id); Snackbar.Add("Server restarted", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add($"Failed to restart: {ex.Message}", Severity.Error); }
+        finally { await RefreshInstances(); }
+    }
+
+    private async Task DeleteInstance(int id)
+    {
+        await ServerService.DeleteInstanceAsync(id);
+        await RefreshInstances();
+        Snackbar.Add("Instance deleted", Severity.Success);
+    }
+
+    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Color.Success,
+        ServerInstanceStatus.Crashed => Color.Error,
+        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
+        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
+        ServerInstanceStatus.Starting => Icons.Material.Filled.HourglassTop,
+        _ => Icons.Material.Filled.StopCircle
+    };
+}

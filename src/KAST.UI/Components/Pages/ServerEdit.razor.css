@@ -1,0 +1,122 @@
+/* ── Horizontal train-stop stepper ── */
+.kast-stepper {
+    display: flex;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding: 4px 0 8px;
+}
+
+.kast-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    min-width: 80px;
+    flex: 1;
+}
+
+/* Connector line between steps */
+.kast-step + .kast-step::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    right: 50%;
+    left: calc(-50%);
+    height: 2px;
+    background: rgba(255,255,255,.12);
+    z-index: 0;
+    transition: background .3s;
+}
+
+.kast-step--done + .kast-step::before,
+.kast-step--done + .kast-step--active::before {
+    background: #3dcb6c;
+}
+
+/* Circle */
+.kast-step__circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 1;
+    box-sizing: border-box;
+    transition: border-color .2s, background .2s, box-shadow .2s;
+}
+
+.kast-step--pending .kast-step__circle {
+    border: 2px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.04);
+    color: rgba(255,255,255,.35);
+}
+
+.kast-step--active .kast-step__circle {
+    border: 2px solid #7e6fff;
+    background: #7e6fff;
+    color: #fff;
+    box-shadow: 0 0 0 4px rgba(126,111,255,.25);
+    animation: kast-step-pulse 1.6s ease-in-out infinite;
+}
+
+.kast-step--done .kast-step__circle {
+    border: 2px solid #3dcb6c;
+    background: #3dcb6c;
+    color: #fff;
+}
+
+.kast-step--skip .kast-step__circle {
+    border: 2px dashed rgba(255,255,255,.2);
+    background: transparent;
+    color: rgba(255,255,255,.35);
+}
+
+.kast-step--failed .kast-step__circle {
+    border: 2px solid #ff3f5f;
+    background: #ff3f5f;
+    color: #fff;
+}
+
+@keyframes kast-step-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(126,111,255,.25); }
+    50%       { box-shadow: 0 0 0 8px rgba(126,111,255,0); }
+}
+
+/* Label */
+.kast-step__label {
+    margin-top: 6px;
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.3;
+    max-width: 90px;
+    word-wrap: break-word;
+    color: rgba(255,255,255,.4);
+}
+
+.kast-step--active .kast-step__label {
+    color: #7e6fff;
+    font-weight: 600;
+}
+
+.kast-step--done .kast-step__label {
+    color: #3dcb6c;
+}
+
+.kast-step--failed .kast-step__label {
+    color: #ff3f5f;
+}
+
+/* Detail under label */
+.kast-step__detail {
+    font-size: 10px;
+    color: rgba(255,255,255,.4);
+    text-align: center;
+    margin-top: 2px;
+}
+
+.kast-step--active .kast-step__detail {
+    color: #7e6fff;
+}
