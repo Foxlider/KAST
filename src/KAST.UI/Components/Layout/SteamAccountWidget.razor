@@ -1,0 +1,131 @@
+@inject ISteamService SteamService
+@implements IDisposable
+
+@* ── Compact AppBar widget: avatar + persona name, opens detail popover ── *@
+<MudTooltip Text="@(SteamService.IsAuthenticated ? SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername : "Not signed in to Steam")" Placement="Placement.Bottom">
+    <MudChip T="string" OnClick="@TogglePopover"
+             Style="cursor:pointer; height:30px;"
+             Color="@(SteamService.IsAuthenticated ? Color.Success : Color.Default)"
+             Variant="Variant.Outlined"
+             Class="mud-chip-dense mr-1">
+        @if (SteamService.IsAuthenticated && !string.IsNullOrEmpty(SteamService.Profile?.AvatarUrl))
+        {
+            <img src="@SteamService.Profile!.AvatarUrl" alt="avatar"
+                 style="width:20px;height:20px;border-radius:50%;object-fit:cover;margin-right:6px;flex-shrink:0;" />
+        }
+        else
+        {
+            @* Steam SVG icon *@
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:6px;flex-shrink:0;fill:currentColor;">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+        }
+        <MudText Typo="Typo.caption" Style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            @(SteamService.IsAuthenticated
+                ? (SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername ?? "Steam")
+                : "Steam")
+        </MudText>
+    </MudChip>
+</MudTooltip>
+
+@* ── Popover detail card ── *@
+<MudPopover Open="@_open" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+            Class="pa-0" Style="min-width:240px; z-index:9999;">
+    <MudPaper Elevation="8" Style="overflow:hidden; border-radius:8px;">
+        @if (SteamService.IsAuthenticated)
+        {
+            <div class="pa-3" style="background:linear-gradient(135deg,rgba(23,26,33,.9),rgba(28,32,40,.9)); border-bottom:1px solid rgba(255,255,255,.08);">
+                <div class="d-flex align-center gap-3">
+                    @if (!string.IsNullOrEmpty(SteamService.Profile?.AvatarUrl))
+                    {
+                        <img src="@SteamService.Profile!.AvatarUrl" alt="Steam avatar"
+                             style="width:52px;height:52px;border-radius:4px;object-fit:cover;flex-shrink:0;border:2px solid rgba(255,255,255,.15);" />
+                    }
+                    else
+                    {
+                        <div style="width:52px;height:52px;border-radius:4px;background:rgba(255,255,255,.08);flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                            <svg viewBox="0 0 24 24" style="width:28px;height:28px;fill:rgba(255,255,255,.4);">
+                                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                            </svg>
+                        </div>
+                    }
+                    <div style="min-width:0;">
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            @(SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername)
+                        </MudText>
+                        @if (!string.IsNullOrEmpty(SteamService.CurrentUsername) &&
+                             SteamService.Profile?.PersonaName != SteamService.CurrentUsername)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@SteamService.CurrentUsername</MudText>
+                        }
+                        @if (SteamService.Profile?.SteamId > 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-size:10px;">
+                                SteamID64: @SteamService.Profile.SteamId
+                            </MudText>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="pa-2">
+                <MudButton FullWidth="true" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                           Href="/settings" OnClick="ClosePopover"
+                           StartIcon="@Icons.Material.Filled.Settings">
+                    Account Settings
+                </MudButton>
+                <MudButton FullWidth="true" Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                           OnClick="Logout"
+                           StartIcon="@Icons.Material.Filled.Logout">
+                    Sign out
+                </MudButton>
+            </div>
+        }
+        else
+        {
+            <div class="pa-3">
+                <div class="d-flex align-center gap-2 mb-2">
+                    <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:var(--mud-palette-text-secondary);">
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    <MudText Typo="Typo.subtitle2">Steam</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="mud-chip-dense">Not signed in</MudChip>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="display:block;">
+                    Sign in to download mods and server files.
+                </MudText>
+                <MudButton FullWidth="true" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                           Href="/settings" OnClick="ClosePopover">
+                    Sign in with Steam
+                </MudButton>
+            </div>
+        }
+    </MudPaper>
+</MudPopover>
+
+@* clicks outside close the popover *@
+@if (_open)
+{
+    <div style="position:fixed;inset:0;z-index:9998;" @onclick="ClosePopover"></div>
+}
+
+@code {
+    private bool _open;
+
+    protected override void OnInitialized()
+    {
+        SteamService.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    private void TogglePopover() => _open = !_open;
+    private void ClosePopover() => _open = false;
+
+    private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task Logout()
+    {
+        _open = false;
+        await SteamService.LogoutAsync();
+    }
+
+    public void Dispose() => SteamService.AuthStateChanged -= OnAuthStateChanged;
+}

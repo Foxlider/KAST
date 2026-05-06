@@ -1,0 +1,864 @@
+@page "/servers/new"
+@page "/servers/{Id:int}"
+@using KAST.Core.Events
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject IServerInstanceService ServerService
+@inject IServerConfigService ConfigService
+@inject IModService ModService
+@inject ISettingsService SettingsService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject ContentOrchestrator ContentOrchestrator
+@inject ContentProgressTracker ContentTracker
+@inject IJSRuntime JS
+
+<PageTitle>KAST -- @(_isNew ? "New Server" : _instance.Name)</PageTitle>
+
+@* ── Toolbar ── *@
+<div class="d-flex align-center gap-2 mb-4 flex-wrap">
+    <MudIcon Icon="@GetStatusIcon(_instance.Status)" Color="@GetStatusColor(_instance.Status)" />
+    <MudText Typo="Typo.h5" Class="mr-2" Style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;">
+        @(_isNew ? "New Server Instance" : _instance.Name)
+    </MudText>
+    @if (!_isNew)
+    {
+        <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(_instance.Status)" Variant="Variant.Filled">@_instance.Status</MudChip>
+    }
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="Save">Save</MudButton>
+    @if (!_isNew)
+    {
+        @if (_instance.Status is ServerInstanceStatus.Running or ServerInstanceStatus.Starting)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopServer">Stop</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="LaunchServer"
+                       Disabled="@(!_instance.InstalledAt.HasValue || _instance.Status == ServerInstanceStatus.Downloading)">
+                Launch
+            </MudButton>
+        }
+    }
+</div>
+
+<MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
+
+    @* ════════════ GENERAL ════════════ *@
+    <MudTabPanel Text="General">
+        <MudGrid Class="mt-3" Spacing="3">
+            <MudItem xs="12" sm="6">
+                <MudTextField Value="@_instance.Name"
+                              ValueChanged="@((string v) => { _instance.Name = v; OnNameChanged(); })"
+                              Label="Instance Name" FullWidth="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_instance.InstallPath" Label="Install Path" FullWidth="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField @bind-Value="_instance.Port" Label="Game Port" Min="1" Max="65535" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField @bind-Value="_instance.SteamQueryPort" Label="Steam Query Port" Min="1" Max="65535" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField @bind-Value="_instance.HeadlessClientCount" Label="Headless Clients" Min="0" Max="10" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudSelect @bind-Value="_restartPolicyStr" Label="Restart Policy" FullWidth="true">
+                    <MudSelectItem Value="@("None")">None</MudSelectItem>
+                    <MudSelectItem Value="@("OnCrash")">On Crash</MudSelectItem>
+                    <MudSelectItem Value="@("Always")">Always</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_instance.AdditionalParameters" Label="Additional Launch Parameters"
+                              FullWidth="true" Placeholder="-hugepages" />
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Creator DLC</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.ContactDlc" Label="Contact" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.GmDlc" Label="Global Mobilization" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.PfDlc" Label="Prairie Fire" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.CslaDlc" Label="CSLA Iron Curtain" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.WsDlc" Label="Western Sahara" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.SpeDlc" Label="Spearhead 1944" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.RfDlc" Label="Reaction Forces" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_instance.EfDlc" Label="Expeditionary Forces" Color="Color.Primary" /></MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Schedule</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12"><MudSwitch @bind-Value="_instance.ScheduleEnabled" Label="Enable Schedule" Color="Color.Primary" /></MudItem>
+            @if (_instance.ScheduleEnabled)
+            {
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_instance.AutoStartTime" Label="Auto-Start (HH:mm)" Placeholder="08:00" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_instance.AutoStopTime" Label="Auto-Stop (HH:mm)" Placeholder="23:00" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Performance</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_serverConfig.EnableHT" Label="Enable HT" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_serverConfig.MaxMemOverride" Label="Override MaxMem" Color="Color.Primary" /></MudItem>
+            @if (_serverConfig.MaxMemOverride)
+            {
+                <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_serverConfig.MaxMem" Label="MaxMem (MB)" Min="512" /></MudItem>
+            }
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_serverConfig.CpuCountOverride" Label="Override CPU Count" Color="Color.Primary" /></MudItem>
+            @if (_serverConfig.CpuCountOverride)
+            {
+                <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_serverConfig.CpuCount" Label="CPU Count" Min="1" /></MudItem>
+            }
+            <MudItem xs="6" sm="3"><MudSwitch @bind-Value="_serverConfig.EnableRanking" Label="Enable Ranking" Color="Color.Primary" /></MudItem>
+        </MudGrid>
+
+        @* Command line preview *@
+        <div class="mt-4">
+            <div class="d-flex align-center gap-2 mb-1">
+                <MudText Typo="Typo.subtitle1">Launch Command</MudText>
+                <MudIconButton Icon="@(_cmdExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                               Size="Size.Small" OnClick="@(() => _cmdExpanded = !_cmdExpanded)" />
+            </div>
+            @if (_cmdExpanded)
+            {
+                <MudPaper Elevation="0" Class="pa-2" Style="background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px; overflow-x:auto; word-break:break-all;">
+                    @GetCommandLinePreview()
+                </MudPaper>
+            }
+        </div>
+    </MudTabPanel>
+
+    @* ════════════ SERVER CONFIG ════════════ *@
+    <MudTabPanel Text="Server Config">
+        <MudGrid Class="mt-3">
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Server Options</MudText>
+                        <MudTextField Value="@_serverConfig.Hostname"
+                                      ValueChanged="@((string v) => { _serverConfig.Hostname = v; OnServerConfigChanged(); })"
+                                      Label="Hostname" FullWidth="true" Class="mb-2" />
+                        <MudTextField Value="@_serverConfig.Password"
+                                      ValueChanged="@((string v) => { _serverConfig.Password = v; OnServerConfigChanged(); })"
+                                      Label="Server Password" FullWidth="true" Class="mb-2" />
+                        <MudTextField Value="@_serverConfig.PasswordAdmin"
+                                      ValueChanged="@((string v) => { _serverConfig.PasswordAdmin = v; OnServerConfigChanged(); })"
+                                      Label="Admin Password" FullWidth="true" Class="mb-2" />
+                        <MudNumericField T="int" Value="@_serverConfig.MaxPlayers"
+                                         ValueChanged="@((int v) => { _serverConfig.MaxPlayers = v; OnServerConfigChanged(); })"
+                                         Label="Max Players" Min="1" Max="128" />
+                    </MudCardContent>
+                </MudCard>
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Joining Rules</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6"><MudSwitch @bind-Value="_serverConfig.BattlEye" Label="BattlEye" Color="Color.Primary" /></MudItem>
+                            <MudItem xs="6"><MudSwitch @bind-Value="_serverConfig.KickDuplicate" Label="Kick Duplicates" Color="Color.Primary" /></MudItem>
+                            <MudItem xs="6"><MudSwitch @bind-Value="_serverConfig.Loopback" Label="LAN Mode" Color="Color.Primary" /></MudItem>
+                            <MudItem xs="6"><MudSwitch @bind-Value="_serverConfig.Upnp" Label="UPnP" Color="Color.Primary" /></MudItem>
+                            <MudItem xs="6" sm="4">
+                                <MudSelect Value="@_serverConfig.VerifySignatures.ToString()"
+                                           ValueChanged="@((string v) => { _serverConfig.VerifySignatures = int.Parse(v); OnServerConfigChanged(); })"
+                                           Label="Verify Signatures" FullWidth="true">
+                                    <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                                    <MudSelectItem Value="@("1")">Deprecated (v1+v2)</MudSelectItem>
+                                    <MudSelectItem Value="@("2")">Activated (v2)</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" sm="4">
+                                <MudSelect Value="@_serverConfig.AllowedFilePatching.ToString()"
+                                           ValueChanged="@((string v) => { _serverConfig.AllowedFilePatching = int.Parse(v); OnServerConfigChanged(); })"
+                                           Label="File Patching" FullWidth="true">
+                                    <MudSelectItem Value="@("0")">No Clients</MudSelectItem>
+                                    <MudSelectItem Value="@("1")">HC Only</MudSelectItem>
+                                    <MudSelectItem Value="@("2")">All Clients</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Timeouts &amp; Kick</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_serverConfig.MaxPing" ValueChanged="@((int v) => { _serverConfig.MaxPing = v; OnServerConfigChanged(); })" Label="Max Ping" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_serverConfig.MaxDesync" ValueChanged="@((int v) => { _serverConfig.MaxDesync = v; OnServerConfigChanged(); })" Label="Max Desync" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_serverConfig.MaxPacketLoss" ValueChanged="@((int v) => { _serverConfig.MaxPacketLoss = v; OnServerConfigChanged(); })" Label="Max Packet Loss" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_serverConfig.DisconnectTimeout" ValueChanged="@((int v) => { _serverConfig.DisconnectTimeout = v; OnServerConfigChanged(); })" Label="Disconnect Timeout" Min="5" Max="90" /></MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField Value="@_serverCfgRaw"
+                              ValueChanged="@((string v) => { _serverCfgRaw = v; OnServerCfgRawChanged(); })"
+                              Label="Raw server.cfg" FullWidth="true"
+                              Lines="35" Style="font-family:monospace; font-size:12px;" />
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ════════════ BASIC CONFIG ════════════ *@
+    <MudTabPanel Text="Basic Config">
+        <MudGrid Class="mt-3">
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">View &amp; Network</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_basicConfig.ViewDistance" ValueChanged="@((int v) => { _basicConfig.ViewDistance = v; OnBasicConfigChanged(); })" Label="View Distance" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="double" Value="@_basicConfig.TerrainGrid" ValueChanged="@((double v) => { _basicConfig.TerrainGrid = v; OnBasicConfigChanged(); })" Label="Terrain Grid" Step="0.125" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_basicConfig.MaxMsgSend" ValueChanged="@((int v) => { _basicConfig.MaxMsgSend = v; OnBasicConfigChanged(); })" Label="MaxMsgSend" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_basicConfig.MaxSizeGuaranteed" ValueChanged="@((int v) => { _basicConfig.MaxSizeGuaranteed = v; OnBasicConfigChanged(); })" Label="MaxSizeGuaranteed" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_basicConfig.MaxSizeNonguaranteed" ValueChanged="@((int v) => { _basicConfig.MaxSizeNonguaranteed = v; OnBasicConfigChanged(); })" Label="MaxSizeNonguaranteed" /></MudItem>
+                            <MudItem xs="6"><MudNumericField T="int" Value="@_basicConfig.MaxPacketSize" ValueChanged="@((int v) => { _basicConfig.MaxPacketSize = v; OnBasicConfigChanged(); })" Label="MaxPacketSize" /></MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField Value="@_basicCfgRaw"
+                              ValueChanged="@((string v) => { _basicCfgRaw = v; OnBasicCfgRawChanged(); })"
+                              Label="Raw basic.cfg" FullWidth="true"
+                              Lines="25" Style="font-family:monospace; font-size:12px;" />
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ════════════ DIFFICULTY ════════════ *@
+    <MudTabPanel Text="Difficulty">
+        <MudGrid Class="mt-3">
+            <MudItem xs="12" md="6">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Value="@_profileData.AiLevelPreset.ToString()"
+                                   ValueChanged="@((string v) => { _profileData.AiLevelPreset = int.Parse(v); OnProfileChanged(); })"
+                                   Label="AI Preset" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Low</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Normal</MudSelectItem>
+                            <MudSelectItem Value="@("2")">High</MudSelectItem>
+                            <MudSelectItem Value="@("3")">Custom</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Value="@_profileData.ThirdPersonView.ToString()"
+                                   ValueChanged="@((string v) => { _profileData.ThirdPersonView = int.Parse(v); OnProfileChanged(); })"
+                                   Label="3rd Person View" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Enabled</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Vehicles Only</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.WeaponCrosshair != 0)" ValueChanged="@((bool v) => { _profileData.WeaponCrosshair = v ? 1 : 0; OnProfileChanged(); })" Label="Weapon Crosshair" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.VisionAid != 0)" ValueChanged="@((bool v) => { _profileData.VisionAid = v ? 1 : 0; OnProfileChanged(); })" Label="Vision Aid" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.AutoReport != 0)" ValueChanged="@((bool v) => { _profileData.AutoReport = v ? 1 : 0; OnProfileChanged(); })" Label="Auto Report" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.ScoreTable != 0)" ValueChanged="@((bool v) => { _profileData.ScoreTable = v ? 1 : 0; OnProfileChanged(); })" Label="Score Table" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.DeathMessages != 0)" ValueChanged="@((bool v) => { _profileData.DeathMessages = v ? 1 : 0; OnProfileChanged(); })" Label="Death Messages" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(_profileData.VonID != 0)" ValueChanged="@((bool v) => { _profileData.VonID = v ? 1 : 0; OnProfileChanged(); })" Label="VoN ID" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField Value="@_profileRaw"
+                              ValueChanged="@((string v) => { _profileRaw = v; OnProfileRawChanged(); })"
+                              Label="Raw Arma3Profile" FullWidth="true"
+                              Lines="35" Style="font-family:monospace; font-size:12px;" />
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ════════════ MODS ════════════ *@
+    <MudTabPanel Text="Mods">
+        <MudGrid Class="mt-3" Spacing="2">
+            @* Available *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small" Class="mr-1" />
+                        Available Mods
+                    </MudText>
+                    @foreach (var mod in _unassignedMods)
+                    {
+                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
+                            @if (!string.IsNullOrEmpty(mod.ThumbnailUrl))
+                            {
+                                <img src="@mod.ThumbnailUrl" alt="" style="width:20px;height:20px;object-fit:cover;border-radius:3px;flex-shrink:0;" />
+                            }
+                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@mod.Name</MudText>
+                            <MudTooltip Text="Add as client mod">
+                                <MudIconButton Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" OnClick="@(() => AddMod(mod.Id, false))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Add as server-side mod">
+                                <MudIconButton Icon="@Icons.Material.Filled.Storage" Size="Size.Small" OnClick="@(() => AddMod(mod.Id, true))" />
+                            </MudTooltip>
+                        </div>
+                    }
+                    @if (_unassignedMods.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-flex justify-center mt-8">All mods assigned</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+            @* Client-Side *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Class="mr-1" />
+                        Client-Side (@_clientMods.Count)
+                    </MudText>
+                    @foreach (var im in _clientMods)
+                    {
+                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
+                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@im.SteamMod.Name</MudText>
+                            <MudTooltip Text="Move to server-side">
+                                <MudIconButton Icon="@Icons.Material.Filled.Storage" Size="Size.Small" OnClick="@(() => MoveToServerSide(im.SteamModId))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Remove mod">
+                                <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveMod(im.SteamModId))" />
+                            </MudTooltip>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+            @* Server-Side *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Class="mr-1" />
+                        Server-Side (@_serverMods.Count)
+                    </MudText>
+                    @foreach (var im in _serverMods)
+                    {
+                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
+                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@im.SteamMod.Name</MudText>
+                            <MudTooltip Text="Move to client-side">
+                                <MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small" OnClick="@(() => MoveToClientSide(im.SteamModId))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Remove mod">
+                                <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveMod(im.SteamModId))" />
+                            </MudTooltip>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    @* ════════════ INSTALL ════════════ *@
+    <MudTabPanel Text="Install">
+        <div class="mt-3">
+            @if (!_isNew)
+            {
+                <div class="d-flex gap-2 mb-4 align-center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Download"
+                               OnClick="StartInstall"
+                               Disabled="@(_installState?.IsDownloading == true)">
+                        @(_instance.InstalledAt.HasValue ? "Reinstall" : "Install Server Files")
+                    </MudButton>
+                    @if (_installState?.IsDownloading == true)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="CancelInstall">Cancel</MudButton>
+                    }
+                    <MudButton Variant="Variant.Text" OnClick="ValidateInstall">Validate</MudButton>
+                    @if (_instance.InstalledAt.HasValue)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Installed @_instance.InstalledAt.Value.ToString("g")
+                            @if (!string.IsNullOrEmpty(_instance.InstalledBuildId))
+                            { <text> (build @_instance.InstalledBuildId)</text> }
+                        </MudText>
+                    }
+                </div>
+
+                @if (_installState != null)
+                {
+                    @* ── Horizontal train-stop stepper ── *@
+                    <div class="mb-3">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary" Style="letter-spacing:.05em;">Download Progress</MudText>
+                        <div class="kast-stepper">
+                            @for (int _si = 0; _si < _installState.Steps.Count; _si++)
+                            {
+                                var _step = _installState.Steps[_si];
+                                bool _done   = _step.Status == ContentStepStatus.Completed;
+                                bool _active = _step.Status == ContentStepStatus.InProgress;
+                                bool _skip   = _step.Status == ContentStepStatus.Skipped;
+                                bool _failed = _step.Status == ContentStepStatus.Failed;
+                                int  _num    = _si + 1;
+
+                                var _cls = _done   ? "kast-step kast-step--done"
+                                         : _active ? "kast-step kast-step--active"
+                                         : _skip   ? "kast-step kast-step--skip"
+                                         : _failed ? "kast-step kast-step--failed"
+                                         :           "kast-step kast-step--pending";
+
+                                <div class="@_cls">
+                                    <div class="kast-step__circle">
+                                        @if (_done)
+                                        { <MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size:14px;" /> }
+                                        else if (_skip)
+                                        { <span>&mdash;</span> }
+                                        else if (_failed)
+                                        { <MudIcon Icon="@Icons.Material.Filled.Close" Style="font-size:14px;" /> }
+                                        else if (_active)
+                                        { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Style="font-size:14px;" /> }
+                                        else
+                                        { <span>@_num</span> }
+                                    </div>
+                                    <div class="kast-step__label">@_step.Name</div>
+                                    @if (_active)
+                                    {
+                                        <div class="kast-step__detail">@(_step.Progress.ToString("F0"))%</div>
+                                    }
+                                    else if (_failed)
+                                    {
+                                        <div class="kast-step__detail" style="color:#ff3f5f;">@(_step.Error ?? "Failed")</div>
+                                    }
+                                    else if (_skip)
+                                    {
+                                        <div class="kast-step__detail">@(_step.Error ?? "Skipped")</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <MudPaper Class="pa-2 mt-3" Elevation="0"
+                              Style="max-height:200px; overflow-y:auto; background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px;"
+                              @ref="_installLogRef">
+                        @foreach (var line in _installState.Log)
+                        {
+                            <div>@line</div>
+                        }
+                    </MudPaper>
+                }
+
+                @if (_validationResults != null)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Validation Results</MudText>
+                    @foreach (var r in _validationResults)
+                    {
+                        <div class="d-flex align-center gap-2 mb-1">
+                            <MudIcon Icon="@(r.OK ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                     Color="@(r.OK ? Color.Success : Color.Error)" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">@r.Label</MudText>
+                            @if (!string.IsNullOrEmpty(r.Detail))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@r.Detail</MudText>
+                            }
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">Save the server first before installing server files.</MudAlert>
+            }
+        </div>
+    </MudTabPanel>
+
+    @* ════════════ MONITOR ════════════ *@
+    <MudTabPanel Text="Monitor">
+        <MudGrid Class="mt-3" Spacing="3">
+            <MudItem xs="12" sm="4">
+                <MudCard Elevation="2">
+                    <MudCardContent>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
+                        <MudText Typo="Typo.h5">@_monitorCpu.ToString("F1")%</MudText>
+                        <MudProgressLinear Value="@_monitorCpu" Color="Color.Info" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudCard Elevation="2">
+                    <MudCardContent>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
+                        <MudText Typo="Typo.h5">@FormatBytes(_monitorMemory)</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudCard Elevation="2">
+                    <MudCardContent>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">Players</MudText>
+                        <MudText Typo="Typo.h5">@_monitorPlayerCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Uptime @GetUptime()</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        <div class="d-flex justify-space-between align-center mt-4 mb-1">
+            <MudText Typo="Typo.subtitle2">Server Console</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearConsole">Clear</MudButton>
+        </div>
+        <MudPaper Elevation="0" @ref="_consoleRef"
+                  Style="height:350px; overflow-y:auto; background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px;">
+            @foreach (var entry in _consoleLines)
+            {
+                <div>
+                    <span style="color:var(--mud-palette-text-secondary);">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                    <span> @entry.Line</span>
+                </div>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private ServerInstance _instance = new();
+    private bool _isNew => Id == null || Id == 0;
+    private IReadOnlyList<SteamMod> _availableMods = [];
+    private string _serversDirectory = "./servers";
+
+    private ContentInstallState? _installState;
+    private MudPaper? _installLogRef;
+    private IReadOnlyList<ContentValidationResult>? _validationResults;
+    private bool _disposed;
+    private bool _cmdExpanded;
+
+    private HubConnection? _hubConnection;
+    private readonly List<ConsoleEntry> _consoleLines = new();
+    private MudPaper? _consoleRef;
+    private double _monitorCpu;
+    private long _monitorMemory;
+    private int _monitorPlayerCount;
+    private int _activeTab;
+
+    private record ConsoleEntry(DateTime Timestamp, string Line);
+
+    private string _restartPolicyStr
+    {
+        get => _instance.RestartPolicy.ToString();
+        set => _instance.RestartPolicy = Enum.Parse<RestartPolicy>(value);
+    }
+
+    private ServerConfigData _serverConfig = new();
+    private BasicConfigData _basicConfig = new();
+    private Arma3ProfileData _profileData = new();
+    private string _serverCfgRaw = "";
+    private string _basicCfgRaw = "";
+    private string _profileRaw = "";
+
+    private List<SteamMod> _unassignedMods => _availableMods
+        .Where(m => !_instance.Mods.Any(im => im.SteamModId == m.Id)).ToList();
+    private List<ServerInstanceMod> _clientMods => _instance.Mods
+        .Where(m => !m.IsServerSide).OrderBy(m => m.LoadOrder).ToList();
+    private List<ServerInstanceMod> _serverMods => _instance.Mods
+        .Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!_isNew)
+        {
+            var instance = await ServerService.GetInstanceByIdAsync(Id!.Value);
+            if (instance == null) { Nav.NavigateTo("/servers"); return; }
+            _instance = instance;
+
+            if (!string.IsNullOrEmpty(_instance.ServerCfgContent))
+            { _serverConfig = ConfigService.ParseServerConfig(_instance.ServerCfgContent); _serverCfgRaw = _instance.ServerCfgContent; }
+            if (!string.IsNullOrEmpty(_instance.BasicCfgContent))
+            { _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent); _basicCfgRaw = _instance.BasicCfgContent; }
+            if (!string.IsNullOrEmpty(_instance.ArmaProfileContent))
+            { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
+
+            await InitializeSignalR();
+
+            var key = ContentProgressTracker.ServerKey(_instance.Id);
+            _installState = ContentTracker.Get(key);
+            if (_installState is not null) _installState.Changed += OnInstallStateChanged;
+
+            if (_instance.InstalledAt.HasValue)
+                _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+                {
+                    Type = ContentType.Server, DestinationPath = _instance.InstallPath, Instance = _instance
+                });
+        }
+        else
+        {
+            var settings = await SettingsService.GetSettingsAsync();
+            _serversDirectory = settings.ServersDirectory;
+            _instance.Name = $"Server-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
+            _serverConfig.Hostname = _instance.Name;
+        }
+
+        _availableMods = await ModService.GetAllModsAsync();
+
+        if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+        if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+        if (string.IsNullOrEmpty(_profileRaw)) _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
+    }
+
+    private void OnNameChanged()
+    {
+        if (_isNew && !string.IsNullOrWhiteSpace(_instance.Name))
+            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
+    }
+
+    private void OnServerConfigChanged() => _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
+    private void OnServerCfgRawChanged() => _serverConfig = ConfigService.ParseServerConfig(_serverCfgRaw);
+    private void OnBasicConfigChanged() => _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
+    private void OnBasicCfgRawChanged() => _basicConfig = ConfigService.ParseBasicConfig(_basicCfgRaw);
+    private void OnProfileChanged() => _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
+    private void OnProfileRawChanged() => _profileData = ConfigService.ParseArma3Profile(_profileRaw);
+
+    private async Task Save()
+    {
+        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
+        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
+
+        if (_isNew) await ServerService.CreateInstanceAsync(_instance);
+        else await ServerService.UpdateInstanceAsync(_instance);
+
+        if (!string.IsNullOrEmpty(_instance.InstallPath))
+        {
+            await ServerService.LinkModsAsync(_instance.Id);
+            ServerService.WriteConfigFiles(_instance);
+        }
+
+        Snackbar.Add("Server saved", Severity.Success);
+
+        if (Id == null || Id == 0) Nav.NavigateTo($"/servers/{_instance.Id}", replace: true);
+    }
+
+    private async Task LaunchServer()
+    {
+        if (_isNew) return;
+        try
+        {
+            await Save();
+            await ServerService.StartInstanceAsync(_instance.Id);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            _activeTab = 5; // Monitor tab
+            StateHasChanged();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed to launch: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task StopServer()
+    {
+        if (_isNew) return;
+        try
+        {
+            await ServerService.StopInstanceAsync(_instance.Id);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            _monitorCpu = 0; _monitorMemory = 0; _monitorPlayerCount = 0;
+            Snackbar.Add("Server stopped", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error); }
+    }
+
+    private string GetCommandLinePreview()
+    {
+        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
+        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
+        return ServerService.GetCommandLine(_instance);
+    }
+
+    private async Task AddMod(int modId, bool serverSide)
+    {
+        if (!_isNew)
+        {
+            await ServerService.AddModToInstanceAsync(_instance.Id, modId);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            var added = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+            if (added != null) added.IsServerSide = serverSide;
+        }
+        else
+        {
+            var mod = _availableMods.FirstOrDefault(m => m.Id == modId);
+            if (mod != null)
+                _instance.Mods.Add(new ServerInstanceMod { SteamModId = modId, SteamMod = mod, IsServerSide = serverSide, LoadOrder = _instance.Mods.Count });
+        }
+        ReindexMods(); StateHasChanged();
+    }
+
+    private async Task RemoveMod(int modId)
+    {
+        if (!_isNew)
+        {
+            await ServerService.RemoveModFromInstanceAsync(_instance.Id, modId);
+            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+        }
+        else
+        {
+            var toRemove = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+            if (toRemove != null) _instance.Mods.Remove(toRemove);
+        }
+        ReindexMods(); StateHasChanged();
+    }
+
+    private void MoveToClientSide(int modId)
+    {
+        var im = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+        if (im != null) { im.IsServerSide = false; ReindexMods(); StateHasChanged(); }
+    }
+
+    private void MoveToServerSide(int modId)
+    {
+        var im = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+        if (im != null) { im.IsServerSide = true; ReindexMods(); StateHasChanged(); }
+    }
+
+    private void ReindexMods()
+    {
+        int ci = 0; foreach (var m in _instance.Mods.Where(m => !m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = ci++;
+        int si = 0; foreach (var m in _instance.Mods.Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = si++;
+    }
+
+    private async Task StartInstall()
+    {
+        if (_isNew) return;
+        _validationResults = null;
+        if (_installState is not null) _installState.Changed -= OnInstallStateChanged;
+
+        var settings = await SettingsService.GetSettingsAsync();
+        int maxPar = Math.Max(1, settings.ParallelDownloads);
+
+        _installState = ContentOrchestrator.StartServerInstall(_instance.Id, _instance.InstallPath, _instance, maxPar);
+        _installState.Changed += OnInstallStateChanged;
+        StateHasChanged();
+    }
+
+    private void CancelInstall() => ContentOrchestrator.Cancel(ContentProgressTracker.ServerKey(_instance.Id));
+
+    private void ValidateInstall()
+    {
+        _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+        {
+            Type = ContentType.Server, DestinationPath = _instance.InstallPath, Instance = _instance
+        });
+        StateHasChanged();
+    }
+
+    private void OnInstallStateChanged()
+    {
+        if (_disposed) return;
+        InvokeAsync(async () =>
+        {
+            if (_disposed) return;
+            if (_installState?.IsComplete == true && !_instance.InstalledAt.HasValue)
+            {
+                var fresh = await ServerService.GetInstanceByIdAsync(_instance.Id);
+                if (fresh != null) _instance = fresh;
+            }
+            if (_installState?.IsComplete == true && _validationResults == null)
+                _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
+                {
+                    Type = ContentType.Server, DestinationPath = _instance.InstallPath, Instance = _instance
+                });
+            StateHasChanged();
+        });
+    }
+
+    private async Task InitializeSignalR()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
+        {
+            if (entry.ServerInstanceId != _instance.Id) return;
+            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line));
+            while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
+        {
+            if (evt.ServerInstanceId != _instance.Id) return;
+            if (Enum.TryParse<ServerInstanceStatus>(evt.NewStatus, out var status))
+            {
+                _instance.Status = status;
+                if (status is ServerInstanceStatus.Stopped or ServerInstanceStatus.Crashed)
+                { _instance.ProcessId = null; _instance.StartedAt = null; _monitorCpu = 0; _monitorMemory = 0; _monitorPlayerCount = 0; }
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hubConnection.On<InstanceMetricsUpdatedEvent>("InstanceMetricsUpdated", async evt =>
+        {
+            if (evt.ServerInstanceId != _instance.Id) return;
+            _monitorCpu = evt.CpuPercent; _monitorMemory = evt.MemoryBytes; _monitorPlayerCount = evt.PlayerCount;
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+        await _hubConnection.InvokeAsync("SubscribeToInstance", _instance.Id);
+    }
+
+    private void ClearConsole() { _consoleLines.Clear(); StateHasChanged(); }
+
+    private string GetUptime()
+    {
+        if (_instance.StartedAt is null) return "--";
+        var e = DateTime.UtcNow - _instance.StartedAt.Value;
+        if (e.TotalDays >= 1) return $"{e.Days}d {e.Hours}h";
+        if (e.TotalHours >= 1) return $"{e.Hours}h {e.Minutes}m";
+        return $"{e.Minutes}m {e.Seconds}s";
+    }
+
+    private static string GetStepIcon(ContentStepStatus s) => s switch
+    {
+        ContentStepStatus.Completed => Icons.Material.Filled.CheckCircle,
+        ContentStepStatus.InProgress => Icons.Material.Filled.HourglassTop,
+        ContentStepStatus.Failed => Icons.Material.Filled.Cancel,
+        ContentStepStatus.Skipped => Icons.Material.Filled.SkipNext,
+        _ => Icons.Material.Outlined.Circle
+    };
+
+    private static Color GetStepColor(ContentStepStatus s) => s switch
+    {
+        ContentStepStatus.Completed => Color.Success,
+        ContentStepStatus.InProgress => Color.Warning,
+        ContentStepStatus.Failed => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Color.Success,
+        ServerInstanceStatus.Crashed => Color.Error,
+        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
+        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.StopCircle
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_installState is not null) _installState.Changed -= OnInstallStateChanged;
+        if (_hubConnection is not null) await _hubConnection.DisposeAsync();
+    }
+}

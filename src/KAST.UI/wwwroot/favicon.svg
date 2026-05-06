@@ -1,0 +1,30 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="512" height="512" shape-rendering="crispEdges" role="img">
+  <title>KAST</title>
+  <defs>
+    <!-- <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#161820"/>
+      <stop offset="100%" stop-color="#0a0b0f"/>
+    </linearGradient> -->
+    <!-- <radialGradient id="heat" cx="92%" cy="90%" r="42%">
+      <stop offset="0%" stop-color="#bb2200" stop-opacity="0.72"/>
+      <stop offset="60%" stop-color="#882200" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#440000" stop-opacity="0"/>
+    </radialGradient> -->
+    <linearGradient id="k" x1="0" y1="4" x2="0" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#f5b040"/>
+      <stop offset="45%"  stop-color="#e06518"/>
+      <stop offset="100%" stop-color="#8a3200"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- <rect width="32" height="32" fill="url(#bg)"/>
+  <rect width="32" height="32" fill="url(#heat)"/> -->
+  <g fill="url(#k)" filter="url(#glow)">
+    <rect x="4" y="4" width="7" height="24"/>
+    <polygon points="10,4 28,4 10,14"/>
+    <polygon points="10,17 10,28 28,28"/>
+  </g>
+</svg>
