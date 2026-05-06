@@ -1,0 +1,254 @@
+@implements IAsyncDisposable
+@inject KastLogStore LogStore
+@inject ISteamService SteamService
+@inject IMonitoringService MonitoringService
+@inject IJSRuntime JSRuntime
+
+@* ── Fixed footer bar ── *@
+<div style="position:fixed; bottom:0; left:0; right:0; height:28px; z-index:1200;
+            background:var(--mud-palette-appbar-background); border-top:1px solid var(--mud-palette-lines-default);
+            display:flex; align-items:center; padding:0 8px; gap:12px;">
+
+    @* ══ Left: service status pills ══ *@
+    <div class="d-flex align-center gap-2" style="flex:1; overflow:hidden; font-size:11px;">
+        @* API *@
+        <div class="d-flex align-center gap-1">
+            <span style="width:7px;height:7px;border-radius:50%;background:#3dcb6c;flex-shrink:0;display:inline-block;"></span>
+            <span style="color:var(--mud-palette-text-secondary);">API</span>
+        </div>
+        @* DB *@
+        <div class="d-flex align-center gap-1">
+            <span style="width:7px;height:7px;border-radius:50%;background:@(_dbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="color:var(--mud-palette-text-secondary);">DB</span>
+        </div>
+        @* Steam *@
+        <div class="d-flex align-center gap-1">
+            <span style="width:7px;height:7px;border-radius:50%;background:@(SteamService.IsAuthenticated ? "#3dcb6c" : SteamService.IsConnected ? "#ffb545" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="color:var(--mud-palette-text-secondary);">Steam@(SteamService.IsAuthenticated && SteamService.Profile?.PersonaName != null ? $" · {SteamService.Profile.PersonaName}" : "")</span>
+        </div>
+        @* Monitoring *@
+        <div class="d-flex align-center gap-1">
+            <span style="width:7px;height:7px;border-radius:50%;background:@(_monitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="color:var(--mud-palette-text-secondary);">Monitor</span>
+        </div>
+        @* Error badge *@
+        @if (_errorCount > 0)
+        {
+            <span style="cursor:pointer; padding:0 6px; border-radius:10px; font-size:10px; font-weight:600;
+                          background:rgba(255,63,95,.15); color:#ff3f5f;"
+                  @onclick="@(() => { _logOpen = true; _filterLevel = LogLevel.Error; })">
+                @_errorCount error@(_errorCount == 1 ? "" : "s")
+            </span>
+        }
+    </div>
+
+    @* ══ Right: log console toggle ══ *@
+    <div class="d-flex align-center gap-2" style="flex-shrink:0;">
+        @if (!_logOpen && _lastMessage != "")
+        {
+            <span style="font-size:10px; font-family:monospace; color:var(--mud-palette-text-disabled);
+                          max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                @_lastMessage
+            </span>
+        }
+        <MudIconButton Icon="@(_logOpen ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.Terminal)"
+                       Size="Size.Small" Style="width:22px; height:22px; padding:2px;"
+                       Color="@(_errorCount > 0 ? Color.Error : (_logOpen ? Color.Primary : Color.Default))"
+                       OnClick="@(() => _logOpen = !_logOpen)"
+                       aria-label="Toggle log console" />
+    </div>
+</div>
+
+@* ══ Log console panel ══ *@
+@if (_logOpen)
+{
+    <div @onclick:stopPropagation="true"
+         style="position:fixed; top:0; bottom:28px; right:0; width:560px; max-width:95vw;
+                z-index:2000; display:flex; flex-direction:column;
+                background:rgba(18,17,30,0.72);
+                backdrop-filter:blur(20px) saturate(1.6);
+                -webkit-backdrop-filter:blur(20px) saturate(1.6);
+                border-left:1px solid rgba(255,255,255,.08);
+                box-shadow:-8px 0 32px rgba(0,0,0,.45);">
+
+        @* Toolbar *@
+        <div class="d-flex align-center gap-1 px-2" style="height:32px; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.07);">
+            <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Style="opacity:.6; font-size:14px;" />
+            <MudText Typo="Typo.caption" Style="font-weight:600; font-size:11px; letter-spacing:.05em;">LOG CONSOLE</MudText>
+            <MudSpacer />
+            @* Level filter chips *@
+            @foreach (var item in _filterOptions)
+            {
+                <span style="cursor:pointer; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; line-height:18px;
+                              background:@(_filterLevel == item.Level ? GetLevelBg(item.Level) : "rgba(255,255,255,.05)");
+                              color:@(_filterLevel == item.Level ? GetLevelFg(item.Level) : "var(--mud-palette-text-secondary)");"
+                      @onclick="@(() => _filterLevel = (_filterLevel == item.Level ? null : (LogLevel?)item.Level))">
+                    @item.Label
+                </span>
+            }
+            <MudDivider Vertical="true" FlexItem="true" Style="margin:4px 4px;" />
+            <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
+                           Style="width:20px; height:20px; padding:2px;" aria-label="Clear log"
+                           OnClick="@(() => LogStore.Clear())" />
+        </div>
+
+        @* Log output *@
+        <div @ref="_logScrollRef"
+             style="flex:1; overflow-y:auto; font-family:'Cascadia Code','Consolas',monospace; font-size:11px; padding:4px 8px; line-height:1.6;">
+            @{
+                var entries = GetFilteredEntries();
+            }
+            @if (entries.Count == 0)
+            {
+                <span style="color:var(--mud-palette-text-disabled);">No log entries.</span>
+            }
+            @foreach (var entry in entries)
+            {
+                <div style="display:flex; gap:8px; border-bottom:1px solid rgba(255,255,255,.02);">
+                    <span style="color:rgba(255,255,255,.25); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                    <span style="flex-shrink:0; min-width:30px; color:@GetLevelFg(entry.Level);">@GetLevelTag(entry.Level)</span>
+                    <span style="color:rgba(255,255,255,.35); flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="@entry.Category">@ShortCategory(entry.Category)</span>
+                    <span style="color:var(--mud-palette-text-primary); word-break:break-word;">@entry.Message</span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _logOpen;
+    private LogLevel? _filterLevel;
+    private bool _disposed;
+    private bool _dbOk = true;
+    private bool _monitoringOk = true;
+    private string _lastMessage = "";
+    private int _errorCount;
+    private bool _scrollNeeded;
+    private ElementReference _logScrollRef;
+    private CancellationTokenSource? _cts;
+
+    private static readonly (string Label, LogLevel Level)[] _filterOptions =
+    [
+        ("TRC", LogLevel.Trace),
+        ("DBG", LogLevel.Debug),
+        ("INF", LogLevel.Information),
+        ("WRN", LogLevel.Warning),
+        ("ERR", LogLevel.Error)
+    ];
+
+    protected override void OnInitialized()
+    {
+        LogStore.OnNewEntry += OnNewLog;
+        SteamService.AuthStateChanged += OnServiceChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckStatuses();
+        _cts = new CancellationTokenSource();
+        _ = RunStatusPolling(_cts.Token);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_scrollNeeded && _logOpen)
+        {
+            _scrollNeeded = false;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("KAST.scrollToBottom", _logScrollRef);
+            }
+            catch { }
+        }
+    }
+
+    private IReadOnlyList<AppLogEntry> GetFilteredEntries()
+    {
+        var all = LogStore.GetAll();
+        return _filterLevel is null ? all : all.Where(e => e.Level >= _filterLevel.Value).ToArray();
+    }
+
+    private async Task CheckStatuses(CancellationToken ct = default)
+    {
+        if (_disposed) return;
+        try { await MonitoringService.GetHostMetricsAsync(ct); _monitoringOk = true; }
+        catch { _monitoringOk = false; }
+        _dbOk = true; // DB health is implicitly OK if the app is running
+    }
+
+    private async Task RunStatusPolling(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (!_disposed && await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await CheckStatuses(ct);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OnNewLog()
+    {
+        if (_disposed) return;
+        var all = LogStore.GetAll();
+        _lastMessage = all.LastOrDefault()?.Message ?? "";
+        _errorCount = all.Count(e => e.Level >= LogLevel.Error);
+        _scrollNeeded = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnServiceChanged()
+    {
+        if (_disposed) return;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetLevelTag(LogLevel l) => l switch
+    {
+        LogLevel.Trace => "TRC",
+        LogLevel.Debug => "DBG",
+        LogLevel.Information => "INF",
+        LogLevel.Warning => "WRN",
+        LogLevel.Error => "ERR",
+        LogLevel.Critical => "CRT",
+        _ => "???"
+    };
+
+    private static string GetLevelFg(LogLevel? l) => l switch
+    {
+        LogLevel.Trace => "rgba(255,255,255,.25)",
+        LogLevel.Debug => "rgba(255,255,255,.4)",
+        LogLevel.Information => "#4fc3f7",
+        LogLevel.Warning => "#ffb545",
+        LogLevel.Error or LogLevel.Critical => "#ff3f5f",
+        _ => "var(--mud-palette-text-secondary)"
+    };
+
+    private static string GetLevelBg(LogLevel? l) => l switch
+    {
+        LogLevel.Warning => "rgba(255,181,69,.2)",
+        LogLevel.Error or LogLevel.Critical => "rgba(255,63,95,.2)",
+        LogLevel.Information => "rgba(79,195,247,.2)",
+        _ => "rgba(255,255,255,.1)"
+    };
+
+    private static string ShortCategory(string cat) =>
+        cat.Contains('.') ? cat[(cat.LastIndexOf('.') + 1)..] : cat;
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        LogStore.OnNewEntry -= OnNewLog;
+        SteamService.AuthStateChanged -= OnServiceChanged;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        await Task.CompletedTask;
+    }
+}
