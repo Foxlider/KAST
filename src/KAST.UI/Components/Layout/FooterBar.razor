@@ -1,7 +1,7 @@
 @implements IAsyncDisposable
 @inject KastLogStore LogStore
 @inject ISteamService SteamService
-@inject IMonitoringService MonitoringService
+@inject MonitoringStateService MonitoringState
 @inject IJSRuntime JSRuntime
 
 @* ── Fixed footer bar ── *@
@@ -13,12 +13,12 @@
     <div class="d-flex align-center gap-2" style="flex:1; overflow:hidden; font-size:11px;">
         @* API *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:#3dcb6c;flex-shrink:0;display:inline-block;"></span>
+            <span style="width:7px;height:7px;border-radius:50%;background:@GetApiColor(MonitoringState.ApiStatus);flex-shrink:0;display:inline-block;"></span>
             <span style="color:var(--mud-palette-text-secondary);">API</span>
         </div>
         @* DB *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@(_dbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsDbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
             <span style="color:var(--mud-palette-text-secondary);">DB</span>
         </div>
         @* Steam *@
@@ -28,7 +28,7 @@
         </div>
         @* Monitoring *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@(_monitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsMonitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
             <span style="color:var(--mud-palette-text-secondary);">Monitor</span>
         </div>
         @* Error badge *@
@@ -119,13 +119,10 @@
     private bool _logOpen;
     private LogLevel? _filterLevel;
     private bool _disposed;
-    private bool _dbOk = true;
-    private bool _monitoringOk = true;
     private string _lastMessage = "";
     private int _errorCount;
     private bool _scrollNeeded;
     private ElementReference _logScrollRef;
-    private CancellationTokenSource? _cts;
 
     private static readonly (string Label, LogLevel Level)[] _filterOptions =
     [
@@ -138,15 +135,10 @@
 
     protected override void OnInitialized()
     {
+        MonitoringState.EnsureStarted();
+        MonitoringState.OnDataChanged += HandleMonitoringChanged;
         LogStore.OnNewEntry += OnNewLog;
         SteamService.AuthStateChanged += OnServiceChanged;
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        await CheckStatuses();
-        _cts = new CancellationTokenSource();
-        _ = RunStatusPolling(_cts.Token);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -168,31 +160,7 @@
         return _filterLevel is null ? all : all.Where(e => e.Level >= _filterLevel.Value).ToArray();
     }
 
-    private async Task CheckStatuses(CancellationToken ct = default)
-    {
-        if (_disposed) return;
-        try { await MonitoringService.GetHostMetricsAsync(ct); _monitoringOk = true; }
-        catch { _monitoringOk = false; }
-        _dbOk = true; // DB health is implicitly OK if the app is running
-    }
-
-    private async Task RunStatusPolling(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        try
-        {
-            while (!_disposed && await timer.WaitForNextTickAsync(ct))
-            {
-                await InvokeAsync(async () =>
-                {
-                    await CheckStatuses(ct);
-                    StateHasChanged();
-                });
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (ObjectDisposedException) { }
-    }
+    private void HandleMonitoringChanged() => InvokeAsync(StateHasChanged);
 
     private void OnNewLog()
     {
@@ -242,13 +210,19 @@
     private static string ShortCategory(string cat) =>
         cat.Contains('.') ? cat[(cat.LastIndexOf('.') + 1)..] : cat;
 
+    private static string GetApiColor(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus status) => status switch
+    {
+        Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy => "#3dcb6c",
+        Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded => "#ffb545",
+        _ => "#ff3f5f"
+    };
+
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        MonitoringState.OnDataChanged -= HandleMonitoringChanged;
         LogStore.OnNewEntry -= OnNewLog;
         SteamService.AuthStateChanged -= OnServiceChanged;
-        _cts?.Cancel();
-        _cts?.Dispose();
         await Task.CompletedTask;
     }
 }

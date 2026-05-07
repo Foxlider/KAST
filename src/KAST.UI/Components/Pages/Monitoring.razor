@@ -1,10 +1,6 @@
 @page "/monitoring"
-@using Microsoft.AspNetCore.SignalR.Client
-@using System.Text.Json
 @implements IAsyncDisposable
-@inject IMonitoringService MonitoringService
-@inject IServerInstanceService ServerService
-@inject NavigationManager Nav
+@inject MonitoringStateService State
 @inject IJSRuntime JS
 
 <PageTitle>KAST -- Monitoring</PageTitle>
@@ -18,8 +14,8 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
-                <MudText Typo="Typo.h5">@_hostMetrics.CpuUsagePercent.ToString("F1")%</MudText>
-                <MudProgressLinear Value="@_hostMetrics.CpuUsagePercent" Min="0" Max="100" Color="Color.Warning" />
+                <MudText Typo="Typo.h5">@State.HostMetrics.CpuUsagePercent.ToString("F1")%</MudText>
+                <MudProgressLinear Value="@State.HostMetrics.CpuUsagePercent" Min="0" Max="100" Color="Color.Warning" />
             </MudCardContent>
         </MudCard>
     </MudItem>
@@ -27,10 +23,10 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
-                <MudText Typo="Typo.h5">@_hostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
-                <MudProgressLinear Value="@_hostMetrics.MemoryUsagePercent" Min="0" Max="100" Color="Color.Info" />
+                <MudText Typo="Typo.h5">@State.HostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
+                <MudProgressLinear Value="@State.HostMetrics.MemoryUsagePercent" Min="0" Max="100" Color="Color.Info" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    @FormatBytes(_hostMetrics.UsedMemoryBytes) / @FormatBytes(_hostMetrics.TotalMemoryBytes)
+                    @FormatBytes(State.HostMetrics.UsedMemoryBytes) / @FormatBytes(State.HostMetrics.TotalMemoryBytes)
                 </MudText>
             </MudCardContent>
         </MudCard>
@@ -39,10 +35,10 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.overline" Color="Color.Secondary">Disk</MudText>
-                <MudText Typo="Typo.h5">@_hostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
-                <MudProgressLinear Value="@_hostMetrics.DiskUsagePercent" Min="0" Max="100" Color="Color.Success" />
+                <MudText Typo="Typo.h5">@State.HostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
+                <MudProgressLinear Value="@State.HostMetrics.DiskUsagePercent" Min="0" Max="100" Color="Color.Success" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    @FormatBytes(_hostMetrics.UsedDiskBytes) / @FormatBytes(_hostMetrics.TotalDiskBytes)
+                    @FormatBytes(State.HostMetrics.UsedDiskBytes) / @FormatBytes(State.HostMetrics.TotalDiskBytes)
                 </MudText>
             </MudCardContent>
         </MudCard>
@@ -75,15 +71,15 @@
 
 @* ── Instances ── *@
 <MudText Typo="Typo.subtitle1" Class="mb-2">Instances</MudText>
-@if (_instances.Count == 0)
+@if (State.Instances.Count == 0)
 {
     <MudAlert Severity="Severity.Info" Variant="Variant.Filled">No running instances to monitor.</MudAlert>
 }
 else
 {
-    @foreach (var instance in _instances)
+    @foreach (var instance in State.Instances)
     {
-        var metrics = _instanceMetrics.GetValueOrDefault(instance.Id);
+        var metrics = State.InstanceMetrics.GetValueOrDefault(instance.Id);
         <div class="mb-5">
             <div class="d-flex align-center gap-2 mb-2">
                 <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" />
@@ -123,101 +119,29 @@ else
 }
 
 @code {
-    private HostMetrics _hostMetrics = new();
-    private IReadOnlyList<ServerInstance> _instances = [];
-    private Dictionary<int, InstanceMetrics> _instanceMetrics = new();
-    private HubConnection? _hubConnection;
-    private CancellationTokenSource? _cts;
-    private Task? _refreshTask;
-    private bool _disposed;
     private bool _chartsInitialized;
 
-    private const int MaxPoints = 1_440;
-    private readonly List<string> _hostLabels = new(MaxPoints);
-    private readonly List<double> _hostCpu = new(MaxPoints);
-    private readonly List<double> _hostMem = new(MaxPoints);
-    private readonly Dictionary<int, (List<double> Cpu, List<double> Mem)> _instanceHistory = new();
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await RefreshData();
-        PushHostSample();
+        State.EnsureStarted();
+        State.OnDataChanged += HandleDataChanged;
+    }
 
-        _cts = new CancellationTokenSource();
-        _refreshTask = RunPeriodicRefresh(_cts.Token);
-
-        _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        try { await _hubConnection.StartAsync(); await _hubConnection.InvokeAsync("SubscribeToHost"); }
-        catch { /* SignalR unavailable */ }
+    private void HandleDataChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            if (_chartsInitialized) await UpdateChartsAsync();
+        });
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) { await InitChartsAsync(); _chartsInitialized = true; }
-    }
-
-    private async Task RunPeriodicRefresh(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
+        if (firstRender)
         {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                if (_disposed || ct.IsCancellationRequested) break;
-                await InvokeAsync(async () =>
-                {
-                    if (_disposed || ct.IsCancellationRequested) return;
-                    await RefreshData(ct);
-                    if (_disposed || ct.IsCancellationRequested) return;
-                    PushHostSample(); PushInstanceSamples();
-                    StateHasChanged();
-                    if (_chartsInitialized) await UpdateChartsAsync();
-                });
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (ObjectDisposedException) { }
-        catch (InvalidOperationException) { }
-    }
-
-    private async Task RefreshData(CancellationToken ct = default)
-    {
-        if (_disposed || ct.IsCancellationRequested) return;
-        try
-        {
-            _hostMetrics = await MonitoringService.GetHostMetricsAsync(ct);
-            var all = await ServerService.GetAllInstancesAsync(ct);
-            _instances = all.Where(s => s.Status != ServerInstanceStatus.Stopped).ToList();
-            var allMetrics = await MonitoringService.GetAllInstanceMetricsAsync(ct);
-            _instanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
-        }
-        catch (ObjectDisposedException) { }
-        catch (OperationCanceledException) { }
-        catch { }
-    }
-
-    private void PushHostSample()
-    {
-        var label = DateTime.Now.ToString("HH:mm:ss");
-        if (_hostLabels.Count >= MaxPoints) { _hostLabels.RemoveAt(0); _hostCpu.RemoveAt(0); _hostMem.RemoveAt(0); }
-        _hostLabels.Add(label);
-        _hostCpu.Add(Math.Round(_hostMetrics.CpuUsagePercent, 1));
-        _hostMem.Add(Math.Round(_hostMetrics.MemoryUsagePercent, 1));
-    }
-
-    private void PushInstanceSamples()
-    {
-        foreach (var (id, metrics) in _instanceMetrics)
-        {
-            if (!_instanceHistory.TryGetValue(id, out var hist))
-            { hist = (new List<double>(MaxPoints), new List<double>(MaxPoints)); _instanceHistory[id] = hist; }
-            if (hist.Cpu.Count >= MaxPoints) { hist.Cpu.RemoveAt(0); hist.Mem.RemoveAt(0); }
-            hist.Cpu.Add(Math.Round(metrics.CpuUsagePercent, 1));
-            hist.Mem.Add(Math.Round(metrics.MemoryUsageBytes / 1_048_576.0, 1));
+            await InitChartsAsync();
+            _chartsInitialized = true;
         }
     }
 
@@ -225,7 +149,7 @@ else
     {
         await CreateLineChart("chart-host-cpu", "CPU %", "#ff6b35", 100);
         await CreateLineChart("chart-host-mem", "Memory %", "#4fc3f7", 100);
-        foreach (var id in _instances.Select(i => i.Id))
+        foreach (var id in State.Instances.Select(i => i.Id))
         {
             await CreateLineChart($"chart-inst-{id}-cpu", "CPU %", "#ff6b35", 100);
             await CreateLineChart($"chart-inst-{id}-mem", "Memory (MB)", "#4fc3f7", null);
@@ -251,21 +175,21 @@ else
                 }
             }
         };
-        await JS.InvokeVoidAsync("kastCharts.create", canvasId, JsonSerializer.Deserialize<object>(JsonSerializer.Serialize(config)));
+        await JS.InvokeVoidAsync("kastCharts.create", canvasId, config);
     }
 
     private async Task UpdateChartsAsync()
     {
         try
         {
-            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-cpu", _hostLabels, new[] { _hostCpu });
-            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-mem", _hostLabels, new[] { _hostMem });
-            foreach (var id in _instances.Select(i => i.Id))
+            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-cpu", State.HostLabels, new[] { State.HostCpu });
+            await JS.InvokeVoidAsync("kastCharts.update", "chart-host-mem", State.HostLabels, new[] { State.HostMem });
+            foreach (var id in State.Instances.Select(i => i.Id))
             {
-                if (_instanceHistory.TryGetValue(id, out var hist))
+                if (State.InstanceHistory.TryGetValue(id, out var hist))
                 {
-                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{id}-cpu", _hostLabels, new[] { hist.Cpu });
-                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{id}-mem", _hostLabels, new[] { hist.Mem });
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{id}-cpu", State.HostLabels, new[] { hist.Cpu });
+                    await JS.InvokeVoidAsync("kastCharts.update", $"chart-inst-{id}-mem", State.HostLabels, new[] { hist.Mem });
                 }
             }
         }
@@ -295,11 +219,9 @@ else
         return $"{size:F1} {sizes[order]}";
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        _disposed = true;
-        _cts?.Cancel();
-        if (_refreshTask is not null) { try { await _refreshTask; } catch { } }
-        if (_hubConnection is not null) await _hubConnection.DisposeAsync();
+        State.OnDataChanged -= HandleDataChanged;
+        return ValueTask.CompletedTask;
     }
 }
