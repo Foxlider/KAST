@@ -142,3 +142,14 @@
     min-height: 0;
     overflow-y: auto;
 }
+
+/* Server console — resizable; height fills remaining viewport */
+.kast-console {
+    height: calc(100vh - 400px);
+    min-height: 160px;
+    min-width: 300px;
+    max-width: 100%;
+    overflow: auto;
+    resize: both;
+    box-sizing: border-box;
+}
