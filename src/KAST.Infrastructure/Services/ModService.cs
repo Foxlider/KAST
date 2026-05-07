@@ -128,6 +128,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         {
             logger.LogError(ex, "Download failed for mod {Id} (WorkshopId={WorkshopId})", id, mod.WorkshopId);
             mod.Status = ModStatus.Error;
+            mod.LocalPath = string.Empty;
             mod.SizeBytes = 0;
             throw;
         }
@@ -156,8 +157,14 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         try
         {
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, mod.LocalPath, broadcastProgress, ct);
+            var settings = await settingsService.GetSettingsAsync(ct);
+            var destPath = string.IsNullOrEmpty(mod.LocalPath)
+                ? Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString())
+                : mod.LocalPath;
+
+            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
             mod.Status = ModStatus.Installed;
+            mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
         }
