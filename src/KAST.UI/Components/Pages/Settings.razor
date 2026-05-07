@@ -4,6 +4,8 @@
 @inject ISettingsService SettingsService
 @inject ISteamService SteamService
 @inject ISnackbar Snackbar
+@inject KAST.UI.Services.ThemeService ThemeService
+@using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
 
@@ -24,6 +26,14 @@
                     </MudText>
                 </div>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
+
+                <MudDivider Class="my-4" />
+
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Appearance</MudText>
+                <div class="d-flex align-center gap-3 flex-wrap">
+                    <MudColorPicker @bind-Value="_accentMud" ShowAlpha="false" ShowModeSwitch="false" Label="Accent Color" PickerVariant="PickerVariant.Dialog" Palette="_officialPalette" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAccent">Apply Accent</MudButton>
+                </div>
 
                 <MudDivider Class="my-4" />
 
@@ -271,6 +281,7 @@
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
+        _accentMud = ThemeService.AccentColor;
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
@@ -368,6 +379,26 @@
     private async Task ApplyBenchmark(int parallelism) { _parallelDownloads = parallelism; await SaveGeneralSettings(); }
 
     private BenchmarkResult GetBestBenchmark() => _benchmarkResults!.OrderByDescending(r => r.MbPerSecond).First();
+
+    private MudColor _accentMud = "#ff6b35";
+
+    private readonly IEnumerable<MudColor> _officialPalette = new List<MudColor>
+    {
+        "#594AE2", // Primary (MudBlazor default)
+        "#FF4081", // Secondary
+        "#1EC8A5", // Tertiary
+        "#2196F3", // Info
+        "#00C853", // Success
+        "#FF9800", // Warning
+        "#F44336", // Error
+        "#ff6b35", // KAST default orange
+    };
+
+    private async Task SaveAccent()
+    {
+        await ThemeService.SetAccentAsync(_accentMud.ToString());
+        Snackbar.Add("Accent color updated", Severity.Success);
+    }
 
     private async Task CreateApiKey()
     {
