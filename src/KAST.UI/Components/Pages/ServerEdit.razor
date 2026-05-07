@@ -496,20 +496,31 @@
         <div class="d-flex align-center justify-space-between mt-4 mb-1">
             <MudText Typo="Typo.subtitle2">Server Console</MudText>
             <div class="d-flex align-center gap-1">
+                <MudButtonGroup Variant="Variant.Text" Size="Size.Small" OverrideStyles="false">
+                    <MudButton Color="@(_consoleFilter == ConsoleFilter.All     ? Color.Primary : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.All)">All</MudButton>
+                    <MudButton Color="@(_consoleFilter == ConsoleFilter.Info    ? Color.Info    : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Info)">Info</MudButton>
+                    <MudButton Color="@(_consoleFilter == ConsoleFilter.Warning ? Color.Warning : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Warning)">Warn</MudButton>
+                    <MudButton Color="@(_consoleFilter == ConsoleFilter.Error   ? Color.Error   : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Error)">Error</MudButton>
+                </MudButtonGroup>
+                <MudDivider Vertical="true" FlexItem="true" Class="mx-1" />
                 <MudTooltip Text='@(_followConsole ? "Auto-scroll on \u2014 click to disable" : "Auto-scroll off \u2014 click to enable")'>
                     <MudIconButton Icon="@(_followConsole ? Icons.Material.Filled.LockOpen : Icons.Material.Outlined.VerticalAlignBottom)"
                                    Color="@(_followConsole ? Color.Primary : Color.Default)"
                                    Size="Size.Small"
                                    OnClick="@(() => { _followConsole = !_followConsole; if (_followConsole) _scrollConsole = true; })" />
                 </MudTooltip>
-                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearConsole">Clear</MudButton>
+                <MudTooltip Text='@($"Clear {(_consoleFilter == ConsoleFilter.All ? "all" : _consoleFilter.ToString().ToLower())} entries")'>
+                    <MudIconButton Icon="@Icons.Material.Outlined.DeleteSweep"
+                                   Size="Size.Small"
+                                   OnClick="ClearConsole" />
+                </MudTooltip>
             </div>
         </div>
-        <div @ref="_consoleRef"
-             style="height:calc(100vh - 380px); min-height:200px; overflow-y:auto; background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px; border-radius:4px;">
-            @foreach (var entry in _consoleLines)
+        <div @ref="_consoleRef" class="kast-console"
+             style="background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px; border-radius:4px;">
+            @foreach (var entry in FilteredConsoleLines)
             {
-                <div>
+                <div style="@GetEntryStyle(entry.Type)">
                     <span style="color:var(--mud-palette-text-secondary);">@entry.Timestamp.ToString("HH:mm:ss")</span>
                     <span> @entry.Line</span>
                 </div>
@@ -535,17 +546,25 @@
     private bool _disposed;
     private bool _cmdExpanded;
 
+    private enum ConsoleFilter { All, Info, Warning, Error }
+
     private HubConnection? _hubConnection;
     private readonly List<ConsoleEntry> _consoleLines = new();
     private ElementReference _consoleRef;
     private bool _followConsole = true;
     private bool _scrollConsole;
+    private ConsoleFilter _consoleFilter = ConsoleFilter.All;
     private double _monitorCpu;
     private long _monitorMemory;
     private int _monitorPlayerCount;
     private int _activeTab;
 
-    private record ConsoleEntry(DateTime Timestamp, string Line);
+    private record ConsoleEntry(DateTime Timestamp, string Line, ConsoleFilter Type);
+
+    private IEnumerable<ConsoleEntry> FilteredConsoleLines =>
+        _consoleFilter == ConsoleFilter.All
+            ? _consoleLines
+            : _consoleLines.Where(e => e.Type == _consoleFilter);
 
     private string _restartPolicyStr
     {
@@ -799,7 +818,7 @@
         _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
         {
             if (entry.ServerInstanceId != _instance.Id) return;
-            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line));
+            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
             while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
             if (_followConsole) _scrollConsole = true;
             InvokeAsync(StateHasChanged);
@@ -828,7 +847,14 @@
         await _hubConnection.InvokeAsync("SubscribeToInstance", _instance.Id);
     }
 
-    private void ClearConsole() { _consoleLines.Clear(); StateHasChanged(); }
+    private void ClearConsole()
+    {
+        if (_consoleFilter == ConsoleFilter.All)
+            _consoleLines.Clear();
+        else
+            _consoleLines.RemoveAll(e => e.Type == _consoleFilter);
+        StateHasChanged();
+    }
 
     private string GetUptime()
     {
@@ -878,6 +904,26 @@
         ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
         ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
         _ => Icons.Material.Filled.StopCircle
+    };
+
+    private static ConsoleFilter ClassifyLine(string line)
+    {
+        if (line.Contains("error",     StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("exception", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("fatal",     StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("critical",  StringComparison.OrdinalIgnoreCase))
+            return ConsoleFilter.Error;
+        if (line.Contains("warning", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("warn",    StringComparison.OrdinalIgnoreCase))
+            return ConsoleFilter.Warning;
+        return ConsoleFilter.Info;
+    }
+
+    private static string GetEntryStyle(ConsoleFilter type) => type switch
+    {
+        ConsoleFilter.Error   => "color:var(--mud-palette-error-text);",
+        ConsoleFilter.Warning => "color:var(--mud-palette-warning-text);",
+        _                     => ""
     };
 
     private static string FormatBytes(long bytes)
