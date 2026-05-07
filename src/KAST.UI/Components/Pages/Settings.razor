@@ -18,9 +18,9 @@
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Downloads</MudText>
                 <div class="d-flex align-center gap-4 flex-wrap">
                     <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel Downloads"
-                                     Min="1" Max="32" Step="1" Style="width:160px;" />
+                                     Min="1" Max="64" Step="1" Style="width:160px;" />
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Number of concurrent file downloads when installing server files (1–32).
+                        Number of concurrent file downloads when installing server files (1–64).
                     </MudText>
                 </div>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
@@ -345,7 +345,7 @@
     private async Task SaveGeneralSettings()
     {
         var settings = await SettingsService.GetSettingsAsync();
-        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 32);
+        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
         await SettingsService.UpdateSettingsAsync(settings);
         Snackbar.Add("Settings saved", Severity.Success);
     }
