@@ -48,6 +48,7 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
             existing.Arma3ServerAppId = settings.Arma3ServerAppId;
             existing.ThemeMode = settings.ThemeMode;
             existing.MetricsIntervalSeconds = settings.MetricsIntervalSeconds;
+            existing.ParallelDownloads = settings.ParallelDownloads;
         }
         await db.SaveChangesAsync(ct);
     }
