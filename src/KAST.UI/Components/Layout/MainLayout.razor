@@ -1,5 +1,7 @@
 ﻿@inherits LayoutComponentBase
 
+@inject KAST.UI.Services.ThemeService ThemeService
+
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
@@ -7,7 +9,7 @@
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@DrawerToggle" />
-        <MudText Typo="Typo.h6" Class="ml-2 mud-text-secondary" Style="letter-spacing:.08em; font-weight:700;">
+        <MudText Typo="Typo.h6" Class="ml-2 kast-title" Style="@($"letter-spacing:.08em; font-weight:700; color: {ThemeService.AccentColor};")">
             KAST
         </MudText>
         <MudText Typo="Typo.caption" Class="ml-1 mud-text-secondary" Style="opacity:.5">
@@ -26,6 +28,23 @@
     <FooterBar />
 </MudLayout>
 
+<style>
+    .kast-title {
+        transition: color 300ms ease, transform 300ms ease;
+        text-shadow: 0 0 8px currentColor;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        will-change: transform;
+        animation: kast-pulse 2.5s infinite ease-in-out;
+    }
+
+    @@keyframes kast-pulse {
+        0% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
+        50% { transform: scale(1.02); filter: drop-shadow(0 0 18px currentColor); }
+        100% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
+    }
+</style>
+
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
@@ -37,15 +56,27 @@
     private bool _isDarkMode = true;
     private MudTheme? _theme = null;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        base.OnInitialized();
+        await base.OnInitializedAsync();
+        await ThemeService.InitializeAsync();
+
+        // apply accent from ThemeService as Secondary (orange)
+        _lightPalette.Secondary = ThemeService.AccentColor;
+        _darkPalette.Secondary = ThemeService.AccentColor;
 
         _theme = new()
         {
             PaletteLight = _lightPalette,
             PaletteDark = _darkPalette,
-            LayoutProperties = new LayoutProperties()
+            LayoutProperties = new LayoutProperties() { DefaultBorderRadius = "0px" }
+        };
+
+        ThemeService.OnChange += () =>
+        {
+            _lightPalette.Secondary = ThemeService.AccentColor;
+            _darkPalette.Secondary = ThemeService.AccentColor;
+            InvokeAsync(StateHasChanged);
         };
     }
 
@@ -60,32 +91,45 @@
         DrawerBackground = "#ffffff",
         GrayLight = "#e8e8e8",
         GrayLighter = "#f9f9f9",
+        // Keep a pleasant primary, but match KAST.Web accents on Secondary
         Primary = "#5c6bc0",
+        Secondary = "#ff6b35",
+        SecondaryContrastText = "#ffffff",
+        Tertiary = "#1EC8A5",
+        Info = "#2196F3",
+        Success = "#4caf50",
+        Warning = "#ff9800",
+        Error = "#f44336",
+        Background = "#ffffff",
+        Surface = "#ffffff",
     };
 
     private readonly PaletteDark _darkPalette = new()
     {
+        // Match KAST.Web dark background and use orange as secondary accent
         Primary = "#7e6fff",
-        Surface = "#1e1e2d",
-        Background = "#1a1a27",
-        BackgroundGray = "#151521",
-        AppbarText = "#92929f",
+        Secondary = "#ff6b35",
+        SecondaryContrastText = "#ffffff",
+        Surface = "#272727",
+        Background = "#1b1b1b",
+        BackgroundGray = "#2d2d2d",
+        AppbarText = "#e0e0e0",
         AppbarBackground = "rgba(26,26,39,0.8)",
-        DrawerBackground = "#1a1a27",
-        ActionDefault = "#74718e",
+        DrawerBackground = "#272727",
+        ActionDefault = "#bdbdbd",
         ActionDisabled = "#9999994d",
         ActionDisabledBackground = "#605f6d4d",
-        TextPrimary = "#b2b0bf",
-        TextSecondary = "#92929f",
+        TextPrimary = "#e0e0e0",
+        TextSecondary = "#9e9e9e",
         TextDisabled = "#ffffff33",
-        DrawerIcon = "#92929f",
-        DrawerText = "#92929f",
-        GrayLight = "#2a2833",
-        GrayLighter = "#1e1e2d",
-        Info = "#4a86ff",
-        Success = "#3dcb6c",
-        Warning = "#ffb545",
-        Error = "#ff3f5f",
+        DrawerIcon = "#9e9e9e",
+        DrawerText = "#e0e0e0",
+        GrayLight = "#333333",
+        GrayLighter = "#2d2d2d",
+        Info = "#2196F3",
+        Success = "#4caf50",
+        Warning = "#ff9800",
+        Error = "#f44336",
         LinesDefault = "#33323e",
         TableLines = "#33323e",
         Divider = "#292838",

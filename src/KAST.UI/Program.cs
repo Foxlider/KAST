@@ -28,6 +28,7 @@ builder.Services.AddKastInfrastructure(connectionString);
 
 // ── MudBlazor + Blazor Server ────────────────────────────────────────────────
 builder.Services.AddMudServices();
+builder.Services.AddScoped<KAST.UI.Services.ThemeService>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
