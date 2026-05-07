@@ -63,13 +63,19 @@
 @if (_logOpen)
 {
     <div @onclick:stopPropagation="true"
-         style="position:fixed; top:0; bottom:28px; right:0; width:560px; max-width:95vw;
+         style="position:fixed; top:0; bottom:28px; right:0; width:@(_panelWidth)px; max-width:95vw;
                 z-index:2000; display:flex; flex-direction:column;
                 background:rgba(18,17,30,0.72);
                 backdrop-filter:blur(20px) saturate(1.6);
                 -webkit-backdrop-filter:blur(20px) saturate(1.6);
                 border-left:1px solid rgba(255,255,255,.08);
                 box-shadow:-8px 0 32px rgba(0,0,0,.45);">
+
+        @* Resize handle (left edge) *@
+        <div style="position:absolute; top:0; left:0; bottom:0; width:5px; cursor:ew-resize; z-index:10;"
+             @onmousedown="StartResize"
+             @onmousedown:preventDefault="true"
+             title="Drag to resize"></div>
 
         @* Toolbar *@
         <div class="d-flex align-center gap-1 px-2" style="height:32px; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.07);">
@@ -123,6 +129,29 @@
     private int _errorCount;
     private bool _scrollNeeded;
     private ElementReference _logScrollRef;
+
+    // ── Resizable panel ─────────────────────────────────────────────
+    private int _panelWidth = 560;
+    private const int MinPanelWidth = 320;
+    private const int MaxPanelWidth = 1400;
+    private IJSObjectReference? _resizeModule;
+    private DotNetObjectReference<FooterBar>? _selfRef;
+
+    private async Task StartResize(MouseEventArgs e)
+    {
+        _selfRef ??= DotNetObjectReference.Create(this);
+        _resizeModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>(
+            "import", "/js/kast-console-resize.js");
+        await _resizeModule.InvokeVoidAsync(
+            "start", _selfRef, _panelWidth, MinPanelWidth, MaxPanelWidth, e.ClientX);
+    }
+
+    [JSInvokable]
+    public Task SetPanelWidth(int width)
+    {
+        _panelWidth = Math.Clamp(width, MinPanelWidth, MaxPanelWidth);
+        return InvokeAsync(StateHasChanged);
+    }
 
     private static readonly (string Label, LogLevel Level)[] _filterOptions =
     [
@@ -223,6 +252,11 @@
         MonitoringState.OnDataChanged -= HandleMonitoringChanged;
         LogStore.OnNewEntry -= OnNewLog;
         SteamService.AuthStateChanged -= OnServiceChanged;
-        await Task.CompletedTask;
+
+        if (_resizeModule is not null)
+        {
+            try { await _resizeModule.DisposeAsync(); } catch { /* ignore */ }
+        }
+        _selfRef?.Dispose();
     }
 }
