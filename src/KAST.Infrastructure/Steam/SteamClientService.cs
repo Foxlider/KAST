@@ -923,9 +923,12 @@ public class SteamClientService : ISteamService, IDisposable
 
     // ───── Download Benchmark ─────
 
-    private const uint BenchmarkAppId  = 233780; // Arma 3 DS
+    private const uint BenchmarkAppId   = 233780; // Arma 3 DS
     private const uint BenchmarkDepotId = 233781; // Server Content depot
     private static readonly int[] BenchmarkLevels = [1, 2, 4, 8, 16, 32, 64];
+    // Each level gets its own slice of unique chunks so CDN edge-cache from one
+    // run cannot inflate the apparent speed of the next level.
+    private const long BenchmarkTargetBytesPerLevel = 10 * 1024 * 1024; // 10 MB per level
 
     public async Task<IReadOnlyList<BenchmarkResult>> BenchmarkDownloadAsync(
         IProgress<string>? log = null, CancellationToken ct = default)
@@ -960,36 +963,49 @@ public class SteamClientService : ISteamService, IDisposable
         if (manifest.FilenamesEncrypted && depotKey != null)
             manifest.DecryptFilenames(depotKey);
 
-        // 3. Collect ~30 MB of chunks for the benchmark sample
-        const long TargetBytes = 30 * 1024 * 1024;
-        var sampleChunks = new List<DepotManifest.ChunkData>();
-        long sampleSize = 0;
+        // 3. Collect enough UNIQUE chunks to give each level its own non-overlapping slice.
+        //    This prevents CDN edge-cache warm-up from the previous level inflating results.
+        long totalNeeded = BenchmarkTargetBytesPerLevel * BenchmarkLevels.Length;
+        var allChunks = new List<DepotManifest.ChunkData>();
+        long collected = 0;
 
         foreach (var file in manifest.Files!.Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory)))
         {
             foreach (var chunk in file.Chunks)
             {
-                sampleChunks.Add(chunk);
-                sampleSize += chunk.UncompressedLength;
-                if (sampleSize >= TargetBytes) break;
+                allChunks.Add(chunk);
+                collected += chunk.UncompressedLength;
+                if (collected >= totalNeeded) break;
             }
-            if (sampleSize >= TargetBytes) break;
+            if (collected >= totalNeeded) break;
         }
 
-        log?.Report($"Benchmark sample: {sampleChunks.Count} chunks, {sampleSize / 1_048_576.0:F1} MB");
+        log?.Report($"Collected {allChunks.Count} unique chunks ({collected / 1_048_576.0:F0} MB) partitioned across {BenchmarkLevels.Length} levels");
+
+        // Partition chunks into non-overlapping slices — one slice per level
+        int chunksPerLevel = Math.Max(1, allChunks.Count / BenchmarkLevels.Length);
         var results = new List<BenchmarkResult>();
 
-        // 4. Run each parallelism level
-        foreach (var level in BenchmarkLevels)
+        // 4. Run each parallelism level on its own private chunk slice
+        for (int i = 0; i < BenchmarkLevels.Length; i++)
         {
+            var level = BenchmarkLevels[i];
             ct.ThrowIfCancellationRequested();
-            log?.Report($"Testing {level} parallel download(s)...");
+
+            int sliceStart = i * chunksPerLevel;
+            int sliceEnd   = (i == BenchmarkLevels.Length - 1) ? allChunks.Count : sliceStart + chunksPerLevel;
+            if (sliceStart >= allChunks.Count) sliceStart = 0; // fallback: reuse from start if manifest too small
+            if (sliceEnd   >  allChunks.Count) sliceEnd   = allChunks.Count;
+
+            var levelChunks = allChunks.GetRange(sliceStart, sliceEnd - sliceStart);
+            long levelBytes = levelChunks.Sum(c => (long)c.UncompressedLength);
+            log?.Report($"Testing {level,2} parallel download(s) ({levelBytes / 1_048_576.0:F1} MB)...");
 
             using var sem = new SemaphoreSlim(level);
             long bytesDown = 0;
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
-            var tasks = sampleChunks.Select(async chunk =>
+            var tasks = levelChunks.Select(async chunk =>
             {
                 await sem.WaitAsync(ct);
                 try
@@ -1008,13 +1024,13 @@ public class SteamClientService : ISteamService, IDisposable
             var mbps = (bytesDown / 1_048_576.0) / sw.Elapsed.TotalSeconds;
             results.Add(new BenchmarkResult
             {
-                Parallelism = level,
+                Parallelism    = level,
                 BytesDownloaded = bytesDown,
                 ElapsedSeconds = sw.Elapsed.TotalSeconds,
-                MbPerSecond = mbps
+                MbPerSecond    = mbps
             });
 
-            log?.Report($"  {level} thread(s): {mbps:F1} MB/s ({sw.Elapsed.TotalSeconds:F1}s)");
+            log?.Report($"  {level,2} thread(s): {mbps:F1} MB/s ({sw.Elapsed.TotalSeconds:F1}s)");
         }
 
         var best = results.OrderByDescending(r => r.MbPerSecond).First();
