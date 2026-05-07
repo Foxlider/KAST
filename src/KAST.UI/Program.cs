@@ -19,7 +19,8 @@ builder.Services.AddSingleton(kastLogStore);
 builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore));
 
 // ── Health checks ────────────────────────────────────────────────────────────
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<KastDbContext>("database");
 
 // ── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db";
@@ -46,6 +47,9 @@ builder.Services.AddSingleton<IContentInstaller, SteamModInstaller>();
 builder.Services.AddSingleton<IContentInstaller, ServerInstaller>();
 builder.Services.AddSingleton<ContentProgressTracker>();
 builder.Services.AddSingleton<ContentOrchestrator>();
+
+// ── Monitoring state (circuit-scoped, survives page navigation) ──────────────
+builder.Services.AddScoped<MonitoringStateService>();
 
 // ── Background services ──────────────────────────────────────────────────────
 builder.Services.AddHostedService<MetricsBackgroundService>();
