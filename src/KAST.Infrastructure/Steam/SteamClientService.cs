@@ -587,11 +587,15 @@ public class SteamClientService : ISteamService, IDisposable
             .ToList() ?? [];
 
         int verifiedCount = 0, downloadedCount = 0;
+        long depotTotalBytes = (long)manifest.TotalUncompressedSize;
 
         // ── Phase 1: Quick scan — existence + size only (no hashing) ─────────
-        logProgress?.Report($"Scanning depot {depotId} ({files.Count} files)...");
+        var depotMb = depotTotalBytes / 1_048_576.0;
+        _logger.LogInformation("Depot {DepotId}: scanning {Count} files ({Size:F0} MB)", depotId, files.Count, depotMb);
+        logProgress?.Report($"  Depot {depotId}: scanning {files.Count} files ({depotMb:F0} MB)...");
+
         var toDownload = new List<DepotManifest.FileData>();
-        var toVerify = new List<DepotManifest.FileData>();
+        var toVerify   = new List<DepotManifest.FileData>();
 
         foreach (var file in files)
         {
@@ -605,14 +609,18 @@ public class SteamClientService : ISteamService, IDisposable
                 toVerify.Add(file);
         }
 
+        _logger.LogInformation("Depot {DepotId}: {ToDownload} missing/changed, {ToVerify} to hash-check",
+            depotId, toDownload.Count, toVerify.Count);
         if (toDownload.Count > 0)
-            logProgress?.Report($"  {toDownload.Count} file(s) missing or wrong size.");
+            logProgress?.Report($"  {toDownload.Count} file(s) missing or wrong size — will download.");
+        if (toVerify.Count > 0)
+            logProgress?.Report($"  {toVerify.Count} file(s) size-matched — hash-verifying...");
 
         // ── Phase 2: Parallel hash verification of size-matched files ────────
         if (toVerify.Count > 0)
         {
-            logProgress?.Report($"Verifying {toVerify.Count} existing file(s)...");
             using var hashSem = new SemaphoreSlim(maxParallelHash);
+            int hashDone = 0;
             var hashTasks = toVerify.Select(async file =>
             {
                 if (file.FileHash is not { Length: > 0 }) return (file, Match: true);
@@ -623,9 +631,15 @@ public class SteamClientService : ISteamService, IDisposable
                     var match = await Task.Run(() =>
                     {
                         using var sha1 = System.Security.Cryptography.SHA1.Create();
-                        using var fs = File.OpenRead(path);
-                        return sha1.ComputeHash(fs).SequenceEqual(file.FileHash);
+                        using var fStream = File.OpenRead(path);
+                        return sha1.ComputeHash(fStream).SequenceEqual(file.FileHash);
                     }, ct);
+
+                    var done = Interlocked.Increment(ref hashDone);
+                    // Report every 100 files or at the end
+                    if (done % 100 == 0 || done == toVerify.Count)
+                        logProgress?.Report($"  Verifying: {done}/{toVerify.Count} files checked...");
+
                     return (file, Match: match);
                 }
                 finally { hashSem.Release(); }
@@ -647,8 +661,12 @@ public class SteamClientService : ISteamService, IDisposable
                 }
             }
 
+            _logger.LogInformation("Depot {DepotId}: hash check complete — {Ok} OK, {Bad} corrupted/changed",
+                depotId, toVerify.Count - hashFailed, hashFailed);
             if (hashFailed > 0)
-                logProgress?.Report($"  {hashFailed} file(s) failed hash check — queued for download.");
+                logProgress?.Report($"  {hashFailed} file(s) failed hash check — queued for re-download.");
+            else
+                logProgress?.Report($"  All {toVerify.Count} existing file(s) verified OK.");
         }
 
         if (totalSize > 0)
@@ -657,11 +675,18 @@ public class SteamClientService : ISteamService, IDisposable
         // ── Phase 3: Parallel chunk download ─────────────────────────────────
         if (toDownload.Count > 0)
         {
-            logProgress?.Report($"Downloading {toDownload.Count} file(s)...");
+            long downloadBytes = toDownload.Sum(f => (long)f.TotalSize);
+            _logger.LogInformation("Depot {DepotId}: downloading {Count} files ({Size:F1} MB) with {Par} parallel workers",
+                depotId, toDownload.Count, downloadBytes / 1_048_576.0, maxParallelDownloads);
+            logProgress?.Report($"  Downloading {toDownload.Count} file(s) ({downloadBytes / 1_048_576.0:F1} MB) — {maxParallelDownloads} parallel worker(s)...");
+
             using var dlSem = new SemaphoreSlim(Math.Max(1, maxParallelDownloads));
             var server = servers.First();
             long bytesDownloaded = 0;
-            int filesDone = 0;
+            int  filesDone = 0;
+            var  sw = System.Diagnostics.Stopwatch.StartNew();
+            long lastReportBytes = 0;
+            var  lastReportTime  = sw.Elapsed;
 
             var tasks = toDownload.Select(async file =>
             {
@@ -670,9 +695,12 @@ public class SteamClientService : ISteamService, IDisposable
                 {
                     ct.ThrowIfCancellationRequested();
                     var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
-                    var filePath = Path.Combine(destinationPath, relativePath);
-                    var dir = Path.GetDirectoryName(filePath);
+                    var filePath     = Path.Combine(destinationPath, relativePath);
+                    var dir          = Path.GetDirectoryName(filePath);
                     if (dir != null) Directory.CreateDirectory(dir);
+
+                    var fileSizeMb = file.TotalSize / 1_048_576.0;
+                    _logger.LogDebug("Depot {DepotId}: downloading {File} ({Size:F2} MB)", depotId, relativePath, fileSizeMb);
 
                     await using var fs = File.Create(filePath);
                     if (file.TotalSize > 0)
@@ -681,7 +709,7 @@ public class SteamClientService : ISteamService, IDisposable
                     foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
                     {
                         ct.ThrowIfCancellationRequested();
-                        var buf = new byte[chunk.UncompressedLength];
+                        var buf     = new byte[chunk.UncompressedLength];
                         var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
                         fs.Position = (long)chunk.Offset;
                         await fs.WriteAsync(buf.AsMemory(0, written), ct);
@@ -692,15 +720,45 @@ public class SteamClientService : ISteamService, IDisposable
                     }
 
                     var done = Interlocked.Increment(ref filesDone);
-                    if (done % 25 == 0 || done == toDownload.Count)
-                        logProgress?.Report($"  [{done}/{toDownload.Count}] {relativePath}");
+
+                    // Report every file OR at least roughly every 5 seconds via the speed report below
+                    _logger.LogDebug("Depot {DepotId}: [{Done}/{Total}] {File}", depotId, done, toDownload.Count, relativePath);
+
+                    // Speed + progress report: every 10 files, or for large files (≥ 50 MB), or last file
+                    var nowBytes = Interlocked.Read(ref bytesDownloaded);
+                    var elapsed  = sw.Elapsed;
+                    var secSinceReport = (elapsed - lastReportTime).TotalSeconds;
+
+                    if (done % 10 == 0 || fileSizeMb >= 50 || done == toDownload.Count || secSinceReport >= 5)
+                    {
+                        var deltaBytes = nowBytes - lastReportBytes;
+                        var mbps       = secSinceReport > 0 ? (deltaBytes / 1_048_576.0) / secSinceReport : 0;
+                        var totalMbDone = nowBytes / 1_048_576.0;
+                        var totalMbAll  = downloadBytes / 1_048_576.0;
+
+                        logProgress?.Report(
+                            $"  [{done}/{toDownload.Count}] {relativePath}  —  {totalMbDone:F0}/{totalMbAll:F0} MB  ({mbps:F1} MB/s)");
+
+                        Interlocked.Exchange(ref lastReportBytes, nowBytes);
+                        lastReportTime = elapsed;
+                    }
                 }
                 finally { dlSem.Release(); }
             }).ToArray();
 
             await Task.WhenAll(tasks);
+
+            var elapsed  = sw.Elapsed;
+            var totalMbDownloaded = Interlocked.Read(ref bytesDownloaded) / 1_048_576.0;
+            var avgMbps  = elapsed.TotalSeconds > 0 ? totalMbDownloaded / elapsed.TotalSeconds : 0;
+
             totalDownloaded += Interlocked.Read(ref bytesDownloaded);
-            downloadedCount = toDownload.Count;
+            downloadedCount  = toDownload.Count;
+
+            _logger.LogInformation("Depot {DepotId}: download complete — {MB:F1} MB in {Sec:F1}s ({Mbps:F1} MB/s avg)",
+                depotId, totalMbDownloaded, elapsed.TotalSeconds, avgMbps);
+            logProgress?.Report(
+                $"  Depot {depotId}: {downloadedCount} file(s) downloaded ({totalMbDownloaded:F1} MB in {elapsed.TotalSeconds:F0}s, avg {avgMbps:F1} MB/s).");
         }
 
         if (totalSize > 0)
@@ -708,7 +766,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         _logger.LogInformation("Depot {DepotId}: {Verified} verified, {Downloaded} downloaded ({FileCount} total)",
             depotId, verifiedCount, downloadedCount, files.Count);
-        logProgress?.Report($"Depot {depotId}: {verifiedCount} up-to-date, {downloadedCount} updated.");
+        logProgress?.Report($"  Depot {depotId}: {verifiedCount} up-to-date, {downloadedCount} updated.");
 
         return (totalDownloaded, verifiedCount, downloadedCount);
     }
