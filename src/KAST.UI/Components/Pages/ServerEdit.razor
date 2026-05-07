@@ -382,64 +382,60 @@
 
                 @if (_installState != null)
                 {
-                    @* ── Horizontal train-stop stepper ── *@
-                    <div class="mb-3">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary" Style="letter-spacing:.05em;">Download Progress</MudText>
-                        <div class="kast-stepper">
-                            @for (int _si = 0; _si < _installState.Steps.Count; _si++)
+                    <div class="kast-install-panel">
+                        <div class="kast-install-timeline">
+                            <MudTimeline TimelinePosition="TimelinePosition.Top"
+                                         TimelineOrientation="TimelineOrientation.Horizontal">
+                                @foreach (var _tstep in _installState.Steps)
+                                {
+                                    <MudTimelineItem Color="@GetStepColor(_tstep.Status)"
+                                                     Icon="@GetStepIcon(_tstep.Status)"
+                                                     Size="Size.Small">
+                                        <ItemContent>
+                                            <MudText Typo="Typo.caption" Align="Align.Center">@_tstep.Name</MudText>
+                                            @if (_tstep.Status == ContentStepStatus.InProgress)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Primary" Align="Align.Center">@_tstep.Progress.ToString("F0")%</MudText>
+                                                <MudProgressLinear Value="@_tstep.Progress" Color="Color.Primary"
+                                                                   Rounded="true" Size="Size.Small" Class="mt-1" />
+                                            }
+                                            else if (_tstep.Status == ContentStepStatus.Failed)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Error" Align="Align.Center">@(_tstep.Error ?? "Failed")</MudText>
+                                            }
+                                            else if (_tstep.Status == ContentStepStatus.Skipped)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Align="Align.Center">Skipped</MudText>
+                                            }
+                                            else if (_tstep.Status == ContentStepStatus.Completed)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Success" Align="Align.Center">Done</MudText>
+                                            }
+                                        </ItemContent>
+                                    </MudTimelineItem>
+                                }
+                            </MudTimeline>
+                        </div>
+
+                        <div class="d-flex align-center justify-space-between px-1 mb-1">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">Install Log</MudText>
+                            <MudTooltip Text='@(_followLog ? "Auto-scroll on \u2014 click to disable" : "Auto-scroll off \u2014 click to enable")'>
+                                <MudIconButton Icon="@(_followLog ? Icons.Material.Filled.LockOpen : Icons.Material.Outlined.VerticalAlignBottom)"
+                                               Color="@(_followLog ? Color.Primary : Color.Default)"
+                                               Size="Size.Small"
+                                               OnClick="@(() => { _followLog = !_followLog; if (_followLog) _scrollInstallLog = true; })" />
+                            </MudTooltip>
+                        </div>
+
+                        <div class="kast-install-log"
+                             style="background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px; border-radius:4px; padding:8px;"
+                             @ref="_installLogRef">
+                            @foreach (var line in _installState.Log)
                             {
-                                var _step = _installState.Steps[_si];
-                                bool _done   = _step.Status == ContentStepStatus.Completed;
-                                bool _active = _step.Status == ContentStepStatus.InProgress;
-                                bool _skip   = _step.Status == ContentStepStatus.Skipped;
-                                bool _failed = _step.Status == ContentStepStatus.Failed;
-                                int  _num    = _si + 1;
-
-                                var _cls = _done   ? "kast-step kast-step--done"
-                                         : _active ? "kast-step kast-step--active"
-                                         : _skip   ? "kast-step kast-step--skip"
-                                         : _failed ? "kast-step kast-step--failed"
-                                         :           "kast-step kast-step--pending";
-
-                                <div class="@_cls">
-                                    <div class="kast-step__circle">
-                                        @if (_done)
-                                        { <MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size:14px;" /> }
-                                        else if (_skip)
-                                        { <span>&mdash;</span> }
-                                        else if (_failed)
-                                        { <MudIcon Icon="@Icons.Material.Filled.Close" Style="font-size:14px;" /> }
-                                        else if (_active)
-                                        { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Style="font-size:14px;" /> }
-                                        else
-                                        { <span>@_num</span> }
-                                    </div>
-                                    <div class="kast-step__label">@_step.Name</div>
-                                    @if (_active)
-                                    {
-                                        <div class="kast-step__detail">@(_step.Progress.ToString("F0"))%</div>
-                                    }
-                                    else if (_failed)
-                                    {
-                                        <div class="kast-step__detail" style="color:#ff3f5f;">@(_step.Error ?? "Failed")</div>
-                                    }
-                                    else if (_skip)
-                                    {
-                                        <div class="kast-step__detail">@(_step.Error ?? "Skipped")</div>
-                                    }
-                                </div>
+                                <div>@line</div>
                             }
                         </div>
                     </div>
-
-                    <MudPaper Class="pa-2 mt-3" Elevation="0"
-                              Style="max-height:200px; overflow-y:auto; background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px;"
-                              @ref="_installLogRef">
-                        @foreach (var line in _installState.Log)
-                        {
-                            <div>@line</div>
-                        }
-                    </MudPaper>
                 }
 
                 @if (_validationResults != null)
@@ -497,12 +493,20 @@
             </MudItem>
         </MudGrid>
 
-        <div class="d-flex justify-space-between align-center mt-4 mb-1">
+        <div class="d-flex align-center justify-space-between mt-4 mb-1">
             <MudText Typo="Typo.subtitle2">Server Console</MudText>
-            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearConsole">Clear</MudButton>
+            <div class="d-flex align-center gap-1">
+                <MudTooltip Text='@(_followConsole ? "Auto-scroll on \u2014 click to disable" : "Auto-scroll off \u2014 click to enable")'>
+                    <MudIconButton Icon="@(_followConsole ? Icons.Material.Filled.LockOpen : Icons.Material.Outlined.VerticalAlignBottom)"
+                                   Color="@(_followConsole ? Color.Primary : Color.Default)"
+                                   Size="Size.Small"
+                                   OnClick="@(() => { _followConsole = !_followConsole; if (_followConsole) _scrollConsole = true; })" />
+                </MudTooltip>
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearConsole">Clear</MudButton>
+            </div>
         </div>
-        <MudPaper Elevation="0" @ref="_consoleRef"
-                  Style="height:350px; overflow-y:auto; background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px;">
+        <div @ref="_consoleRef"
+             style="height:calc(100vh - 380px); min-height:200px; overflow-y:auto; background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px; border-radius:4px;">
             @foreach (var entry in _consoleLines)
             {
                 <div>
@@ -510,7 +514,7 @@
                     <span> @entry.Line</span>
                 </div>
             }
-        </MudPaper>
+        </div>
     </MudTabPanel>
 
 </MudTabs>
@@ -524,14 +528,18 @@
     private string _serversDirectory = "./servers";
 
     private ContentInstallState? _installState;
-    private MudPaper? _installLogRef;
+    private ElementReference _installLogRef;
+    private bool _scrollInstallLog;
+    private bool _followLog = true;
     private IReadOnlyList<ContentValidationResult>? _validationResults;
     private bool _disposed;
     private bool _cmdExpanded;
 
     private HubConnection? _hubConnection;
     private readonly List<ConsoleEntry> _consoleLines = new();
-    private MudPaper? _consoleRef;
+    private ElementReference _consoleRef;
+    private bool _followConsole = true;
+    private bool _scrollConsole;
     private double _monitorCpu;
     private long _monitorMemory;
     private int _monitorPlayerCount;
@@ -600,6 +608,20 @@
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
         if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
         if (string.IsNullOrEmpty(_profileRaw)) _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_scrollInstallLog)
+        {
+            _scrollInstallLog = false;
+            try { await JS.InvokeVoidAsync("KAST.scrollToBottom", _installLogRef); } catch { }
+        }
+        if (_scrollConsole)
+        {
+            _scrollConsole = false;
+            try { await JS.InvokeVoidAsync("KAST.scrollToBottom", _consoleRef); } catch { }
+        }
     }
 
     private void OnNameChanged()
@@ -749,6 +771,7 @@
     private void OnInstallStateChanged()
     {
         if (_disposed) return;
+        if (_followLog) _scrollInstallLog = true;
         InvokeAsync(async () =>
         {
             if (_disposed) return;
@@ -778,6 +801,7 @@
             if (entry.ServerInstanceId != _instance.Id) return;
             _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line));
             while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
+            if (_followConsole) _scrollConsole = true;
             InvokeAsync(StateHasChanged);
         });
 
@@ -830,6 +854,15 @@
         ContentStepStatus.InProgress => Color.Warning,
         ContentStepStatus.Failed => Color.Error,
         _ => Color.Default
+    };
+
+    private static string? GetStepLabel(ContentStep step) => step.Status switch
+    {
+        ContentStepStatus.InProgress => $"{step.Progress:F0}%",
+        ContentStepStatus.Completed  => "Done",
+        ContentStepStatus.Failed     => step.Error ?? "Failed",
+        ContentStepStatus.Skipped    => step.Error ?? "Skipped",
+        _                            => step.Detail
     };
 
     private static Color GetStatusColor(ServerInstanceStatus status) => status switch

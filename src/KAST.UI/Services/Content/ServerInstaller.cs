@@ -2,13 +2,14 @@ using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services.Content;
 
 /// <summary>
 /// Installs Arma 3 dedicated server + Creator DLC depots via SteamKit2.
 /// </summary>
-public class ServerInstaller(ISteamService steam, IFileSystemService fs) : IContentInstaller
+public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger<ServerInstaller> logger) : IContentInstaller
 {
     public const uint Arma3ServerAppId = 233780;
     private const string CreatorDlcBranch = "creatordlc";
@@ -59,6 +60,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
         if (!steam.IsConnected)
         {
             state.AddLog("Connecting to Steam (anonymous)...");
+            logger.LogInformation("Server install [{Instance}]: connecting to Steam anonymously", instance.Name);
             await steam.LoginAnonymousAsync(ct);
         }
         if (!steam.IsConnected)
@@ -66,12 +68,18 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
 
         state.AddLog(steam.IsAuthenticated ? $"Signed in as {steam.CurrentUsername}." : "Connected anonymously.");
         state.AddLog($"Parallel downloads: {maxPar}.");
+        logger.LogInformation("Server install [{Instance}]: steam ready, {Auth}, {Par} workers, dest={Path}",
+            instance.Name,
+            steam.IsAuthenticated ? $"authenticated as {steam.CurrentUsername}" : "anonymous",
+            maxPar, request.DestinationPath);
 
         int stepIdx = 0;
 
         // Step 0: Base server (public branch)
         state.BeginStep(stepIdx);
         state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading Arma 3 Dedicated Server (AppId {Arma3ServerAppId}, branch: public)...");
+        logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
+            instance.Name, state.Steps.Count, Arma3ServerAppId);
 
         var pctProgress = new Progress<double>(pct => state.SetStepProgress(stepIdx, pct));
         var logProgress = new Progress<string>(line => state.AddLog(line));
@@ -87,6 +95,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
 
         state.CompleteStep(stepIdx);
         state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Arma 3 Dedicated Server complete.");
+        logger.LogInformation("Server install [{Instance}]: step 1 complete — base server done", instance.Name);
 
         // Steps 1..N: Creator DLC depots
         foreach (var dlc in DlcTable)
@@ -100,6 +109,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
             {
                 state.SkipStep(stepIdx, "no server depot available");
                 state.AddLog($"⚠ {dlc.Name}: no server depot available — skipping.");
+                logger.LogWarning("Server install [{Instance}]: skipping {Dlc} — no server depot", instance.Name, dlc.Name);
                 continue;
             }
 
@@ -111,6 +121,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
             if (dlc.Branch is not null)
             {
                 state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (branch: {branch}, all depots)...");
+                logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (branch: {Branch})",
+                    instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, branch);
                 await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
                     pct, log, ignorePlatformFilter: false, branch: branch,
                     maxParallelDownloads: maxPar, ct: ct);
@@ -118,6 +130,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
             else
             {
                 state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (depot {dlc.DepotId}, branch: {branch})...");
+                logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (depot {DepotId}, branch: {Branch})",
+                    instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, dlc.DepotId, branch);
                 await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
                     pct, log, ignorePlatformFilter: true, branch: branch,
                     depotFilter: [dlc.DepotId], maxParallelDownloads: maxPar, ct: ct);
@@ -125,6 +139,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs) : ICont
 
             state.CompleteStep(stepIdx);
             state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] {dlc.Name} complete.");
+            logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
+                instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
         }
     }
 

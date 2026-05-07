@@ -120,3 +120,25 @@
 .kast-step--active .kast-step__detail {
     color: #7e6fff;
 }
+
+/* Install panel: flex column so log fills all remaining height */
+.kast-install-panel {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 292px);
+    min-height: 300px;
+}
+
+/* Timeline section — horizontal scroll if many steps */
+.kast-install-timeline {
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Log fills remaining space inside the panel */
+.kast-install-log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
