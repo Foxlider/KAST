@@ -3,8 +3,6 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services.Content;
 
@@ -51,7 +49,7 @@ public class ContentOrchestrator(
         var cts = new CancellationTokenSource();
         _active[key] = cts;
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token));
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token), cts.Token);
         return state;
     }
 
@@ -83,7 +81,7 @@ public class ContentOrchestrator(
         var cts = new CancellationTokenSource();
         _active[key] = cts;
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError));
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
         return state;
     }
 
@@ -99,9 +97,7 @@ public class ContentOrchestrator(
 
     public IReadOnlyList<ContentValidationResult> Validate(ContentType type, ContentInstallRequest request)
     {
-        if (!_installers.TryGetValue(type, out var installer))
-            return [];
-        return installer.Validate(request);
+        return !_installers.TryGetValue(type, out var installer) ? [] : installer.Validate(request);
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────
@@ -119,18 +115,8 @@ public class ContentOrchestrator(
             var installer = _installers[request.Type];
             await installer.InstallAsync(request, state, ct);
 
-            if (request.Type == ContentType.Server)
-            {
-                var buildId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
-                state.AddLog($"Build stamp: {buildId}");
-                await UpdateServerInstallAsync(request.ServerInstanceId, DateTime.UtcNow, buildId, CancellationToken.None);
-            }
-
-            if (onComplete is not null)
-            {
-                using var scope = scopeFactory.CreateScope();
-                await onComplete(scope.ServiceProvider, state);
-            }
+            await HandleServerInstallCompleteAsync(request, state);
+            await HandleCompleteCallbackAsync(onComplete, state);
 
             state.AddLog("All steps complete.");
             state.IsDownloading = false;
@@ -139,49 +125,79 @@ public class ContentOrchestrator(
         }
         catch (OperationCanceledException)
         {
-            logger.LogInformation("Content install cancelled: {Key}", key);
-            state.AddLog("Cancelled.");
-            state.IsDownloading = false;
-            state.ErrorMessage = "Cancelled";
-
-            if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
-                state.FailStep(state.CurrentStepIndex, "Cancelled");
-
-            if (onError is not null)
-            {
-                using var scope = scopeFactory.CreateScope();
-                await onError(scope.ServiceProvider, state, new OperationCanceledException());
-            }
-
-            state.NotifyChanged();
-
-            if (request.Type == ContentType.Server)
-                await UpdateServerStatusAsync(request.ServerInstanceId, ServerInstanceStatus.Stopped, CancellationToken.None);
+            await HandleCancellationAsync(key, request, state, onError);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Content install failed: {Key}", key);
-            state.AddLog($"ERROR: {ex.Message}");
-            state.IsDownloading = false;
-            state.ErrorMessage = ex.Message;
-
-            if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
-                state.FailStep(state.CurrentStepIndex, ex.Message);
-
-            if (onError is not null)
-            {
-                using var scope = scopeFactory.CreateScope();
-                await onError(scope.ServiceProvider, state, ex);
-            }
-
-            state.NotifyChanged();
-
-            if (request.Type == ContentType.Server)
-                await UpdateServerStatusAsync(request.ServerInstanceId, ServerInstanceStatus.Stopped, CancellationToken.None);
+            await HandleErrorAsync(key, request, state, ex, onError);
         }
         finally
         {
             _active.TryRemove(key, out _);
+        }
+    }
+
+    private async Task HandleServerInstallCompleteAsync(ContentInstallRequest request, ContentInstallState state)
+    {
+        if (request.Type == ContentType.Server)
+        {
+            var buildId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
+            state.AddLog($"Build stamp: {buildId}");
+            await UpdateServerInstallAsync(request.ServerInstanceId, DateTime.UtcNow, buildId, CancellationToken.None);
+        }
+    }
+
+    private async Task HandleCompleteCallbackAsync(Func<IServiceProvider, ContentInstallState, Task>? onComplete, ContentInstallState state)
+    {
+        if (onComplete is not null)
+        {
+            using var scope = scopeFactory.CreateScope();
+            await onComplete(scope.ServiceProvider, state);
+        }
+    }
+
+    private async Task HandleCancellationAsync(string key, ContentInstallRequest request, ContentInstallState state,
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError)
+    {
+        logger.LogInformation("Content install cancelled: {Key}", key);
+        state.AddLog("Cancelled.");
+        state.IsDownloading = false;
+        state.ErrorMessage = "Cancelled";
+
+        if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
+            state.FailStep(state.CurrentStepIndex, "Cancelled");
+
+        await HandleErrorCallbackAsync(onError, state, new OperationCanceledException());
+        state.NotifyChanged();
+
+        if (request.Type == ContentType.Server)
+            await UpdateServerStatusAsync(request.ServerInstanceId, ServerInstanceStatus.Stopped, CancellationToken.None);
+    }
+
+    private async Task HandleErrorAsync(string key, ContentInstallRequest request, ContentInstallState state, Exception ex,
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError)
+    {
+        logger.LogError(ex, "Content install failed: {Key}", key);
+        state.AddLog($"ERROR: {ex.Message}");
+        state.IsDownloading = false;
+        state.ErrorMessage = ex.Message;
+
+        if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
+            state.FailStep(state.CurrentStepIndex, ex.Message);
+
+        await HandleErrorCallbackAsync(onError, state, ex);
+        state.NotifyChanged();
+
+        if (request.Type == ContentType.Server)
+            await UpdateServerStatusAsync(request.ServerInstanceId, ServerInstanceStatus.Stopped, CancellationToken.None);
+    }
+
+    private async Task HandleErrorCallbackAsync(Func<IServiceProvider, ContentInstallState, Exception, Task>? onError, ContentInstallState state, Exception ex)
+    {
+        if (onError is not null)
+        {
+            using var scope = scopeFactory.CreateScope();
+            await onError(scope.ServiceProvider, state, ex);
         }
     }
 

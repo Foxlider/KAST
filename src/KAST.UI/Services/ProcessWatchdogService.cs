@@ -3,9 +3,6 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services;
 
@@ -19,7 +16,7 @@ public class ProcessWatchdogService(
     ILogger<ProcessWatchdogService> logger) : BackgroundService
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(10);
-    private readonly Dictionary<int, int> _restartAttempts = new();
+    private readonly Dictionary<int, int> _restartAttempts = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -30,17 +27,11 @@ public class ProcessWatchdogService(
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             try
-            {
-                await CheckRunningInstancesAsync(stoppingToken);
-            }
+            { await CheckRunningInstancesAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
+            { break; }
             catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error in process watchdog check");
-            }
+            { logger.LogWarning(ex, "Error in process watchdog check"); }
         }
 
         logger.LogInformation("Process watchdog service stopped");
@@ -55,11 +46,8 @@ public class ProcessWatchdogService(
             .Where(s => s.Status == ServerInstanceStatus.Running && s.ProcessId != null)
             .ToListAsync(ct);
 
-        foreach (var instance in runningInstances)
+        foreach (var instance in runningInstances.Where(instance => !processManager.IsProcessRunning(instance.ProcessId!.Value)))
         {
-            if (processManager.IsProcessRunning(instance.ProcessId!.Value))
-                continue;
-
             logger.LogWarning("Server {Name} (PID {Pid}) has crashed", instance.Name, instance.ProcessId);
 
             instance.ProcessId = null;
@@ -78,7 +66,10 @@ public class ProcessWatchdogService(
 
                 case RestartPolicy.OnCrash:
                 case RestartPolicy.Always:
-                    await TryRestartAsync(instance, db, scope.ServiceProvider, ct);
+                    await TryRestartAsync(instance, scope.ServiceProvider, ct);
+                    break;
+                default:
+                    logger.LogWarning("Server {Name}: Unknown restart policy {Policy}", instance.Name, instance.RestartPolicy);
                     break;
             }
         }
@@ -86,7 +77,6 @@ public class ProcessWatchdogService(
 
     private async Task TryRestartAsync(
         Core.Models.ServerInstance instance,
-        KastDbContext db,
         IServiceProvider sp,
         CancellationToken ct)
     {

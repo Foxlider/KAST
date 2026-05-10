@@ -1014,7 +1014,7 @@ public class SteamClientService : ISteamService, IDisposable
             depotKey = keyResult.DepotKey;
 
         var servers = await GetCdnServersAsync();
-        var server = servers.First();
+        var server = servers.Where(s => s.Type == "CDN").OrderBy(s => s.WeightedLoad).First();
         var reqCode = await _steamContent.GetManifestRequestCode(BenchmarkDepotId, BenchmarkAppId, manifestId);
         var manifest = await _cdnClient.DownloadManifestAsync(BenchmarkDepotId, manifestId, reqCode, server, depotKey);
 

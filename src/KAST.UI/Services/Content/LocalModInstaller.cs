@@ -34,10 +34,11 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
             state.BeginStep(stepIdx);
             state.AddLog($"Extracting {Path.GetFileName(request.SourcePath)} → {request.DestinationPath}");
 
-            var progress = new Progress<double>(pct => state.SetStepProgress(stepIdx, pct));
+            var currentStep = stepIdx; // avoid modified closure in progress callback
+            var progress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
             await fs.ExtractZipAsync(request.SourcePath!, request.DestinationPath, progress, ct);
 
-            state.CompleteStep(stepIdx);
+            state.CompleteStep(currentStep);
             state.AddLog("Extraction complete.");
             stepIdx++;
         }
@@ -57,11 +58,10 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
         bool exists = Directory.Exists(request.DestinationPath);
         results.Add(new("Mod directory", exists, request.DestinationPath));
 
-        if (exists)
-        {
-            long size = fs.GetDirectorySize(request.DestinationPath);
-            results.Add(new("Files on disk", size > 0, $"{size / (1024.0 * 1024.0):F1} MiB"));
-        }
+        if (!exists) return results;
+        
+        long size = fs.GetDirectorySize(request.DestinationPath);
+        results.Add(new("Files on disk", size > 0, $"{size / (1024.0 * 1024.0):F1} MiB"));
 
         return results;
     }

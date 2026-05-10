@@ -1,20 +1,12 @@
-using System.Threading.Tasks;
 using Microsoft.JSInterop;
-using System.Threading;
 
 namespace KAST.UI.Services;
 
-public class ThemeService : IDisposable
+public class ThemeService(IJSRuntime? js) : IDisposable
 {
     private const string StorageKey = "kast_accent_color";
-    private readonly IJSRuntime? _js;
     private CancellationTokenSource? _cts;
     private bool _userOverride;
-
-    public ThemeService(IJSRuntime? js)
-    {
-        _js = js;
-    }
 
     public string AccentColor { get; private set; } = "#ff6b35"; // default orange
 
@@ -22,7 +14,7 @@ public class ThemeService : IDisposable
 
     public async Task InitializeAsync()
     {
-        if (_js is null)
+        if (js is null)
         {
             // still start auto behavior based on server time
             StartAprilFoolsIfNeeded();
@@ -31,18 +23,16 @@ public class ThemeService : IDisposable
 
         try
         {
-            var stored = await _js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            var stored = await js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
             if (!string.IsNullOrEmpty(stored))
             {
-                AccentColor = stored!;
+                AccentColor = stored;
                 _userOverride = true;
                 OnChange?.Invoke();
             }
         }
         catch
-        {
-            // ignore (server render or localStorage unavailable)
-        }
+        { /* ignore (server render or localStorage unavailable) */ }
 
         StartAprilFoolsIfNeeded();
     }
@@ -54,27 +44,22 @@ public class ThemeService : IDisposable
         _userOverride = true;
         try
         {
-            if (_js is not null)
-                await _js.InvokeVoidAsync("localStorage.setItem", StorageKey, color);
+            if (js is not null)
+                await js.InvokeVoidAsync("localStorage.setItem", StorageKey, color);
         }
-        catch
-        {
-            // ignore
-        }
+        catch { /* ignore */}
         OnChange?.Invoke();
     }
 
     private void StartAprilFoolsIfNeeded()
     {
-        var now = DateTime.UtcNow;
         // treat April 1st in local time; use DateTime.Now
         var localNow = DateTime.Now;
-        if (localNow.Month == 4 && localNow.Day == 1 || true)
-        {
-            _cts?.Cancel();
-            _cts = new CancellationTokenSource();
-            _ = AprilFoolsLoopAsync(_cts.Token);
-        }
+        if (localNow is not { Month: 4, Day: 1 }) return;
+        
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _ = AprilFoolsLoopAsync(_cts.Token);
     }
 
     private async Task AprilFoolsLoopAsync(CancellationToken ct)
@@ -88,15 +73,23 @@ public class ThemeService : IDisposable
                 AccentColor = palette[idx % palette.Length];
                 OnChange?.Invoke();
                 idx++;
-                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
             }
         }
-        catch (TaskCanceledException) { }
+        catch (TaskCanceledException) { /* Ignore */ }
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing) return;
+
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 }

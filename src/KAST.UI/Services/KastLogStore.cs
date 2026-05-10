@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services;
 
@@ -27,15 +26,13 @@ public sealed class KastLogStore
     public void Clear(LogLevel? filter = null)
     {
         if (filter is null)
-        {
-            while (_entries.TryDequeue(out _)) { }
-        }
+        { while (_entries.TryDequeue(out _)) { /* discard dequeued entry */ } }
         else
         {
             var kept = _entries
                 .Where(e => !MatchesFilter(e.Level, filter.Value))
                 .ToArray();
-            while (_entries.TryDequeue(out _)) { }
+            while (_entries.TryDequeue(out _)) { /* discard dequeued entry */ }
             foreach (var e in kept)
                 _entries.Enqueue(e);
         }

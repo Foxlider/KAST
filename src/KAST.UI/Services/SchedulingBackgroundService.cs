@@ -3,9 +3,6 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services;
 
@@ -28,17 +25,11 @@ public class SchedulingBackgroundService(
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             try
-            {
-                await EvaluateSchedulesAsync(stoppingToken);
-            }
+            { await EvaluateSchedulesAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
+            { break; }
             catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error evaluating schedules");
-            }
+            { logger.LogWarning(ex, "Error evaluating schedules"); }
         }
 
         logger.LogInformation("Scheduling background service stopped");
@@ -67,31 +58,21 @@ public class SchedulingBackgroundService(
                     "Schedule: starting server {Name} (scheduled at {Time})",
                     instance.Name, instance.AutoStartTime);
                 try
-                {
-                    await serverService.StartInstanceAsync(instance.Id, ct);
-                }
+                { await serverService.StartInstanceAsync(instance.Id, ct); }
                 catch (Exception ex)
-                {
-                    logger.LogError(ex, "Schedule: failed to start server {Name}", instance.Name);
-                }
+                { logger.LogError(ex, "Schedule: failed to start server {Name}", instance.Name); }
             }
 
-            if (!string.IsNullOrEmpty(instance.AutoStopTime)
-                && IsTimeMatch(currentTime, instance.AutoStopTime)
-                && instance.Status == ServerInstanceStatus.Running)
-            {
-                logger.LogInformation(
-                    "Schedule: stopping server {Name} (scheduled at {Time})",
-                    instance.Name, instance.AutoStopTime);
-                try
-                {
-                    await serverService.StopInstanceAsync(instance.Id, ct);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Schedule: failed to stop server {Name}", instance.Name);
-                }
-            }
+            if (string.IsNullOrEmpty(instance.AutoStopTime)
+                || !IsTimeMatch(currentTime, instance.AutoStopTime)
+                || instance.Status != ServerInstanceStatus.Running) continue;
+            
+            logger.LogInformation(
+                "Schedule: stopping server {Name} (scheduled at {Time})",
+                instance.Name, instance.AutoStopTime);
+            try { await serverService.StopInstanceAsync(instance.Id, ct);}
+            catch (Exception ex)
+            { logger.LogError(ex, "Schedule: failed to stop server {Name}", instance.Name); }
         }
     }
 
