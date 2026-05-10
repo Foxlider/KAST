@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace KAST.UI.Services;
 
 [ProviderAlias("KastInMemory")]
@@ -15,9 +13,8 @@ internal sealed class KastLogger(KastLogStore store, string category) : ILogger
 {
     public bool IsEnabled(LogLevel logLevel)
     {
-        if (logLevel >= LogLevel.Warning) return true;
-        if (category.StartsWith("KAST.", StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
+        return logLevel >= LogLevel.Warning 
+            || category.StartsWith("KAST.", StringComparison.OrdinalIgnoreCase);
     }
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -29,10 +26,12 @@ internal sealed class KastLogger(KastLogStore store, string category) : ILogger
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        if (!IsEnabled(logLevel)) return;
+        if (!IsEnabled(logLevel)) 
+            return;
 
         var message = formatter(state, exception);
-        if (exception != null) message += $"\n{exception}";
+        if (exception != null) 
+            message += $"\n{exception}";
 
         store.Add(new AppLogEntry(DateTime.Now, logLevel, category, message));
     }

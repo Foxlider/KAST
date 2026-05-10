@@ -8,7 +8,8 @@ public class FileSystemService : IFileSystemService
 {
     public long GetDirectorySize(string path)
     {
-        if (!Directory.Exists(path)) return 0;
+        if (!Directory.Exists(path)) 
+            return 0;
         return new DirectoryInfo(path)
             .EnumerateFiles("*", SearchOption.AllDirectories)
             .Sum(f => f.Length);
@@ -18,7 +19,7 @@ public class FileSystemService : IFileSystemService
     {
         Directory.CreateDirectory(destinationPath);
 
-        using var archive = ZipFile.OpenRead(zipPath);
+        await using var archive = await ZipFile.OpenReadAsync(zipPath, ct);
         int total = archive.Entries.Count;
         int done = 0;
 
@@ -35,13 +36,11 @@ public class FileSystemService : IFileSystemService
                 throw new InvalidOperationException($"Zip entry '{entry.FullName}' would extract outside the target directory.");
 
             if (string.IsNullOrEmpty(entry.Name))
-            {
-                Directory.CreateDirectory(fullDest);
-            }
+            { Directory.CreateDirectory(fullDest); }
             else
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(fullDest)!);
-                entry.ExtractToFile(fullDest, overwrite: true);
+                await entry.ExtractToFileAsync(fullDest, overwrite: true, ct);
             }
 
             done++;

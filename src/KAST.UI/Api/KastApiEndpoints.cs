@@ -138,23 +138,23 @@ public static class KastApiEndpoints
                 onComplete: async (sp, _) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id);
+                    var m = await db.Mods.FindAsync(id, ct);
                     if (m is null) return;
                     m.Status = ModStatus.Installed;
                     m.LocalPath = Path.GetFullPath(destPath);
                     m.SizeBytes = fs.GetDirectorySize(destPath);
                     m.LastUpdatedLocal = DateTime.UtcNow;
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
                 },
                 onError: async (sp, _, _) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id);
+                    var m = await db.Mods.FindAsync(id, ct);
                     if (m is null) return;
                     m.Status = ModStatus.Error;
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
                 });
@@ -173,28 +173,28 @@ public static class KastApiEndpoints
             await modService.UpdateModAsync(mod, ct);
             await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
 
-            var destPath = mod.LocalPath!;
+            var destPath = mod.LocalPath;
 
             orchestrator.StartModInstall(mod.Id, ContentType.SteamMod, destPath, mod.WorkshopId,
                 onComplete: async (sp, _) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id);
+                    var m = await db.Mods.FindAsync(id, ct);
                     if (m is null) return;
                     m.Status = ModStatus.Installed;
                     m.SizeBytes = fs.GetDirectorySize(destPath);
                     m.LastUpdatedLocal = DateTime.UtcNow;
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
                 },
                 onError: async (sp, _, _) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id);
+                    var m = await db.Mods.FindAsync(id, ct);
                     if (m is null) return;
                     m.Status = ModStatus.Error;
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
                 });

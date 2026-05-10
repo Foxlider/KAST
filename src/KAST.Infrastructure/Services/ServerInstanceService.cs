@@ -49,7 +49,23 @@ public class ServerInstanceService(
     public async Task<ServerInstance> UpdateInstanceAsync(ServerInstance instance, CancellationToken ct = default)
     {
         instance.LastModified = DateTime.UtcNow;
-        db.ServerInstances.Update(instance);
+        
+        // Check if the entity is already tracked
+        var existingEntry = db.ChangeTracker.Entries<ServerInstance>()
+            .FirstOrDefault(e => e.Entity.Id == instance.Id);
+        
+        if (existingEntry != null)
+        {
+            // Entity is already tracked, update its values directly
+            existingEntry.CurrentValues.SetValues(instance);
+            existingEntry.State = EntityState.Modified;
+        }
+        else
+        {
+            // Entity is not tracked, use Update as normal
+            db.ServerInstances.Update(instance);
+        }
+        
         await db.SaveChangesAsync(ct);
         return instance;
     }
@@ -341,6 +357,7 @@ public class ServerInstanceService(
     {
         var instance = await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
+            .AsNoTracking()
             .OrderBy(s => s.Id)
             .FirstOrDefaultAsync(s => s.Id == instanceId, ct)
             ?? throw new InvalidOperationException($"Server instance {instanceId} not found");

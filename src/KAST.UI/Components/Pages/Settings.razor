@@ -4,7 +4,7 @@
 @inject ISettingsService SettingsService
 @inject ISteamService SteamService
 @inject ISnackbar Snackbar
-@inject KAST.UI.Services.ThemeService ThemeService
+@inject ThemeService ThemeService
 @using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
@@ -26,14 +26,6 @@
                     </MudText>
                 </div>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
-
-                <MudDivider Class="my-4" />
-
-                <MudText Typo="Typo.subtitle1" Class="mb-2">Appearance</MudText>
-                <div class="d-flex align-center gap-3 flex-wrap">
-                    <MudColorPicker @bind-Value="_accentMud" ShowAlpha="false" ShowModeSwitch="false" Label="Accent Color" PickerVariant="PickerVariant.Dialog" Palette="_officialPalette" />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAccent">Apply Accent</MudButton>
-                </div>
 
                 <MudDivider Class="my-4" />
 
@@ -84,6 +76,14 @@
                         Apply @GetBestBenchmark().Parallelism parallel downloads (@GetBestBenchmark().MbPerSecond.ToString("F1") MB/s)
                     </MudButton>
                 }
+
+                <MudDivider Class="my-4" />
+
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Appearance</MudText>
+                <MudStack>
+                    <MudColorPicker @bind-Value="_accentMud" ShowAlpha="false" ShowModeSwitch="false" Label="Accent Color" PickerVariant="PickerVariant.Dialog" Palette="_officialPalette" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAccent">Apply Accent</MudButton>
+                </MudStack>
             </MudCardContent>
         </MudCard>
     </MudTabPanel>
@@ -106,7 +106,7 @@
                         <div>
                             <MudText Typo="Typo.h6">@(SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername)</MudText>
                             @if (SteamService.Profile?.PersonaName != SteamService.CurrentUsername)
-                            { <MudText Typo="Typo.caption" Color="Color.Secondary">@SteamService.CurrentUsername</MudText> }
+                            { <MudText Typo="Typo.body1" Color="Color.Secondary">@SteamService.CurrentUsername</MudText> }
                             @if (SteamService.Profile?.SteamId > 0)
                             { <MudText Typo="Typo.caption" Color="Color.Secondary">SteamID: @SteamService.Profile.SteamId</MudText> }
                         </div>
