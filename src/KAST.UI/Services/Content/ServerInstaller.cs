@@ -2,7 +2,6 @@ using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services.Content;
 
@@ -81,8 +80,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
         logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
             instance.Name, state.Steps.Count, Arma3ServerAppId);
 
-        var pctProgress = new Progress<double>(pct => state.SetStepProgress(stepIdx, pct));
-        var logProgress = new Progress<string>(line => state.AddLog(line));
+        var currentStep = stepIdx; // avoid modified closure in progress callback
+        var pctProgress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
+        var logProgress = new Progress<string>(state.AddLog);
 
         await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
             pctProgress, logProgress,
@@ -105,7 +105,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             stepIdx++;
             string branch = dlc.Branch ?? CreatorDlcBranch;
 
-            if (dlc.DepotId == 0 && dlc.Branch is null)
+            if (dlc is { DepotId: 0, Branch: null })
             {
                 state.SkipStep(stepIdx, "no server depot available");
                 state.AddLog($"⚠ {dlc.Name}: no server depot available — skipping.");
@@ -116,7 +116,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             state.BeginStep(stepIdx);
             int idx = stepIdx;
             var pct = new Progress<double>(p => state.SetStepProgress(idx, p));
-            var log = new Progress<string>(line => state.AddLog(line));
+            var log = new Progress<string>(state.AddLog);
 
             if (dlc.Branch is not null)
             {
@@ -142,6 +142,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
                 instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
         }
+        
+        // Step N+1: DirectX (Windows only)
     }
 
     public IReadOnlyList<ContentValidationResult> Validate(ContentInstallRequest request)
@@ -158,8 +160,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
         var exePath = Path.Combine(installPath, exeName);
         results.Add(new("Server executable", File.Exists(exePath), exeName));
 
-        foreach (var dir in new[] { "addons", "dta", "keys" })
-            results.Add(new(dir, Directory.Exists(Path.Combine(installPath, dir))));
+        results.AddRange(new[] { "addons", "dta", "keys" }.Select(dir => new ContentValidationResult(dir, Directory.Exists(Path.Combine(installPath, dir)))));
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && File.Exists(exePath))
         {
@@ -169,10 +170,34 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
         if (request.Instance is not null)
         {
-            foreach (var dlc in DlcTable.Where(d => d.Enabled(request.Instance)))
-                results.Add(new($"{dlc.Name} ({dlc.Folder}/)", Directory.Exists(Path.Combine(installPath, dlc.Folder))));
+            results.AddRange(DlcTable.Where(d => d.Enabled(request.Instance)).Select(dlc => new ContentValidationResult($"{dlc.Name} ({dlc.Folder}/)", Directory.Exists(Path.Combine(installPath, dlc.Folder)))));
+        }
+
+        // Check if DirectX is present on Windows, which is required for the server to run
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var dxInstalled = IsDirectXInstalled();
+            results.Add(new("DirectX", dxInstalled, dxInstalled ? "Present" : "Not found"));
         }
 
         return results;
+    }
+
+    public static bool IsDirectXInstalled()
+    {
+        // Linux/macOS never need DirectX runtime
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return true;
+
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        string[] requiredFiles =
+        {
+            Path.Combine(windows, "System32", "D3DX9_43.dll"),
+            Path.Combine(windows, "System32", "XINPUT1_3.dll"),
+            Path.Combine(windows, "SysWOW64", "D3DX9_43.dll")
+        };
+
+        return requiredFiles.Any(File.Exists);
     }
 }

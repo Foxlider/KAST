@@ -26,29 +26,31 @@
         <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(_instance.Status)" Variant="Variant.Filled">@_instance.Status</MudChip>
     }
     <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="Save">Save</MudButton>
-    @if (!_isNew)
-    {
-        @if (_instance.Status is ServerInstanceStatus.Running or ServerInstanceStatus.Starting)
+    <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled" DropShadow="true">
+        <MudButton StartIcon="@Icons.Material.Filled.Save" OnClick="Save">Save</MudButton>
+        @if (!_isNew)
         {
-            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopServer">Stop</MudButton>
+            @if (_instance.Status is ServerInstanceStatus.Running or ServerInstanceStatus.Starting)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopServer">Stop</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow"
+                        OnClick="LaunchServer"
+                        Disabled="@(!_instance.InstalledAt.HasValue || _instance.Status == ServerInstanceStatus.Downloading)">
+                    Launch
+                </MudButton>
+            }
         }
-        else
-        {
-            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow"
-                       OnClick="LaunchServer"
-                       Disabled="@(!_instance.InstalledAt.HasValue || _instance.Status == ServerInstanceStatus.Downloading)">
-                Launch
-            </MudButton>
-        }
-    }
+    </MudButtonGroup>
 </div>
 
 <MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
 
     @* ════════════ GENERAL ════════════ *@
     <MudTabPanel Text="General">
-        <MudGrid Class="mt-3" Spacing="3">
+        <MudGrid Class="mt-3">
             <MudItem xs="12" sm="6">
                 <MudTextField Value="@_instance.Name"
                               ValueChanged="@((string v) => { _instance.Name = v; OnNameChanged(); })"

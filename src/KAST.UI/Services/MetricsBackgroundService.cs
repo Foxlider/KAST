@@ -1,8 +1,5 @@
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services;
 
@@ -45,13 +42,9 @@ public class MetricsBackgroundService(
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
+            { break; }
             catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error collecting metrics");
-            }
+            { logger.LogWarning(ex, "Error collecting metrics"); }
         }
 
         logger.LogInformation("Metrics background service stopped");
