@@ -6,7 +6,6 @@ COPY KAST.slnx .
 COPY src/KAST.Core/KAST.Core.csproj src/KAST.Core/
 COPY src/KAST.Infrastructure/KAST.Infrastructure.csproj src/KAST.Infrastructure/
 COPY src/KAST.UI/KAST.UI.csproj src/KAST.UI/
-COPY src/KAST.Web/KAST.Web.csproj src/KAST.Web/
 COPY tests/KAST.Tests/KAST.Tests.csproj tests/KAST.Tests/
 
 # Restore
@@ -14,7 +13,7 @@ RUN dotnet restore KAST.slnx
 
 # Copy source and publish
 COPY src/ src/
-WORKDIR /src/src/KAST.Web
+WORKDIR /src/src/KAST.UI
 RUN dotnet publish -c Release -o /app/publish --no-restore
 
 # Runtime image
@@ -42,4 +41,4 @@ ENV Kast__ServersDirectory=/app/servers
 
 EXPOSE 5000
 
-ENTRYPOINT ["dotnet", "KAST.Web.dll"]
+ENTRYPOINT ["dotnet", "KAST.UI.dll"]
