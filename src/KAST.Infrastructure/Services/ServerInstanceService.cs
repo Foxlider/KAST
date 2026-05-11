@@ -116,9 +116,13 @@ public class ServerInstanceService(
         if (string.IsNullOrWhiteSpace(instance.InstallPath))
             return;
 
-        // 1) Per-instance config/profile directory: {InstallPath}/Servers/{id}
-        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        // 1) Per-instance config/profile directory: {InstallPath}/KAST/{id}
+        var configDir = Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString());
         TryDeleteDirectory(configDir, recursive: true);
+
+        // 1b) On Linux, clean up the profile symlink we created in the system profiles dir.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            CleanupLinuxProfileSymlink(instance);
 
         // 2) Mod symlinks created for this instance's mods (don't touch the mod
         //    source itself — that's shared and owned by ModService).
@@ -399,7 +403,7 @@ public class ServerInstanceService(
             Directory.CreateDirectory(instance.InstallPath);
 
         // Per-instance config directory
-        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        var configDir = Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString());
         Directory.CreateDirectory(configDir);
 
         if (instance.ServerCfgContent != null)
@@ -416,13 +420,15 @@ public class ServerInstanceService(
 
         if (instance.ArmaProfileContent != null)
         {
-            // Profile file goes in the profiles directory with instance-specific name
-            var profileDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
-            Directory.CreateDirectory(profileDir);
             var profileName = $"server_{instance.Id}";
-            var path = Path.Combine(profileDir, $"{profileName}.Arma3Profile");
+            var path = Path.Combine(configDir, $"{profileName}.Arma3Profile");
             File.WriteAllText(path, instance.ArmaProfileContent);
         }
+
+        // On Linux the -profiles= flag is broken; symlink the expected profile directory
+        // into our managed config folder so Arma reads/writes the right profile.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            EnsureLinuxProfileSymlink(instance, configDir);
     }
 
     public string GetCommandLine(ServerInstance instance)
@@ -434,7 +440,7 @@ public class ServerInstanceService(
 
     private static string BuildLaunchArguments(ServerInstance instance)
     {
-        var configDir = Path.Combine(instance.InstallPath, "Servers", instance.Id.ToString());
+        var configDir = Path.Combine(instance.InstallPath, "KAST");
         var profileName = $"server_{instance.Id}";
 
         var args = new List<string>
@@ -442,9 +448,13 @@ public class ServerInstanceService(
             $"-port={instance.Port}",
             "-nosplash",
             "-world=empty",
-            $"\"-profiles={configDir}\"",
             $"-name={profileName}"
         };
+
+        // -profiles= is broken on Linux; the profile directory is handled via a symlink.
+        // On Windows it works normally.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            args.Add($"\"-profiles={configDir}\"");
 
         if (instance.ServerCfgContent != null)
             args.Add($"\"-config={Path.Combine(configDir, "server.cfg")}\"");
@@ -537,5 +547,73 @@ public class ServerInstanceService(
     {
         var sanitized = new string(name.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
         return string.IsNullOrEmpty(sanitized) ? "mod" : sanitized;
+    }
+
+    /// <summary>
+    /// On Linux, Arma 3 ignores -profiles= and always writes profiles to
+    /// ~/.local/share/Arma 3 - Other Profiles/&lt;name&gt;/. We create a symlink
+    /// from that expected path to our managed KAST config directory so the
+    /// profile file ends up where KAST expects it.
+    /// </summary>
+    private void EnsureLinuxProfileSymlink(ServerInstance instance, string configDir)
+    {
+        var profileName = $"server_{instance.Id}";
+        var armaProfilesDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Arma 3 - Other Profiles");
+        var symlinkPath = Path.Combine(armaProfilesDir, profileName);
+
+        try
+        {
+            Directory.CreateDirectory(armaProfilesDir);
+
+            if (Directory.Exists(symlinkPath) || File.Exists(symlinkPath))
+            {
+                if (Directory.ResolveLinkTarget(symlinkPath, false) != null)
+                    File.Delete(symlinkPath); // remove stale symlink (unlink, not rmdir)
+                else
+                {
+                    logger.LogWarning(
+                        "Profile path for instance {Id} exists and is not a symlink; skipping symlink creation",
+                        instance.Id);
+                    return;
+                }
+            }
+
+            var absoluteConfigDir = Path.GetFullPath(configDir);
+            Directory.CreateSymbolicLink(symlinkPath, absoluteConfigDir);
+            logger.LogInformation(
+                "Created Linux profile symlink for instance {Id}", instance.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to create Linux profile symlink for instance {Id}", instance.Id);
+        }
+    }
+
+    private void CleanupLinuxProfileSymlink(ServerInstance instance)
+    {
+        var profileName = $"server_{instance.Id}";
+        var armaProfilesDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Arma 3 - Other Profiles");
+        var symlinkPath = Path.Combine(armaProfilesDir, profileName);
+
+        try
+        {
+            // File.Delete uses unlink() which is the correct syscall for removing a symlink on Linux.
+            // Directory.Delete uses rmdir() which always fails on symlinks.
+            if (File.Exists(symlinkPath) || Directory.Exists(symlinkPath))
+            {
+                File.Delete(symlinkPath);
+                logger.LogInformation("Removed Linux profile symlink {Path}", symlinkPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to remove Linux profile symlink for instance {Id}", instance.Id);
+        }
     }
 }

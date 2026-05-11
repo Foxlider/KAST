@@ -12,6 +12,7 @@
 @inject IContentOrchestrator ContentOrchestrator
 @inject ContentProgressTracker ContentTracker
 @inject IJSRuntime JS
+@inject KAST.UI.Services.ServerConsoleStore ConsoleStore
 
 <PageTitle>KAST -- @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
@@ -563,10 +564,10 @@
 
     private record ConsoleEntry(DateTime Timestamp, string Line, ConsoleFilter Type);
 
-    private IEnumerable<ConsoleEntry> FilteredConsoleLines =>
+    private IReadOnlyList<ConsoleEntry> FilteredConsoleLines =>
         _consoleFilter == ConsoleFilter.All
-            ? _consoleLines
-            : _consoleLines.Where(e => e.Type == _consoleFilter);
+            ? _consoleLines.ToList()
+            : _consoleLines.Where(e => e.Type == _consoleFilter).ToList();
 
     private string _restartPolicyStr
     {
@@ -604,6 +605,10 @@
             { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
 
             await InitializeSignalR();
+
+            // Seed console history from the singleton store (survives navigation)
+            foreach (var entry in ConsoleStore.GetHistory(_instance.Id))
+                _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
 
             var key = ContentProgressTracker.ServerKey(_instance.Id);
             _installState = ContentTracker.Get(key);
@@ -686,7 +691,7 @@
             await Save();
             await ServerService.StartInstanceAsync(_instance.Id);
             _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-            _activeTab = 5; // Monitor tab
+            _activeTab = 6; // Monitor tab
             StateHasChanged();
         }
         catch (Exception ex) { Snackbar.Add($"Failed to launch: {ex.Message}", Severity.Error); }
@@ -852,9 +857,14 @@
     private void ClearConsole()
     {
         if (_consoleFilter == ConsoleFilter.All)
+        {
             _consoleLines.Clear();
+            ConsoleStore.Clear(_instance.Id);
+        }
         else
+        {
             _consoleLines.RemoveAll(e => e.Type == _consoleFilter);
+        }
         StateHasChanged();
     }
 
