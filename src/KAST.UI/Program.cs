@@ -37,6 +37,9 @@ builder.Services.AddEndpointsApiExplorer();
 // ── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
 
+// ── Server console history (survives page navigation) ───────────────────────
+builder.Services.AddSingleton<ServerConsoleStore>();
+
 // ── Event broadcaster (bridges domain events → SignalR) ──────────────────────
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
 
