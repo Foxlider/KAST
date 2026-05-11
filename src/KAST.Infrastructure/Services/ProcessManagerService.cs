@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using KAST.Core.Interfaces;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
@@ -10,6 +11,10 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
         Action<int, string>? onOutputLine = null, Action<int, int>? onProcessExited = null,
         CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Process.StartActivity(
+            "kast.process.start", ActivityKind.Internal);
+        activity?.SetTag("process.executable", executablePath);
+
         logger.LogInformation("Starting process: {Executable} {Args}", executablePath, arguments);
 
         var psi = new ProcessStartInfo
@@ -27,6 +32,7 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
             ?? throw new InvalidOperationException($"Failed to start process: {executablePath}");
 
         logger.LogInformation("Process started with PID {Pid}", process.Id);
+        activity?.SetTag("process.pid", process.Id);
 
         var pid = process.Id;
 
@@ -58,6 +64,10 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
 
     public async Task StopProcessAsync(int processId, CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Process.StartActivity(
+            "kast.process.stop", ActivityKind.Internal);
+        activity?.SetTag("process.pid", processId);
+
         try
         {
             var process = Process.GetProcessById(processId);

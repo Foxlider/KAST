@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using KAST.Core.Enums;
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -100,6 +102,12 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         var mod = await db.Mods.FindAsync([id], ct)
             ?? throw new InvalidOperationException($"Mod {id} not found");
 
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.download", ActivityKind.Internal);
+        activity?.SetTag("mod.id",          id);
+        activity?.SetTag("mod.workshop_id", mod.WorkshopId);
+        activity?.SetTag("mod.name",        mod.Name);
+
         mod.Status = ModStatus.Downloading;
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
@@ -130,6 +138,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             mod.Status = ModStatus.Error;
             mod.LocalPath = string.Empty;
             mod.SizeBytes = 0;
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
         finally
@@ -143,6 +152,12 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
     {
         var mod = await db.Mods.FindAsync([id], ct)
             ?? throw new InvalidOperationException($"Mod {id} not found");
+
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.update", ActivityKind.Internal);
+        activity?.SetTag("mod.id",          id);
+        activity?.SetTag("mod.workshop_id", mod.WorkshopId);
+        activity?.SetTag("mod.name",        mod.Name);
 
         mod.Status = ModStatus.Updating;
         await db.SaveChangesAsync(ct);
@@ -173,6 +188,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             logger.LogError(ex, "Update failed for mod {Id} (WorkshopId={WorkshopId})", id, mod.WorkshopId);
             mod.Status = ModStatus.Error;
             mod.SizeBytes = 0;
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
         finally
@@ -184,9 +200,15 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
     public async Task CheckForUpdatesAsync(CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.update_check", ActivityKind.Internal);
+
         var mods = await db.Mods
             .Where(m => m.Source == ModSource.SteamWorkshop && m.Status == ModStatus.Installed)
             .ToListAsync(ct);
+
+        activity?.SetTag("mods.checked", mods.Count);
+        int updatesFound = 0;
 
         foreach (var mod in mods)
         {
@@ -195,9 +217,11 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             {
                 mod.Status = ModStatus.UpdateAvailable;
                 mod.LastUpdatedSteam = info.LastUpdated;
+                updatesFound++;
             }
         }
 
+        activity?.SetTag("mods.updates_found", updatesFound);
         await db.SaveChangesAsync(ct);
     }
 

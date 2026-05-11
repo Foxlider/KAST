@@ -1,13 +1,17 @@
+using System.Diagnostics;
 using KAST.Core.Interfaces;
 using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Steam;
+using KAST.Infrastructure.Telemetry;
 using KAST.UI.Api;
 using KAST.UI.Components;
 using KAST.UI.Hubs;
 using KAST.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +54,35 @@ builder.Services.AddScoped<MonitoringStateService>();
 builder.Services.AddHostedService<MetricsBackgroundService>();
 builder.Services.AddHostedService<ProcessWatchdogService>();
 builder.Services.AddHostedService<SchedulingBackgroundService>();
+
+// ── OpenTelemetry tracing ────────────────────────────────────────────────────
+var telemetry = builder.Configuration.GetSection("Telemetry");
+if (telemetry.GetValue("Enabled", true))
+{
+    var otlpEndpoint = telemetry["OtlpEndpoint"] ?? "http://localhost:4317";
+    var serviceName  = telemetry["ServiceName"]  ?? KastActivitySources.ServiceName;
+
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing => tracing
+            .SetResourceBuilder(
+                ResourceBuilder.CreateDefault().AddService(serviceName))
+            .AddAspNetCoreInstrumentation(opts =>
+            {
+                // Skip noisy health-check and static-asset spans
+                opts.Filter = ctx =>
+                    !ctx.Request.Path.StartsWithSegments("/health") &&
+                    !ctx.Request.Path.StartsWithSegments("/alive");
+            })
+            .AddHttpClientInstrumentation()
+            .AddEntityFrameworkCoreInstrumentation()
+            .AddSource(KastActivitySources.Content.Name)
+            .AddSource(KastActivitySources.Process.Name)
+            .AddSource(KastActivitySources.Mods.Name)
+            .AddOtlpExporter(opts =>
+            {
+                opts.Endpoint = new Uri(otlpEndpoint);
+            }));
+}
 
 var app = builder.Build();
 
