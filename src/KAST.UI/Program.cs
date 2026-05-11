@@ -6,7 +6,6 @@ using KAST.UI.Api;
 using KAST.UI.Components;
 using KAST.UI.Hubs;
 using KAST.UI.Services;
-using KAST.UI.Services.Content;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using ModStatus = KAST.Core.Enums.ModStatus;
@@ -40,14 +39,6 @@ builder.Services.AddSignalR();
 
 // ── Event broadcaster (bridges domain events → SignalR) ──────────────────────
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
-
-// ── Content install system ───────────────────────────────────────────────────
-builder.Services.AddSingleton<IFileSystemService, FileSystemService>();
-builder.Services.AddSingleton<IContentInstaller, LocalModInstaller>();
-builder.Services.AddSingleton<IContentInstaller, SteamModInstaller>();
-builder.Services.AddSingleton<IContentInstaller, ServerInstaller>();
-builder.Services.AddSingleton<ContentProgressTracker>();
-builder.Services.AddSingleton<ContentOrchestrator>();
 
 // ── Monitoring state (circuit-scoped, survives page navigation) ──────────────
 builder.Services.AddScoped<MonitoringStateService>();

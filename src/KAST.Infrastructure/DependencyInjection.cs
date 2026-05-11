@@ -1,6 +1,7 @@
 using KAST.Core.Interfaces;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Services;
+using KAST.Infrastructure.Services.Content;
 using KAST.Infrastructure.Steam;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,14 @@ public static class DependencyInjection
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();
+
+        // Content install system — lives entirely in Infrastructure
+        services.AddSingleton<IFileSystemService, FileSystemService>();
+        services.AddSingleton<IContentInstaller, LocalModInstaller>();
+        services.AddSingleton<IContentInstaller, SteamModInstaller>();
+        services.AddSingleton<IContentInstaller, ServerInstaller>();
+        services.AddSingleton<ContentProgressTracker>();
+        services.AddSingleton<IContentOrchestrator, ContentOrchestrator>();
 
         return services;
     }

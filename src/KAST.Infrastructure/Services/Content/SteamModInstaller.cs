@@ -2,7 +2,7 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 /// <summary>
 /// Downloads a Steam Workshop mod via SteamKit2.
@@ -52,7 +52,7 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
         results.Add(new("Mod directory", exists, request.DestinationPath));
 
         if (!exists) return results;
-        
+
         long size = fs.GetDirectorySize(request.DestinationPath);
         results.Add(new("Files on disk", size > 0, $"{size / (1024.0 * 1024.0):F1} MiB"));
 
