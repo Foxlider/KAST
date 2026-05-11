@@ -28,8 +28,8 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Install SonarCloud scanner
-        run: dotnet tool install --global dotnet-sonarscanner
+      # - name: Install SonarCloud scanner
+      #   run: dotnet tool install --global dotnet-sonarscanner
 
       - name: Install Coverlet tool
         run: dotnet tool install --global coverlet.console
@@ -37,8 +37,8 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
-      - name: Begin SonarCloud analysis
-        run: dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" /d:sonar.token="${{ env.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.coverage.exclusions="**/bin/**,**/obj/**" /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml"
+      # - name: Begin SonarCloud analysis
+      #   run: dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" /d:sonar.token="${{ env.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.coverage.exclusions="**/bin/**,**/obj/**" /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml"
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
@@ -46,9 +46,9 @@ jobs:
       - name: Test with coverage
         run: coverlet ./tests/KAST.Tests/bin/Release/net10.0/KAST.Tests.dll --target "dotnet" --targetargs "test ./tests/KAST.Tests/KAST.Tests.csproj --no-build --configuration Release --verbosity normal --logger trx;LogFileName=test-results.trx" --format opencover --output coverage.opencover.xml --include-directory "./src"
 
-      - name: End SonarCloud analysis
-        run: dotnet sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
-        if: always()
+      # - name: End SonarCloud analysis
+      #   run: dotnet sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
+      #   if: always()
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -57,14 +57,14 @@ jobs:
           name: test-results
           path: '**/TestResults/*.trx'
 
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: coverage.opencover.xml
-          flags: unittests
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # - name: Upload coverage reports to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   if: always()
+      #   with:
+      #     files: coverage.opencover.xml
+      #     flags: unittests
+      #     fail_ci_if_error: false
+      #     token: ${{ secrets.CODECOV_TOKEN }}
 
   docker:
     name: Docker Build

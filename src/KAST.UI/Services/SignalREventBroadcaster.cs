@@ -10,7 +10,8 @@ namespace KAST.UI.Services;
 /// </summary>
 public class SignalREventBroadcaster(
     IHubContext<DownloadHub> downloadHub,
-    IHubContext<MonitoringHub> monitoringHub) : IAppEventBroadcaster
+    IHubContext<MonitoringHub> monitoringHub,
+    ServerConsoleStore consoleStore) : IAppEventBroadcaster
 {
     public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress)
         => DownloadHub.BroadcastDownloadProgress(downloadHub, progress);
@@ -28,5 +29,8 @@ public class SignalREventBroadcaster(
         => MonitoringHub.BroadcastInstanceMetrics(monitoringHub, metrics);
 
     public Task BroadcastLogEntryAsync(LogEntryEvent logEntry)
-        => MonitoringHub.BroadcastLogEntry(monitoringHub, logEntry);
+    {
+        consoleStore.Add(logEntry);
+        return MonitoringHub.BroadcastLogEntry(monitoringHub, logEntry);
+    }
 }

@@ -16,6 +16,7 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
         {
             FileName = executablePath,
             Arguments = arguments,
+            WorkingDirectory = Path.GetDirectoryName(executablePath) ?? string.Empty,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
