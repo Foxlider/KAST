@@ -23,7 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\KAST.Core\KAST.Core.csproj" />
     <ProjectReference Include="..\..\src\KAST.Infrastructure\KAST.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\KAST.Web\KAST.Web.csproj" />
+    <ProjectReference Include="..\..\src\KAST.UI\KAST.UI.csproj" />
   </ItemGroup>
 
 </Project>
