@@ -3,24 +3,29 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 /// <summary>
 /// Singleton orchestrator that queues content installs, manages cancellation,
 /// and delegates to the appropriate <see cref="IContentInstaller"/>.
+/// The UI layer only signals this service — all download logic runs here in Infrastructure.
 /// </summary>
 public class ContentOrchestrator(
     IServiceScopeFactory scopeFactory,
     ContentProgressTracker tracker,
     IEnumerable<IContentInstaller> installers,
-    ILogger<ContentOrchestrator> logger)
+    ILogger<ContentOrchestrator> logger) : IContentOrchestrator
 {
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _active = new();
     private readonly Dictionary<ContentType, IContentInstaller> _installers =
         installers.ToDictionary(i => i.Type);
 
     public bool IsRunning(string key) => _active.ContainsKey(key);
+
+    public ContentInstallState? GetState(string key) => tracker.Get(key);
 
     // ── Server install ───────────────────────────────────────────────────────
 
@@ -123,9 +128,19 @@ public class ContentOrchestrator(
             state.IsComplete = true;
             state.NotifyChanged();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            // The user explicitly cancelled via Cancel(key) — expected path
             await HandleCancellationAsync(key, request, state, onError);
+        }
+        catch (OperationCanceledException oce)
+        {
+            // Spurious TaskCanceledException from an HTTP timeout or SteamKit2 internals.
+            // Treat it as a real error so the user sees a meaningful message.
+            logger.LogWarning(oce, "Spurious cancellation in content install {Key} (not user-requested) — treating as error", key);
+            await HandleErrorAsync(key, request, state,
+                new IOException($"Network timeout or transient failure during download. Details: {oce.Message}", oce),
+                onError);
         }
         catch (Exception ex)
         {
@@ -159,7 +174,7 @@ public class ContentOrchestrator(
     private async Task HandleCancellationAsync(string key, ContentInstallRequest request, ContentInstallState state,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError)
     {
-        logger.LogInformation("Content install cancelled: {Key}", key);
+        logger.LogInformation("Content install cancelled by user: {Key}", key);
         state.AddLog("Cancelled.");
         state.IsDownloading = false;
         state.ErrorMessage = "Cancelled";

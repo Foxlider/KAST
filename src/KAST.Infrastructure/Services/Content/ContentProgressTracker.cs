@@ -2,10 +2,10 @@ using System.Collections.Concurrent;
 using KAST.Core.Enums;
 using KAST.Core.Models;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 /// <summary>
-/// Singleton store mapping content keys to their install state.
+/// Singleton store mapping content keys to their live install state.
 /// Keys: "server:{instanceId}", "mod:{modId}"
 /// </summary>
 public class ContentProgressTracker

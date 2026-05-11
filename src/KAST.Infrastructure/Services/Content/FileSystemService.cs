@@ -2,13 +2,13 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using KAST.Core.Interfaces;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 public class FileSystemService : IFileSystemService
 {
     public long GetDirectorySize(string path)
     {
-        if (!Directory.Exists(path)) 
+        if (!Directory.Exists(path))
             return 0;
         return new DirectoryInfo(path)
             .EnumerateFiles("*", SearchOption.AllDirectories)
@@ -36,7 +36,9 @@ public class FileSystemService : IFileSystemService
                 throw new InvalidOperationException($"Zip entry '{entry.FullName}' would extract outside the target directory.");
 
             if (string.IsNullOrEmpty(entry.Name))
-            { Directory.CreateDirectory(fullDest); }
+            {
+                Directory.CreateDirectory(fullDest);
+            }
             else
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(fullDest)!);
@@ -46,8 +48,6 @@ public class FileSystemService : IFileSystemService
             done++;
             progress?.Report((double)done / total * 100);
         }
-
-        await Task.CompletedTask;
     }
 
     public void CreateOrUpdateSymlink(string linkPath, string targetPath)

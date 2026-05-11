@@ -2,7 +2,7 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 /// <summary>
 /// Installs a local mod: extracts a ZIP or validates an existing folder.
@@ -34,7 +34,7 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
             state.BeginStep(stepIdx);
             state.AddLog($"Extracting {Path.GetFileName(request.SourcePath)} → {request.DestinationPath}");
 
-            var currentStep = stepIdx; // avoid modified closure in progress callback
+            var currentStep = stepIdx;
             var progress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
             await fs.ExtractZipAsync(request.SourcePath!, request.DestinationPath, progress, ct);
 
@@ -59,7 +59,7 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
         results.Add(new("Mod directory", exists, request.DestinationPath));
 
         if (!exists) return results;
-        
+
         long size = fs.GetDirectorySize(request.DestinationPath);
         results.Add(new("Files on disk", size > 0, $"{size / (1024.0 * 1024.0):F1} MiB"));
 

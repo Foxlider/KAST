@@ -5,6 +5,7 @@ WORKDIR /src
 COPY KAST.slnx .
 COPY src/KAST.Core/KAST.Core.csproj src/KAST.Core/
 COPY src/KAST.Infrastructure/KAST.Infrastructure.csproj src/KAST.Infrastructure/
+COPY src/KAST.UI/KAST.UI.csproj src/KAST.UI/
 COPY src/KAST.Web/KAST.Web.csproj src/KAST.Web/
 COPY tests/KAST.Tests/KAST.Tests.csproj tests/KAST.Tests/
 

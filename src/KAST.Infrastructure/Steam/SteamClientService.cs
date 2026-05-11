@@ -35,8 +35,8 @@ public class SteamClientService : ISteamService, IDisposable
     // QR auth state
     private QrAuthSession? _activeQrSession;
 
-    // CDN state — cached across downloads
-    private Server[]? _cdnServers;
+    // CDN state — a persistent pool that discards faulty servers and auto-refills
+    private CdnServerPool? _cdnPool;
 
     // Token cache
     private static readonly string TokenCachePath = Path.Combine(
@@ -420,9 +420,9 @@ public class SteamClientService : ISteamService, IDisposable
             "Workshop item: {Name}, AppId={AppId}, DepotId={DepotId}, ManifestId={ManifestId}",
             details.title, appId, depotId, manifestId);
 
-        // 2. Get CDN server list
-        var servers = await GetCdnServersAsync();
-        var server = servers.First();
+        // 2. Get a CDN server from the pool
+        var pool = await EnsureCdnPoolAsync(ct);
+        var server = pool.GetServer(ct);
         _logger.LogDebug("Using CDN server: {Host} ({Type})", server.Host, server.Type);
 
         // 3. Get depot decryption key
@@ -444,21 +444,21 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 5. Download manifest via CDN.Client
         DepotManifest manifest;
+        bool manifestServerFaulty = false;
         try
         {
             manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { pool.ReturnServer(server, false); throw; }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to download manifest from {Host}, retrying with next server", server.Host);
-            // Retry with a different server
-            if (servers.Length > 1)
-            {
-                server = servers[1];
-                manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
-            }
-            else throw;
+            _logger.LogWarning(ex, "Manifest download failed on {Host} — trying next server", server.Host);
+            manifestServerFaulty = true;
+            pool.ReturnServer(server, true); // discard faulty server
+            server = pool.GetServer(ct);     // get a fresh one
+            manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
         }
+        if (!manifestServerFaulty) pool.ReturnServer(server, false);
 
         if (manifest.FilenamesEncrypted && depotKey != null)
             manifest.DecryptFilenames(depotKey);
@@ -496,9 +496,8 @@ public class SteamClientService : ISteamService, IDisposable
             {
                 ct.ThrowIfCancellationRequested();
 
-                // CDN.Client handles decryption + decompression internally
                 var chunkBuffer = new byte[chunk.UncompressedLength];
-                var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, chunkBuffer, depotKey);
+                var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, chunkBuffer, depotKey, ct);
 
                 fs.Position = (long)chunk.Offset;
                 await fs.WriteAsync(chunkBuffer.AsMemory(0, written), ct);
@@ -576,7 +575,7 @@ public class SteamClientService : ISteamService, IDisposable
     }
 
     private async Task<(long TotalDownloaded, int Verified, int Downloaded)> DownloadDepotFilesAsync(
-        uint depotId, byte[]? depotKey, DepotManifest manifest, Server[] servers,
+        uint depotId, byte[]? depotKey, DepotManifest manifest, CdnServerPool pool,
         string destinationPath, long totalSize, long totalDownloaded,
         IProgress<double>? progress, IProgress<string>? logProgress, int maxParallelDownloads, CancellationToken ct)
     {
@@ -619,35 +618,44 @@ public class SteamClientService : ISteamService, IDisposable
         // ── Phase 2: Parallel hash verification of size-matched files ────────
         if (toVerify.Count > 0)
         {
-            using var hashSem = new SemaphoreSlim(maxParallelHash);
             int hashDone = 0;
-            var hashTasks = toVerify.Select(async file =>
-            {
-                if (file.FileHash is not { Length: > 0 }) return (file, Match: true);
-                await hashSem.WaitAsync(ct);
-                try
+            var hashResults = new System.Collections.Concurrent.ConcurrentBag<(DepotManifest.FileData File, bool Match)>();
+
+            await Parallel.ForEachAsync(
+                toVerify,
+                new ParallelOptions { MaxDegreeOfParallelism = maxParallelHash, CancellationToken = ct },
+                async (file, hashCt) =>
                 {
-                    var path = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
-                    var match = await Task.Run(() =>
+                    try
                     {
-                        using var sha1 = System.Security.Cryptography.SHA1.Create();
-                        using var fStream = File.OpenRead(path);
-                        return sha1.ComputeHash(fStream).SequenceEqual(file.FileHash);
-                    }, ct);
+                        if (file.FileHash is not { Length: > 0 })
+                        {
+                            hashResults.Add((file, Match: true));
+                            return;
+                        }
 
-                    var done = Interlocked.Increment(ref hashDone);
-                    // Report every 100 files or at the end
-                    if (done % 100 == 0 || done == toVerify.Count)
-                        logProgress?.Report($"  Verifying: {done}/{toVerify.Count} files checked...");
+                        var path = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                        var match = await Task.Run(() =>
+                        {
+                            using var sha1 = System.Security.Cryptography.SHA1.Create();
+                            using var fStream = File.OpenRead(path);
+                            return sha1.ComputeHash(fStream).SequenceEqual(file.FileHash);
+                        }, hashCt);
 
-                    return (file, Match: match);
-                }
-                finally { hashSem.Release(); }
-            }).ToArray();
+                        var done = Interlocked.Increment(ref hashDone);
+                        if (done % 100 == 0 || done == toVerify.Count)
+                            logProgress?.Report($"  Verifying: {done}/{toVerify.Count} files checked...");
 
-            var results = await Task.WhenAll(hashTasks);
+                        hashResults.Add((file, match));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                });
+
             int hashFailed = 0;
-            foreach (var (file, match) in results)
+            foreach (var (file, match) in hashResults)
             {
                 if (match)
                 {
@@ -680,85 +688,97 @@ public class SteamClientService : ISteamService, IDisposable
                 depotId, toDownload.Count, downloadBytes / 1_048_576.0, maxParallelDownloads);
             logProgress?.Report($"  Downloading {toDownload.Count} file(s) ({downloadBytes / 1_048_576.0:F1} MB) — {maxParallelDownloads} parallel worker(s)...");
 
-            using var dlSem = new SemaphoreSlim(Math.Max(1, maxParallelDownloads));
-            var server = servers.First();
             long bytesDownloaded = 0;
             int  filesDone = 0;
             var  sw = System.Diagnostics.Stopwatch.StartNew();
             long lastReportBytes = 0;
             var  lastReportTime  = sw.Elapsed;
 
-            var tasks = toDownload.Select(async file =>
-            {
-                await dlSem.WaitAsync(ct);
-                try
+            // Parallel.ForEachAsync only ever keeps MaxDegreeOfParallelism items in-flight.
+            // Unlike Select().ToArray() + Task.WhenAll, it never queues thousands of async
+            // tasks up-front, so cancellation is instant (only active files need to abort).
+            // When any body throws, Parallel.ForEachAsync cancels the token passed to all
+            // other in-progress bodies, so the "first error aborts the rest" invariant is
+            // preserved without a manual CancellationTokenSource.
+            await Parallel.ForEachAsync(
+                toDownload,
+                new ParallelOptions
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
-                    var filePath     = Path.Combine(destinationPath, relativePath);
-                    var dir          = Path.GetDirectoryName(filePath);
-                    if (dir != null) Directory.CreateDirectory(dir);
-
-                    var fileSizeMb = file.TotalSize / 1_048_576.0;
-                    _logger.LogDebug("Depot {DepotId}: downloading {File} ({Size:F2} MB)", depotId, relativePath, fileSizeMb);
-
-                    await using var fs = File.Create(filePath);
-                    if (file.TotalSize > 0)
-                        fs.SetLength((long)file.TotalSize);
-
-                    foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                    MaxDegreeOfParallelism = Math.Max(1, maxParallelDownloads),
+                    CancellationToken = ct
+                },
+                async (file, fileCt) =>
+                {
+                    try
                     {
-                        ct.ThrowIfCancellationRequested();
-                        var buf     = new byte[chunk.UncompressedLength];
-                        var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
-                        fs.Position = (long)chunk.Offset;
-                        await fs.WriteAsync(buf.AsMemory(0, written), ct);
+                        var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+                        var filePath     = Path.Combine(destinationPath, relativePath);
+                        var dir          = Path.GetDirectoryName(filePath);
+                        if (dir != null) Directory.CreateDirectory(dir);
 
-                        var newBytes = Interlocked.Add(ref bytesDownloaded, chunk.UncompressedLength);
-                        if (totalSize > 0)
-                            progress?.Report((double)(totalDownloaded + newBytes) / totalSize * 100.0);
+                        var fileSizeMb = file.TotalSize / 1_048_576.0;
+                        _logger.LogDebug("Depot {DepotId}: downloading {File} ({Size:F2} MB)", depotId, relativePath, fileSizeMb);
+
+                        await using var fs = File.Create(filePath);
+                        if (file.TotalSize > 0)
+                            fs.SetLength((long)file.TotalSize);
+
+                        foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                        {
+                            fileCt.ThrowIfCancellationRequested();
+                            var buf = new byte[chunk.UncompressedLength];
+                            var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
+                            fs.Position = (long)chunk.Offset;
+                            await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
+
+                            var newBytes = Interlocked.Add(ref bytesDownloaded, chunk.UncompressedLength);
+                            if (totalSize > 0)
+                                progress?.Report((double)(totalDownloaded + newBytes) / totalSize * 100.0);
+                        }
+
+                        var done = Interlocked.Increment(ref filesDone);
+                        _logger.LogDebug("Depot {DepotId}: [{Done}/{Total}] {File}", depotId, done, toDownload.Count, relativePath);
+
+                        // Speed + progress report: every 10 files, for large files (≥ 50 MB), last file, or every 5 s
+                        var nowBytes = Interlocked.Read(ref bytesDownloaded);
+                        var elapsed  = sw.Elapsed;
+                        var secSinceReport = (elapsed - lastReportTime).TotalSeconds;
+
+                        if (done % 10 == 0 || fileSizeMb >= 50 || done == toDownload.Count || secSinceReport >= 5)
+                        {
+                            var deltaBytes  = nowBytes - lastReportBytes;
+                            var mbps        = secSinceReport > 0 ? (deltaBytes / 1_048_576.0) / secSinceReport : 0;
+                            var totalMbDone = nowBytes / 1_048_576.0;
+                            var totalMbAll  = downloadBytes / 1_048_576.0;
+
+                            logProgress?.Report(
+                                $"  [{done}/{toDownload.Count}] {relativePath}  —  {totalMbDone:F0}/{totalMbAll:F0} MB  ({mbps:F1} MB/s)");
+
+                            Interlocked.Exchange(ref lastReportBytes, nowBytes);
+                            lastReportTime = elapsed;
+                        }
                     }
-
-                    var done = Interlocked.Increment(ref filesDone);
-
-                    // Report every file OR at least roughly every 5 seconds via the speed report below
-                    _logger.LogDebug("Depot {DepotId}: [{Done}/{Total}] {File}", depotId, done, toDownload.Count, relativePath);
-
-                    // Speed + progress report: every 10 files, or for large files (≥ 50 MB), or last file
-                    var nowBytes = Interlocked.Read(ref bytesDownloaded);
-                    var elapsed  = sw.Elapsed;
-                    var secSinceReport = (elapsed - lastReportTime).TotalSeconds;
-
-                    if (done % 10 == 0 || fileSizeMb >= 50 || done == toDownload.Count || secSinceReport >= 5)
+                    catch (OperationCanceledException)
                     {
-                        var deltaBytes = nowBytes - lastReportBytes;
-                        var mbps       = secSinceReport > 0 ? (deltaBytes / 1_048_576.0) / secSinceReport : 0;
-                        var totalMbDone = nowBytes / 1_048_576.0;
-                        var totalMbAll  = downloadBytes / 1_048_576.0;
-
-                        logProgress?.Report(
-                            $"  [{done}/{toDownload.Count}] {relativePath}  —  {totalMbDone:F0}/{totalMbAll:F0} MB  ({mbps:F1} MB/s)");
-
-                        Interlocked.Exchange(ref lastReportBytes, nowBytes);
-                        lastReportTime = elapsed;
+                        // Catching here (before re-throwing) ensures the debugger's Just My Code
+                        // mode does not flag this as "unhandled in user code": the exception IS
+                        // handled here in user code; we simply propagate it so Parallel.ForEachAsync
+                        // can stop the remaining workers correctly.
+                        throw;
                     }
-                }
-                finally { dlSem.Release(); }
-            }).ToArray();
+                });
 
-            await Task.WhenAll(tasks);
-
-            var elapsed  = sw.Elapsed;
+            var swElapsed = sw.Elapsed;
             var totalMbDownloaded = Interlocked.Read(ref bytesDownloaded) / 1_048_576.0;
-            var avgMbps  = elapsed.TotalSeconds > 0 ? totalMbDownloaded / elapsed.TotalSeconds : 0;
+            var avgMbps  = swElapsed.TotalSeconds > 0 ? totalMbDownloaded / swElapsed.TotalSeconds : 0;
 
             totalDownloaded += Interlocked.Read(ref bytesDownloaded);
             downloadedCount  = toDownload.Count;
 
             _logger.LogInformation("Depot {DepotId}: download complete — {MB:F1} MB in {Sec:F1}s ({Mbps:F1} MB/s avg)",
-                depotId, totalMbDownloaded, elapsed.TotalSeconds, avgMbps);
+                depotId, totalMbDownloaded, swElapsed.TotalSeconds, avgMbps);
             logProgress?.Report(
-                $"  Depot {depotId}: {downloadedCount} file(s) downloaded ({totalMbDownloaded:F1} MB in {elapsed.TotalSeconds:F0}s, avg {avgMbps:F1} MB/s).");
+                $"  Depot {depotId}: {downloadedCount} file(s) downloaded ({totalMbDownloaded:F1} MB in {swElapsed.TotalSeconds:F0}s, avg {avgMbps:F1} MB/s).");
         }
 
         if (totalSize > 0)
@@ -769,6 +789,53 @@ public class SteamClientService : ISteamService, IDisposable
         logProgress?.Report($"  Depot {depotId}: {verifiedCount} up-to-date, {downloadedCount} updated.");
 
         return (totalDownloaded, verifiedCount, downloadedCount);
+    }
+
+    /// <summary>
+    /// Downloads a single depot chunk with up to <c>MaxChunkRetries</c> attempts, rotating CDN
+    /// servers on each failure.  Only re-throws on user cancellation or exhausted retries.
+    /// </summary>
+    private const int MaxChunkRetries = 3;
+
+    private async Task<int> DownloadChunkWithRetryAsync(
+        uint depotId, DepotManifest.ChunkData chunk, CdnServerPool pool,
+        byte[] buf, byte[]? depotKey, CancellationToken ct)
+    {
+        Exception? lastEx = null;
+
+        for (int attempt = 0; attempt < MaxChunkRetries; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var server = pool.GetServer(ct);
+            try
+            {
+                var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
+                pool.ReturnServer(server, false); // proven good — reuse it
+                return written;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                pool.ReturnServer(server, false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+                _logger.LogWarning(ex,
+                    "Chunk download failed on {Server} (attempt {Attempt}/{Max}) — discarding and retrying",
+                    server.Host, attempt + 1, MaxChunkRetries);
+
+                pool.ReturnServer(server, true); // faulty — permanently discard it
+
+                if (attempt < MaxChunkRetries - 1)
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct); // 1s, 2s back-off
+            }
+        }
+
+        throw new IOException(
+            $"Failed to download chunk after {MaxChunkRetries} attempts — no healthy CDN server responded.",
+            lastEx);
     }
 
     public async Task DownloadAppAsync(
@@ -813,10 +880,9 @@ public class SteamClientService : ISteamService, IDisposable
 
         logProgress?.Report($"Found {depotManifests.Count} depot(s) for {currentOs}.");
 
-        // 3. Download each depot
+        // 3. Connect to the CDN pool
         logProgress?.Report("Connecting to CDN servers...");
-        var servers = await GetCdnServersAsync();
-        logProgress?.Report($"Using CDN server: {servers.First().Host}");
+        var pool = await EnsureCdnPoolAsync(ct);
         Directory.CreateDirectory(destinationPath);
 
         long totalDownloaded = 0;
@@ -842,24 +908,25 @@ public class SteamClientService : ISteamService, IDisposable
 
             // Get manifest request code and download manifest
             var manifestRequestCode = await _steamContent.GetManifestRequestCode(depotId, appId, manifestId);
-            var server = servers.First();
+            var mServer = pool.GetServer(ct);
 
             DepotManifest manifest;
+            bool mFaulty = false;
             try
             {
-                manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
+                manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, mServer, depotKey);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { pool.ReturnServer(mServer, false); throw; }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "CDN download manifest failed for depot {DepotId}, trying next server", depotId);
-                logProgress?.Report($"Retrying depot {depotId} on fallback server...");
-                if (servers.Length > 1)
-                {
-                    server = servers[1];
-                    manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, server, depotKey);
-                }
-                else throw;
+                _logger.LogWarning(ex, "CDN manifest failed on {Host} for depot {DepotId} — trying next server", mServer.Host, depotId);
+                logProgress?.Report($"Retrying depot {depotId} manifest on fallback server...");
+                pool.ReturnServer(mServer, true); // discard faulty server
+                mFaulty = true;
+                mServer = pool.GetServer(ct);
+                manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, manifestRequestCode, mServer, depotKey);
             }
+            if (!mFaulty) pool.ReturnServer(mServer, false);
 
             if (manifest.FilenamesEncrypted && depotKey != null)
                 manifest.DecryptFilenames(depotKey);
@@ -900,7 +967,7 @@ public class SteamClientService : ISteamService, IDisposable
             }
 
             var (newTotal, verified, downloaded) = await DownloadDepotFilesAsync(
-                depotId, depotKey, manifest, servers, destinationPath,
+                depotId, depotKey, manifest, pool, destinationPath,
                 totalSize, totalDownloaded, progress, logProgress, maxParallelDownloads, ct);
 
             totalDownloaded = newTotal;
@@ -960,23 +1027,17 @@ public class SteamClientService : ISteamService, IDisposable
         return sha1.ComputeHash(fs).SequenceEqual(file.FileHash);
     }
 
-    // ───── CDN Server Discovery ─────
+    // ───── CDN Server Pool ─────
 
-    private async Task<Server[]> GetCdnServersAsync()
+    private Task<CdnServerPool> EnsureCdnPoolAsync(CancellationToken ct = default)
     {
-        if (_cdnServers is { Length: > 0 }) return _cdnServers;
+        // If a pool already exists and is healthy, return it immediately
+        if (_cdnPool is not null)
+            return Task.FromResult(_cdnPool);
 
-        var servers = await _steamContent.GetServersForSteamPipe();
-        _cdnServers = servers
-            .Where(s => s.Type is "CDN" or "SteamCache")
-            .OrderBy(s => s.WeightedLoad)
-            .ToArray();
-
-        if (_cdnServers.Length == 0)
-            throw new InvalidOperationException("No CDN servers available from Steam");
-
-        _logger.LogInformation("Discovered {Count} CDN servers", _cdnServers.Length);
-        return _cdnServers;
+        _cdnPool = new CdnServerPool(_steamClient, _steamContent, _logger);
+        _logger.LogInformation("CDN server pool created");
+        return Task.FromResult(_cdnPool);
     }
 
     // ───── Download Benchmark ─────
@@ -1013,10 +1074,11 @@ public class SteamClientService : ISteamService, IDisposable
         if (keyResult.Result == EResult.OK)
             depotKey = keyResult.DepotKey;
 
-        var servers = await GetCdnServersAsync();
-        var server = servers.Where(s => s.Type == "CDN").OrderBy(s => s.WeightedLoad).First();
+        var pool = await EnsureCdnPoolAsync(ct);
+        var server = pool.GetServer(ct);
         var reqCode = await _steamContent.GetManifestRequestCode(BenchmarkDepotId, BenchmarkAppId, manifestId);
         var manifest = await _cdnClient.DownloadManifestAsync(BenchmarkDepotId, manifestId, reqCode, server, depotKey);
+        pool.ReturnServer(server, false);
 
         if (manifest.FilenamesEncrypted && depotKey != null)
             manifest.DecryptFilenames(depotKey);
@@ -1070,8 +1132,8 @@ public class SteamClientService : ISteamService, IDisposable
                 {
                     ct.ThrowIfCancellationRequested();
                     var buf = new byte[chunk.UncompressedLength];
-                    await _cdnClient.DownloadDepotChunkAsync(BenchmarkDepotId, chunk, server, buf, depotKey);
-                    Interlocked.Add(ref bytesDown, chunk.UncompressedLength);
+                    var written = await DownloadChunkWithRetryAsync(BenchmarkDepotId, chunk, pool, buf, depotKey, ct);
+                    Interlocked.Add(ref bytesDown, written);
                 }
                 finally { sem.Release(); }
             }).ToArray();
@@ -1146,7 +1208,10 @@ public class SteamClientService : ISteamService, IDisposable
     {
         _logger.LogInformation("Disconnected from Steam");
         _isConnected = false;
-        _cdnServers = null; // invalidate CDN server cache
+        // Dispose and recreate the pool so it re-discovers CDN servers after reconnect.
+        // ReturnServer(faulty=true) calls during the disconnect may have already drained it.
+        _cdnPool?.Dispose();
+        _cdnPool = null;
 
         if (_isReconnecting)
         {
@@ -1170,6 +1235,11 @@ public class SteamClientService : ISteamService, IDisposable
             _logger.LogInformation("Logged in to Steam{Account}",
                 CurrentUsername != null ? $" as {CurrentUsername}" : " (anonymous)");
             _isConnected = true;
+
+            // Pass the cell ID to the pool so Steam routes us to geographically close CDN nodes.
+            // The pool may already exist from a previous anonymous login; update it in-place.
+            if (_cdnPool is not null)
+                _cdnPool.CellId = cb.CellID;
 
             // For real account logins, set persona state to Online so
             // Steam sends us back our PersonaStateCallback with name + avatar
@@ -1247,6 +1317,7 @@ public class SteamClientService : ISteamService, IDisposable
         {
             StopCallbackLoop();
             _callbackCts?.Dispose();
+            _cdnPool?.Dispose();
             _cdnClient.Dispose();
             _steamClient.Disconnect();
         }
