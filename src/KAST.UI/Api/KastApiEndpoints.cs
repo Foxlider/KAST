@@ -3,7 +3,7 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
-using KAST.UI.Services.Content;
+using KAST.Infrastructure.Services.Content;
 using Microsoft.AspNetCore.Mvc;
 
 namespace KAST.UI.Api;
@@ -121,7 +121,7 @@ public static class KastApiEndpoints
         });
 
         g.MapPost("/{id:int}/download", async (int id, IModService modService,
-            ContentOrchestrator orchestrator, ISettingsService settingsService,
+            IContentOrchestrator orchestrator, ISettingsService settingsService,
             IFileSystemService fs, IAppEventBroadcaster broadcaster, CancellationToken ct) =>
         {
             var mod = await modService.GetModByIdAsync(id, ct);
@@ -163,7 +163,7 @@ public static class KastApiEndpoints
         });
 
         g.MapPost("/{id:int}/update", async (int id, IModService modService,
-            ContentOrchestrator orchestrator, IFileSystemService fs,
+            IContentOrchestrator orchestrator, IFileSystemService fs,
             IAppEventBroadcaster broadcaster, CancellationToken ct) =>
         {
             var mod = await modService.GetModByIdAsync(id, ct);

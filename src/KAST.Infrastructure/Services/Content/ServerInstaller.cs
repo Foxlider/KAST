@@ -2,11 +2,12 @@ using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using Microsoft.Extensions.Logging;
 
-namespace KAST.UI.Services.Content;
+namespace KAST.Infrastructure.Services.Content;
 
 /// <summary>
-/// Installs Arma 3 dedicated server + Creator DLC depots via SteamKit2.
+/// Installs the Arma 3 dedicated server + Creator DLC depots via SteamKit2.
 /// </summary>
 public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger<ServerInstaller> logger) : IContentInstaller
 {
@@ -74,13 +75,13 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
         int stepIdx = 0;
 
-        // Step 0: Base server (public branch)
+        // ── Step 0: Base server (public branch) ──────────────────────────────
         state.BeginStep(stepIdx);
         state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading Arma 3 Dedicated Server (AppId {Arma3ServerAppId}, branch: public)...");
         logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
             instance.Name, state.Steps.Count, Arma3ServerAppId);
 
-        var currentStep = stepIdx; // avoid modified closure in progress callback
+        var currentStep = stepIdx;
         var pctProgress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
         var logProgress = new Progress<string>(state.AddLog);
 
@@ -97,7 +98,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
         state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Arma 3 Dedicated Server complete.");
         logger.LogInformation("Server install [{Instance}]: step 1 complete — base server done", instance.Name);
 
-        // Steps 1..N: Creator DLC depots
+        // ── Steps 1..N: Creator DLC depots ───────────────────────────────────
         foreach (var dlc in DlcTable)
         {
             if (!dlc.Enabled(instance)) continue;
@@ -142,8 +143,6 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
                 instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
         }
-        
-        // Step N+1: DirectX (Windows only)
     }
 
     public IReadOnlyList<ContentValidationResult> Validate(ContentInstallRequest request)
@@ -160,7 +159,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
         var exePath = Path.Combine(installPath, exeName);
         results.Add(new("Server executable", File.Exists(exePath), exeName));
 
-        results.AddRange(new[] { "addons", "dta", "keys" }.Select(dir => new ContentValidationResult(dir, Directory.Exists(Path.Combine(installPath, dir)))));
+        results.AddRange(new[] { "addons", "dta", "keys" }.Select(dir =>
+            new ContentValidationResult(dir, Directory.Exists(Path.Combine(installPath, dir)))));
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && File.Exists(exePath))
         {
@@ -170,10 +170,13 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
         if (request.Instance is not null)
         {
-            results.AddRange(DlcTable.Where(d => d.Enabled(request.Instance)).Select(dlc => new ContentValidationResult($"{dlc.Name} ({dlc.Folder}/)", Directory.Exists(Path.Combine(installPath, dlc.Folder)))));
+            results.AddRange(DlcTable
+                .Where(d => d.Enabled(request.Instance))
+                .Select(dlc => new ContentValidationResult(
+                    $"{dlc.Name} ({dlc.Folder}/)",
+                    Directory.Exists(Path.Combine(installPath, dlc.Folder)))));
         }
 
-        // Check if DirectX is present on Windows, which is required for the server to run
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var dxInstalled = IsDirectXInstalled();
@@ -185,12 +188,10 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
     public static bool IsDirectXInstalled()
     {
-        // Linux/macOS never need DirectX runtime
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return true;
 
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-
         string[] requiredFiles =
         {
             Path.Combine(windows, "System32", "D3DX9_43.dll"),
