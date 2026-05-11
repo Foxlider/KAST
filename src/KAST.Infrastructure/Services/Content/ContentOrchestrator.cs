@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -112,6 +114,11 @@ public class ContentOrchestrator(
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null)
     {
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.install", ActivityKind.Internal);
+        activity?.SetTag("content.key",  key);
+        activity?.SetTag("content.type", request.Type.ToString());
+
         try
         {
             if (request.Type == ContentType.Server)
@@ -131,6 +138,7 @@ public class ContentOrchestrator(
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // The user explicitly cancelled via Cancel(key) — expected path
+            activity?.SetStatus(ActivityStatusCode.Error, "Cancelled by user");
             await HandleCancellationAsync(key, request, state, onError);
         }
         catch (OperationCanceledException oce)
@@ -138,12 +146,14 @@ public class ContentOrchestrator(
             // Spurious TaskCanceledException from an HTTP timeout or SteamKit2 internals.
             // Treat it as a real error so the user sees a meaningful message.
             logger.LogWarning(oce, "Spurious cancellation in content install {Key} (not user-requested) — treating as error", key);
+            activity?.SetStatus(ActivityStatusCode.Error, oce.Message);
             await HandleErrorAsync(key, request, state,
                 new IOException($"Network timeout or transient failure during download. Details: {oce.Message}", oce),
                 onError);
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             await HandleErrorAsync(key, request, state, ex, onError);
         }
         finally

@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services.Content;
@@ -57,7 +59,14 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             ?? throw new InvalidOperationException("ServerInstaller requires an Instance on the request.");
         int maxPar = request.MaxParallelDownloads;
 
-        if (!steam.IsConnected)
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.server.install", ActivityKind.Internal);
+        activity?.SetTag("instance.name",       instance.Name);
+        activity?.SetTag("instance.id",         request.ServerInstanceId);
+        activity?.SetTag("parallel_downloads",  maxPar);
+
+        try
+        {
         {
             state.AddLog("Connecting to Steam (anonymous)...");
             logger.LogInformation("Server install [{Instance}]: connecting to Steam anonymously", instance.Name);
@@ -142,6 +151,12 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] {dlc.Name} complete.");
             logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
                 instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
+        }
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
     }
 

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Telemetry;
 
 namespace KAST.Infrastructure.Services.Content;
 
@@ -19,6 +21,13 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
 
     public async Task InstallAsync(ContentInstallRequest request, ContentInstallState state, CancellationToken ct)
     {
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.steam.mod_download", ActivityKind.Internal);
+        activity?.SetTag("workshop.id",  request.WorkshopId);
+        activity?.SetTag("destination",  request.DestinationPath);
+
+        try
+        {
         state.BeginStep(0);
         state.AddLog($"Downloading Workshop item {request.WorkshopId} → {request.DestinationPath}");
 
@@ -41,8 +50,15 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
 
         long size = fs.GetDirectorySize(request.DestinationPath);
         state.AddLog($"Size: {size / (1024.0 * 1024.0):F1} MiB");
+        activity?.SetTag("mod.size_bytes", size);
 
         state.CompleteStep(1);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
     }
 
     public IReadOnlyList<ContentValidationResult> Validate(ContentInstallRequest request)

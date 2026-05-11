@@ -20,6 +20,18 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Default=Data Source=/app/data/kast.db
+      - Telemetry__Enabled=true
+      - Telemetry__OtlpEndpoint=http://jaeger:4317
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: kast-jaeger
+    ports:
+      - "16686:16686"   # Web UI
+      - "4317:4317"     # OTLP gRPC receiver
+    restart: unless-stopped
 
   nginx:
     image: nginx:alpine
