@@ -113,6 +113,9 @@ internal sealed class CdnServerPool : IDisposable
                 // Sleep up to 5 s between checks; wake early if the pool dips below minimum
                 _refillNeeded.WaitOne(TimeSpan.FromSeconds(5));
 
+                if (_cts.Token.IsCancellationRequested)
+                    break;
+
                 if (_available.Count >= MinimumPoolSize)
                     continue;
 
@@ -160,6 +163,10 @@ internal sealed class CdnServerPool : IDisposable
                     sorted.Count, CellId, sorted.FirstOrDefault()?.Host ?? "none");
             }
             catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
             {
                 break;
             }
