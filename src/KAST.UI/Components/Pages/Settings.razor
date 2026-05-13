@@ -5,13 +5,15 @@
 @inject ISteamService SteamService
 @inject ISnackbar Snackbar
 @inject ThemeService ThemeService
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 @using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
 
-<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
+<MudTabs @bind-ActivePanelIndex="_activePanelIndex" Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
 
     @* ════ General ════ *@
     <MudTabPanel Text="General">
@@ -119,10 +121,40 @@
                         Sign in to download and manage mods with your Steam account.
                     </MudText>
 
+                    <MudPaper Elevation="0" Class="pa-3 mb-3" Style="border:1px solid rgba(255,255,255,.12); border-radius:8px;">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Sign in with Username + Password</MudText>
+                        <div class="d-flex gap-2 flex-wrap align-end">
+                            <MudTextField @bind-Value="_steamUsername" Label="Steam Username" Style="min-width:220px;" Disabled="@_loggingIn" />
+                            <MudTextField @bind-Value="_steamPassword" Label="Steam Password" InputType="InputType.Password" Style="min-width:220px;" Disabled="@_loggingIn" />
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartCredentialLogin" Disabled="@_loggingIn">
+                                Sign in
+                            </MudButton>
+                        </div>
+
+                        @if (_credentialSession?.RequiresGuardCode == true)
+                        {
+                            <div class="d-flex gap-2 flex-wrap align-end mt-3">
+                                <MudTextField @bind-Value="_steamGuardCode" Label="Steam Guard Code" Style="min-width:220px;" />
+                                <MudButton Variant="Variant.Filled" OnClick="SubmitGuardCode">Submit Code</MudButton>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_credentialSession.GuardCodePrompt))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">@_credentialSession.GuardCodePrompt</MudText>
+                            }
+                        }
+                        else if (_credentialSession?.WaitingForDeviceConfirmation == true)
+                        {
+                            <div class="d-flex align-center gap-2 mt-2">
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                <MudText Typo="Typo.body2">@(_credentialSession.GuardCodePrompt ?? "Approve the sign-in request in Steam, then return here.")</MudText>
+                            </div>
+                        }
+                    </MudPaper>
+
                     @if (_qrCodeBase64 == null && !_loggingIn)
                     {
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartQrLogin">
-                            Sign in with Steam
+                            Sign in with QR Code
                         </MudButton>
                     }
                     else if (_loggingIn && _qrCodeBase64 == null)
@@ -145,8 +177,8 @@
                                 @if (!string.IsNullOrEmpty(_challengeUrl))
                                 {
                                     <MudText Typo="Typo.body2" Class="mb-3">
-                                        On mobile? <MudLink Href="@_challengeUrl" Target="_blank">Tap here</MudLink>
-                                        to open directly in the Steam app.
+                                        Prefer browser login? <MudLink Href="@_challengeUrl" Target="_blank">Open Steam sign-in page</MudLink>
+                                        in a new tab.
                                     </MudText>
                                 }
                                 @if (_qrPolling)
@@ -265,6 +297,11 @@
     private SteamQrAuthSession? _qrSession;
     private bool _qrPolling;
     private CancellationTokenSource? _qrCts;
+    private SteamCredentialAuthSession? _credentialSession;
+    private CancellationTokenSource? _credentialCts;
+    private string _steamUsername = "";
+    private string _steamPassword = "";
+    private string _steamGuardCode = "";
 
     private IReadOnlyList<ApiKey> _apiKeys = [];
     private string _newKeyName = "";
@@ -275,6 +312,8 @@
     private string? _benchmarkStatus;
     private IReadOnlyList<BenchmarkResult>? _benchmarkResults;
 
+    private int _activePanelIndex = 0;
+
     protected override async Task OnInitializedAsync()
     {
         SteamService.AuthStateChanged += OnAuthStateChanged;
@@ -282,6 +321,14 @@
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
         _accentMud = ThemeService.AccentColor;
+
+        // Check if we should navigate to Steam tab (tab=steam in query string)
+        var uri = new Uri(Navigation.Uri);
+        var queryParams = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (queryParams["tab"] == "steam")
+        {
+            _activePanelIndex = 1; // Steam tab
+        }
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
@@ -289,6 +336,8 @@
     private async Task StartQrLogin()
     {
         if (_loggingIn || _qrPolling) return;
+        _credentialCts?.Cancel();
+        _credentialSession = null;
         _loggingIn = true;
         _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null; _qrPolling = false;
         StateHasChanged();
@@ -317,6 +366,51 @@
         _ = PollQrAsync(_qrCts.Token);
     }
 
+    private async Task StartCredentialLogin()
+    {
+        if (_loggingIn || _qrPolling) return;
+        _loggingIn = true;
+        _qrCts?.Cancel();
+        _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null; _qrPolling = false;
+        _credentialSession = null;
+        StateHasChanged();
+
+        var session = await SteamService.BeginCredentialLoginAsync(_steamUsername.Trim(), _steamPassword);
+        if (!string.IsNullOrEmpty(session.ErrorMessage))
+        {
+            _loggingIn = false;
+            Snackbar.Add($"Credential login error: {session.ErrorMessage}", Severity.Error);
+            StateHasChanged();
+            return;
+        }
+
+        _credentialSession = session;
+        _steamGuardCode = "";
+        session.StateChanged = () => InvokeAsync(StateHasChanged);
+        _loggingIn = false;
+        StateHasChanged();
+
+        _credentialCts?.Cancel();
+        _credentialCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        _ = PollCredentialAsync(_credentialCts.Token);
+    }
+
+    private async Task SubmitGuardCode()
+    {
+        if (_credentialSession is null)
+            return;
+
+        var accepted = await SteamService.SubmitCredentialGuardCodeAsync(_credentialSession, _steamGuardCode);
+        if (!accepted)
+        {
+            Snackbar.Add("No Steam Guard code was requested yet", Severity.Warning);
+            return;
+        }
+
+        _steamGuardCode = "";
+        StateHasChanged();
+    }
+
     private async Task PollQrAsync(CancellationToken ct)
     {
         try
@@ -337,6 +431,27 @@
         }
     }
 
+    private async Task PollCredentialAsync(CancellationToken ct)
+    {
+        try
+        {
+            var success = await SteamService.PollCredentialLoginAsync(_credentialSession!, ct);
+            await InvokeAsync(() =>
+            {
+                _credentialSession = null;
+                _steamPassword = "";
+                Snackbar.Add(success
+                    ? $"Signed in as {SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername}"
+                    : "Credential login expired or failed", success ? Severity.Success : Severity.Error);
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await InvokeAsync(() => { _credentialSession = null; StateHasChanged(); });
+        }
+    }
+
     private static string GenerateQrCodeBase64(string url)
     {
         using var qrGenerator = new QRCoder.QRCodeGenerator();
@@ -345,9 +460,15 @@
         return Convert.ToBase64String(qrCode.GetGraphic(8));
     }
 
+
+
     private async Task Logout()
     {
         _qrCts?.Cancel();
+        _credentialCts?.Cancel();
+        _credentialSession = null;
+        _steamGuardCode = "";
+        _steamPassword = "";
         _qrCodeBase64 = null; _challengeUrl = null; _qrSession = null; _qrPolling = false;
         await SteamService.LogoutAsync();
         Snackbar.Add("Signed out of Steam", Severity.Info);
@@ -422,5 +543,7 @@
         SteamService.AuthStateChanged -= OnAuthStateChanged;
         _qrCts?.Cancel();
         _qrCts?.Dispose();
+        _credentialCts?.Cancel();
+        _credentialCts?.Dispose();
     }
 }

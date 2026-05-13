@@ -9,6 +9,9 @@ public interface ISteamService
     Task<bool> LoginWithTokenAsync(string username, string refreshToken, CancellationToken ct = default);
     Task<SteamQrAuthSession> BeginQrLoginAsync(CancellationToken ct = default);
     Task<bool> PollQrLoginAsync(SteamQrAuthSession session, CancellationToken ct = default);
+    Task<SteamCredentialAuthSession> BeginCredentialLoginAsync(string username, string password, CancellationToken ct = default);
+    Task<bool> SubmitCredentialGuardCodeAsync(SteamCredentialAuthSession session, string code, CancellationToken ct = default);
+    Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default);
     Task LogoutAsync();
 
     // ── State ──
@@ -43,6 +46,15 @@ public class SteamQrAuthSession
     public string ChallengeUrl { get; set; } = string.Empty;
     public string? ErrorMessage { get; set; }
     public Action<string>? ChallengeUrlChanged { get; set; }
+}
+
+public class SteamCredentialAuthSession
+{
+    public string? ErrorMessage { get; set; }
+    public bool RequiresGuardCode { get; set; }
+    public string? GuardCodePrompt { get; set; }
+    public bool WaitingForDeviceConfirmation { get; set; }
+    public Action? StateChanged { get; set; }
 }
 
 public class WorkshopItemInfo
