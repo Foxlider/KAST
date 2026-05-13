@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using KAST.Core.Enums;
 
 namespace KAST.Core.Models;
@@ -49,7 +50,7 @@ public record ContentInstallRequest
 /// </summary>
 public class ContentInstallState
 {
-    private readonly List<string> _log = [];
+    private ImmutableArray<string> _log = [];
     private readonly object _lock = new();
 
     public required string Key { get; init; }
@@ -67,7 +68,7 @@ public class ContentInstallState
 
     public IReadOnlyList<string> Log
     {
-        get { lock (_lock) return _log.ToArray(); }
+        get { lock (_lock) return _log; }
     }
 
     public double OverallProgress
@@ -83,7 +84,7 @@ public class ContentInstallState
 
     public void AddLog(string line)
     {
-        lock (_lock) _log.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
+        lock (_lock) _log = _log.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
         Changed?.Invoke();
     }
 
@@ -134,7 +135,7 @@ public class ContentInstallState
 
     public void Reset()
     {
-        lock (_lock) _log.Clear();
+        lock (_lock) _log = [];
         CurrentStepIndex = -1;
         IsDownloading = false;
         IsComplete = false;
