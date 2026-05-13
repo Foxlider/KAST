@@ -29,38 +29,38 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         try
         {
-        var existing = await GetModByWorkshopIdAsync(workshopId, ct);
-        if (existing != null)
-        {
-            activity?.SetTag("mod.id",       existing.Id);
-            activity?.SetTag("mod.name",     existing.Name);
-            activity?.SetTag("mod.existing", true);
-            return existing;
-        }
+            var existing = await GetModByWorkshopIdAsync(workshopId, ct);
+            if (existing != null)
+            {
+                activity?.SetTag("mod.id",       existing.Id);
+                activity?.SetTag("mod.name",     existing.Name);
+                activity?.SetTag("mod.existing", true);
+                return existing;
+            }
 
-        var info = await steamService.GetWorkshopItemInfoAsync(workshopId, ct);
+            var info = await steamService.GetWorkshopItemInfoAsync(workshopId, ct);
 
-        var mod = new SteamMod
-        {
-            WorkshopId = workshopId,
-            Name = info?.Name ?? $"Workshop Item {workshopId}",
-            Description = info?.Description,
-            ThumbnailUrl = info?.ThumbnailUrl,
-            Author = info?.Author,
-            SizeBytes = 0,
-            ExpectedSizeBytes = info?.SizeBytes ?? 0,
-            Source = ModSource.SteamWorkshop,
-            Status = ModStatus.NotInstalled,
-            LastUpdatedSteam = info?.LastUpdated
-        };
+            var mod = new SteamMod
+            {
+                WorkshopId = workshopId,
+                Name = info?.Name ?? $"Workshop Item {workshopId}",
+                Description = info?.Description,
+                ThumbnailUrl = info?.ThumbnailUrl,
+                Author = info?.Author,
+                SizeBytes = 0,
+                ExpectedSizeBytes = info?.SizeBytes ?? 0,
+                Source = ModSource.SteamWorkshop,
+                Status = ModStatus.NotInstalled,
+                LastUpdatedSteam = info?.LastUpdated
+            };
 
-        db.Mods.Add(mod);
-        await db.SaveChangesAsync(ct);
+            db.Mods.Add(mod);
+            await db.SaveChangesAsync(ct);
 
-        activity?.SetTag("mod.id",       mod.Id);
-        activity?.SetTag("mod.name",     mod.Name);
-        activity?.SetTag("mod.existing", false);
-        return mod;
+            activity?.SetTag("mod.id",       mod.Id);
+            activity?.SetTag("mod.name",     mod.Name);
+            activity?.SetTag("mod.existing", false);
+            return mod;
         }
         catch (Exception ex)
         {
