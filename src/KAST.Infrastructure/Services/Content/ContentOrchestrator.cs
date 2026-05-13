@@ -34,8 +34,22 @@ public class ContentOrchestrator(
     public ContentInstallState StartServerInstall(int instanceId, string installPath, ServerInstance instance, int maxParallelDownloads)
     {
         var key = ContentProgressTracker.ServerKey(instanceId);
+
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.queued", ActivityKind.Internal);
+        activity?.SetTag("content.key",             key);
+        activity?.SetTag("content.type",            ContentType.Server.ToString());
+        activity?.SetTag("content.destination",     installPath);
+        activity?.SetTag("content.instance_id",     instanceId);
+        activity?.SetTag("content.instance_name",   instance.Name);
+        activity?.SetTag("content.parallel_workers", maxParallelDownloads);
+
         if (_active.ContainsKey(key))
+        {
+            activity?.SetTag("content.queued", false);
+            activity?.AddEvent(new ActivityEvent("install.already_running"));
             return tracker.Get(key)!;
+        }
 
         var installer = _installers[ContentType.Server];
         var request = new ContentInstallRequest
@@ -56,6 +70,9 @@ public class ContentOrchestrator(
         var cts = new CancellationTokenSource();
         _active[key] = cts;
 
+        activity?.SetTag("content.queued", true);
+        activity?.SetTag("content.steps",  steps.Count);
+
         _ = Task.Run(() => RunAsync(key, request, state, cts.Token), cts.Token);
         return state;
     }
@@ -68,8 +85,24 @@ public class ContentOrchestrator(
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null)
     {
         var key = ContentProgressTracker.ModKey(modId);
+
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.queued", ActivityKind.Internal);
+        activity?.SetTag("content.key",         key);
+        activity?.SetTag("content.type",        type.ToString());
+        activity?.SetTag("content.destination",  destinationPath);
+        activity?.SetTag("content.mod_id",      modId);
+        if (workshopId != 0)
+            activity?.SetTag("content.workshop_id", workshopId);
+        if (sourcePath is not null)
+            activity?.SetTag("content.source_path", sourcePath);
+
         if (_active.ContainsKey(key))
+        {
+            activity?.SetTag("content.queued", false);
+            activity?.AddEvent(new ActivityEvent("install.already_running"));
             return tracker.Get(key)!;
+        }
 
         var installer = _installers[type];
         var request = new ContentInstallRequest
@@ -87,6 +120,9 @@ public class ContentOrchestrator(
 
         var cts = new CancellationTokenSource();
         _active[key] = cts;
+
+        activity?.SetTag("content.queued", true);
+        activity?.SetTag("content.steps",  steps.Count);
 
         _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
         return state;
@@ -114,10 +150,18 @@ public class ContentOrchestrator(
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null)
     {
+        // Detach from any ambient HTTP/SignalR span so this long-running background
+        // task becomes a clean root trace rather than a child of a short-lived request.
+        Activity.Current = null;
+
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.install", ActivityKind.Internal);
-        activity?.SetTag("content.key",  key);
-        activity?.SetTag("content.type", request.Type.ToString());
+        activity?.SetTag("content.key",         key);
+        activity?.SetTag("content.type",        request.Type.ToString());
+        activity?.SetTag("content.destination",  request.DestinationPath);
+        activity?.SetTag("content.steps",        state.Steps.Count);
+        if (request.Type == ContentType.Server)
+            activity?.SetTag("content.instance_id", request.ServerInstanceId);
 
         try
         {
@@ -126,6 +170,7 @@ public class ContentOrchestrator(
 
             var installer = _installers[request.Type];
             await installer.InstallAsync(request, state, ct);
+            activity?.AddEvent(new ActivityEvent("install.completed"));
 
             await HandleServerInstallCompleteAsync(request, state);
             await HandleCompleteCallbackAsync(onComplete, state);
@@ -139,6 +184,7 @@ public class ContentOrchestrator(
         {
             // The user explicitly cancelled via Cancel(key) — expected path
             activity?.SetStatus(ActivityStatusCode.Error, "Cancelled by user");
+            activity?.AddEvent(new ActivityEvent("install.cancelled"));
             await HandleCancellationAsync(key, request, state, onError);
         }
         catch (OperationCanceledException oce)
@@ -147,6 +193,11 @@ public class ContentOrchestrator(
             // Treat it as a real error so the user sees a meaningful message.
             logger.LogWarning(oce, "Spurious cancellation in content install {Key} (not user-requested) — treating as error", key);
             activity?.SetStatus(ActivityStatusCode.Error, oce.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = oce.GetType().FullName ?? oce.GetType().Name,
+                ["exception.message"] = oce.Message
+            }));
             await HandleErrorAsync(key, request, state,
                 new IOException($"Network timeout or transient failure during download. Details: {oce.Message}", oce),
                 onError);
@@ -154,6 +205,12 @@ public class ContentOrchestrator(
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]       = ex.GetType().FullName ?? ex.GetType().Name,
+                ["exception.message"]    = ex.Message,
+                ["exception.stacktrace"] = ex.StackTrace ?? string.Empty
+            }));
             await HandleErrorAsync(key, request, state, ex, onError);
         }
         finally
@@ -228,23 +285,44 @@ public class ContentOrchestrator(
 
     private async Task UpdateServerStatusAsync(int instanceId, ServerInstanceStatus status, CancellationToken ct)
     {
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.server_status_update", ActivityKind.Internal);
+        activity?.SetTag("instance.id",     instanceId);
+        activity?.SetTag("server.status",   status.ToString());
+
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
         var instance = await db.ServerInstances.FindAsync([instanceId], ct);
-        if (instance is null) return;
+        if (instance is null)
+        {
+            activity?.SetTag("instance.found", false);
+            return;
+        }
         instance.Status = status;
         await db.SaveChangesAsync(ct);
+        activity?.SetTag("instance.found", true);
     }
 
     private async Task UpdateServerInstallAsync(int instanceId, DateTime installedAt, string buildId, CancellationToken ct)
     {
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.server_install_record", ActivityKind.Internal);
+        activity?.SetTag("instance.id",    instanceId);
+        activity?.SetTag("instance.build", buildId);
+        activity?.SetTag("instance.installed_at", installedAt.ToString("O"));
+
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
         var instance = await db.ServerInstances.FindAsync([instanceId], ct);
-        if (instance is null) return;
+        if (instance is null)
+        {
+            activity?.SetTag("instance.found", false);
+            return;
+        }
         instance.InstalledAt = installedAt;
         instance.InstalledBuildId = buildId;
         instance.Status = ServerInstanceStatus.Stopped;
         await db.SaveChangesAsync(ct);
+        activity?.SetTag("instance.found", true);
     }
 }

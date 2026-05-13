@@ -23,9 +23,20 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
     public async Task<SteamMod> AddWorkshopModAsync(long workshopId, CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.add_workshop", ActivityKind.Internal);
+        activity?.SetTag("mod.workshop_id", workshopId);
+
+        try
+        {
         var existing = await GetModByWorkshopIdAsync(workshopId, ct);
         if (existing != null)
+        {
+            activity?.SetTag("mod.id",       existing.Id);
+            activity?.SetTag("mod.name",     existing.Name);
+            activity?.SetTag("mod.existing", true);
             return existing;
+        }
 
         var info = await steamService.GetWorkshopItemInfoAsync(workshopId, ct);
 
@@ -45,12 +56,34 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         db.Mods.Add(mod);
         await db.SaveChangesAsync(ct);
+
+        activity?.SetTag("mod.id",       mod.Id);
+        activity?.SetTag("mod.name",     mod.Name);
+        activity?.SetTag("mod.existing", false);
         return mod;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = ex.Message
+            }));
+            throw;
+        }
     }
 
     public async Task<SteamMod> ImportLocalModAsync(string path, string name, CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.import_local", ActivityKind.Internal);
+        activity?.SetTag("mod.name", name);
+        activity?.SetTag("mod.path", path);
+
         var isZip = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+        activity?.SetTag("mod.source", isZip ? "zip" : "folder");
+
         var mod = new SteamMod
         {
             Name = name,
@@ -62,14 +95,23 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         db.Mods.Add(mod);
         await db.SaveChangesAsync(ct);
+
+        activity?.SetTag("mod.id", mod.Id);
         return mod;
     }
 
     public async Task DeleteModAsync(int id, CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.delete", ActivityKind.Internal);
+        activity?.SetTag("mod.id", id);
+
         var mod = await db.Mods.FindAsync([id], ct);
         if (mod != null)
         {
+            activity?.SetTag("mod.name",       mod.Name);
+            activity?.SetTag("mod.local_path", mod.LocalPath ?? "");
+
             // Delete mod files from disk
             if (!string.IsNullOrEmpty(mod.LocalPath) && Directory.Exists(mod.LocalPath))
             {
@@ -81,6 +123,12 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to delete mod files at {Path}", mod.LocalPath);
+                    activity?.AddEvent(new ActivityEvent("files.delete_failed", tags: new ActivityTagsCollection
+                    {
+                        ["path"]              = mod.LocalPath,
+                        ["exception.type"]    = ex.GetType().Name,
+                        ["exception.message"] = ex.Message
+                    }));
                 }
             }
 
