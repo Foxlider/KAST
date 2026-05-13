@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
 using SteamKit2.CDN;
@@ -128,39 +130,62 @@ internal sealed class CdnServerPool : IDisposable
                     throttleSeconds = 0;
                 }
 
-                // Use ContentServerDirectoryService with our cell ID so Steam routes to
-                // the closest CDN nodes (the same API BytexDigital uses)
-                IReadOnlyCollection<Server> servers;
+                using var refillActivity = KastActivitySources.Steam.StartActivity(
+                    "kast.steam.cdn_pool.refill", ActivityKind.Internal);
+                refillActivity?.SetTag("cdn.cell_id",          CellId);
+                refillActivity?.SetTag("cdn.pool_size_before", _available.Count);
+
                 try
                 {
-                    servers = await ContentServerDirectoryService.LoadAsync(
-                        _steamClient.Configuration,
-                        CellId,
-                        _cts.Token);
+
+                    // Use ContentServerDirectoryService with our cell ID so Steam routes to
+                    // the closest CDN nodes (the same API BytexDigital uses)
+                    IReadOnlyCollection<Server> servers;
+                    try
+                    {
+                        servers = await ContentServerDirectoryService.LoadAsync(
+                            _steamClient.Configuration,
+                            CellId,
+                            _cts.Token);
+                    }
+                    catch
+                    {
+                        // Fallback: use the SteamContent handler (does not carry cell ID hint
+                        // but always works, even before the cell ID is known)
+                        servers = await _steamContent.GetServersForSteamPipe();
+                    }
+
+                    if (servers.Count == 0)
+                    {
+                        _logger.LogWarning("CDN server discovery returned no results — will retry");
+                        continue;
+                    }
+
+                    var sorted = servers
+                        .Where(s => s.Type is "CDN" or "SteamCache")
+                        .OrderBy(s => s.WeightedLoad)
+                        .ToList();
+
+                    foreach (var s in sorted)
+                        _available.Add(s);
+
+                    _logger.LogInformation("CDN pool refilled with {Count} servers (cell {Cell}, best: {Host})",
+                        sorted.Count, CellId, sorted.FirstOrDefault()?.Host ?? "none");
+
+                    refillActivity?.SetTag("cdn.servers_added",  sorted.Count);
+                    refillActivity?.SetTag("cdn.best_server",    sorted.FirstOrDefault()?.Host ?? "none");
+                    refillActivity?.SetTag("cdn.pool_size_after", _available.Count);
                 }
-                catch
+                catch (Exception refillEx) when (refillEx is not OperationCanceledException)
                 {
-                    // Fallback: use the SteamContent handler (does not carry cell ID hint
-                    // but always works, even before the cell ID is known)
-                    servers = await _steamContent.GetServersForSteamPipe();
+                    refillActivity?.SetStatus(ActivityStatusCode.Error, refillEx.Message);
+                    refillActivity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+                    {
+                        ["exception.type"]    = refillEx.GetType().Name,
+                        ["exception.message"] = refillEx.Message
+                    }));
+                    throw;
                 }
-
-                if (servers.Count == 0)
-                {
-                    _logger.LogWarning("CDN server discovery returned no results — will retry");
-                    continue;
-                }
-
-                var sorted = servers
-                    .Where(s => s.Type is "CDN" or "SteamCache")
-                    .OrderBy(s => s.WeightedLoad)
-                    .ToList();
-
-                foreach (var s in sorted)
-                    _available.Add(s);
-
-                _logger.LogInformation("CDN pool refilled with {Count} servers (cell {Cell}, best: {Host})",
-                    sorted.Count, CellId, sorted.FirstOrDefault()?.Host ?? "none");
             }
             catch (OperationCanceledException)
             {

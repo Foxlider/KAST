@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using KAST.Core.Interfaces;
 using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
@@ -62,6 +61,9 @@ if (telemetry.GetValue("Enabled", true))
     var otlpEndpoint = telemetry["OtlpEndpoint"] ?? "http://localhost:4317";
     var serviceName  = telemetry["ServiceName"]  ?? KastActivitySources.ServiceName;
 
+    // Attach ILogger calls as span events so they appear inside traces in Jaeger
+    builder.Logging.AddProvider(new ActivityEventLoggerProvider());
+
     builder.Services.AddOpenTelemetry()
         .WithTracing(tracing => tracing
             .SetResourceBuilder(
@@ -73,11 +75,18 @@ if (telemetry.GetValue("Enabled", true))
                     !ctx.Request.Path.StartsWithSegments("/health") &&
                     !ctx.Request.Path.StartsWithSegments("/alive");
             })
-            .AddHttpClientInstrumentation()
+            .AddHttpClientInstrumentation(opts =>
+            {
+                // Steam CDN downloads issue thousands of GET requests per session
+                // (one per depot chunk). Only keep non-GET calls (Steam Web API POSTs).
+                opts.FilterHttpRequestMessage = req => req.Method != HttpMethod.Get;
+            })
             .AddEntityFrameworkCoreInstrumentation()
             .AddSource(KastActivitySources.Content.Name)
             .AddSource(KastActivitySources.Process.Name)
             .AddSource(KastActivitySources.Mods.Name)
+            .AddSource(KastActivitySources.Steam.Name)
+            .AddSource(KastActivitySources.Instances.Name)
             .AddOtlpExporter(opts =>
             {
                 opts.Endpoint = new Uri(otlpEndpoint);

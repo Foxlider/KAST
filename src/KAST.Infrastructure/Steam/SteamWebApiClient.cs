@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using KAST.Core.Interfaces;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Steam;
@@ -19,6 +21,15 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         long[] workshopIds, CancellationToken ct = default)
     {
         if (workshopIds.Length == 0) return [];
+
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.api.workshop_info", ActivityKind.Client);
+        activity?.SetTag("workshop.ids_count", workshopIds.Length);
+        if (workshopIds.Length <= 10)
+            activity?.SetTag("workshop.ids", string.Join(",", workshopIds));
+
+        try
+        {
 
         var formData = new Dictionary<string, string>
         {
@@ -44,7 +55,7 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         if (json?.Response?.PublishedFileDetails is null)
             return [];
 
-        return json.Response.PublishedFileDetails
+        var results = json.Response.PublishedFileDetails
             .Where(d => d.Result == 1)
             .Select(d =>
             {
@@ -54,10 +65,27 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
                 return info;
             })
             .ToList();
+
+        activity?.SetTag("workshop.results_count", results.Count);
+        return results;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = ex.Message
+            }));
+            throw;
+        }
     }
 
     public async Task<string?> DiscoverCdnServerAsync(CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.api.cdn_discover", ActivityKind.Client);
+
         try
         {
             var response = await httpClient.GetFromJsonAsync<CdnApiResponse>(
@@ -67,11 +95,15 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
             var server = response?.Response?.Servers?
                 .FirstOrDefault(s => s.HttpsSupport is "mandatory" or "optional");
 
-            return server?.VHost ?? server?.Host;
+            var host = server?.VHost ?? server?.Host;
+            activity?.SetTag("cdn.discovered_host", host ?? "none");
+            activity?.SetTag("cdn.servers_returned", response?.Response?.Servers?.Count ?? 0);
+            return host;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to discover CDN servers via Web API");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             return null;
         }
     }
@@ -81,7 +113,7 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         // consumer_appid is preferred; fall back to creator_appid (e.g. when consumer side is unset)
         var appId = d.ConsumerAppId != 0 ? d.ConsumerAppId : d.CreatorAppId;
 
-        return new WorkshopItemInfo
+        var info = new WorkshopItemInfo
         {
             WorkshopId = long.TryParse(d.PublishedFileId, out var id) ? id : 0,
             Name = d.Title ?? $"Workshop Item {d.PublishedFileId}",
@@ -97,6 +129,17 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
             ManifestId = ulong.TryParse(d.HContentFile, out var mf) ? mf : 0,
             Tags = d.Tags?.Select(t => t.Tag).ToList() ?? []
         };
+
+        Activity.Current?.AddEvent(new ActivityEvent("workshop.item_mapped", tags: new ActivityTagsCollection
+        {
+            ["workshop.id"]          = info.WorkshopId,
+            ["workshop.name"]        = info.Name,
+            ["workshop.manifest_id"] = info.ManifestId,
+            ["workshop.app_id"]      = appId,
+            ["workshop.size_bytes"]  = info.SizeBytes
+        }));
+
+        return info;
     }
 
     // ───── Steam Web API response models ─────
