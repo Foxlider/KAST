@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -33,6 +35,11 @@ public class ServerInstanceService(
 
     public async Task<ServerInstance> CreateInstanceAsync(ServerInstance instance, CancellationToken ct = default)
     {
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.create", ActivityKind.Internal);
+        activity?.SetTag("instance.name", instance.Name);
+        activity?.SetTag("instance.port", instance.Port);
+
         instance.CreatedAt = DateTime.UtcNow;
 
         // Clear SteamMod navigations — EF only needs the FK (SteamModId) to write the join rows.
@@ -43,6 +50,8 @@ public class ServerInstanceService(
 
         db.ServerInstances.Add(instance);
         await db.SaveChangesAsync(ct);
+
+        activity?.SetTag("instance.id", instance.Id);
         return instance;
     }
 
@@ -79,6 +88,11 @@ public class ServerInstanceService(
         if (instance == null)
             return;
 
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.delete", ActivityKind.Internal);
+        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.name", instance.Name);
+
         if (instance.Status == ServerInstanceStatus.Running)
             await StopInstanceAsync(id, ct);
 
@@ -88,6 +102,9 @@ public class ServerInstanceService(
         var isInstallPathShared = !string.IsNullOrEmpty(installPath)
             && await db.ServerInstances
                 .AnyAsync(s => s.Id != id && s.InstallPath == installPath, ct);
+
+        activity?.SetTag("instance.install_path", installPath ?? "");
+        activity?.SetTag("instance.path_shared",  isInstallPathShared);
 
         db.ServerInstances.Remove(instance);
         await db.SaveChangesAsync(ct);
@@ -100,6 +117,12 @@ public class ServerInstanceService(
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = ex.Message
+            }));
             logger.LogError(ex,
                 "Failed to clean up files for deleted instance {Id} ({Name}) at {Path}",
                 id, instance.Name, installPath);
@@ -195,10 +218,18 @@ public class ServerInstanceService(
         if (instance.Status == ServerInstanceStatus.Running)
             return;
 
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.start", ActivityKind.Internal);
+        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.name", instance.Name);
+        activity?.SetTag("instance.port", instance.Port);
+
         await LinkModsAsync(id, ct);
+        activity?.AddEvent(new ActivityEvent("instance.mods_linked"));
 
         // Write config files to disk before launch
         WriteConfigFiles(instance);
+        activity?.AddEvent(new ActivityEvent("instance.config_written"));
 
         instance.Status = ServerInstanceStatus.Starting;
         await db.SaveChangesAsync(ct);
@@ -208,6 +239,8 @@ public class ServerInstanceService(
         {
             var executable = GetServerExecutable(instance);
             var args = BuildLaunchArguments(instance);
+
+            activity?.SetTag("instance.executable", executable);
 
             logger.LogInformation("Starting server {Name} with args: {Args}", instance.Name, args);
 
@@ -241,6 +274,12 @@ public class ServerInstanceService(
             instance.Status = ServerInstanceStatus.Running;
             instance.StartedAt = DateTime.UtcNow;
 
+            activity?.SetTag("instance.pid", pid);
+            activity?.AddEvent(new ActivityEvent("instance.process_started", tags: new ActivityTagsCollection
+            {
+                ["pid"] = pid
+            }));
+
             // Start headless clients
             foreach (var hc in instance.HeadlessClients)
             {
@@ -249,11 +288,21 @@ public class ServerInstanceService(
                 hc.ProcessId = hcPid;
                 hc.Status = ServerInstanceStatus.Running;
                 hc.StartedAt = DateTime.UtcNow;
+                activity?.AddEvent(new ActivityEvent("instance.headless_client_started", tags: new ActivityTagsCollection
+                {
+                    ["hc.pid"] = hcPid
+                }));
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to start server instance {Id}", id);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = ex.Message
+            }));
             // If the process never got a PID the server never actually ran — reset to Stopped
             // so the user can try again. Crashed is reserved for processes that ran and then died.
             instance.Status = instance.ProcessId.HasValue
@@ -277,6 +326,13 @@ public class ServerInstanceService(
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new InvalidOperationException($"Server instance {id} not found");
 
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.stop", ActivityKind.Internal);
+        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.name", instance.Name);
+        if (instance.ProcessId.HasValue)
+            activity?.SetTag("instance.pid", instance.ProcessId.Value);
+
         instance.Status = ServerInstanceStatus.Stopping;
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
@@ -287,6 +343,7 @@ public class ServerInstanceService(
             await processManager.StopProcessAsync(hc.ProcessId!.Value, ct);
             hc.ProcessId = null;
             hc.Status = ServerInstanceStatus.Stopped;
+            activity?.AddEvent(new ActivityEvent("instance.headless_client_stopped"));
         }
 
         if (instance.ProcessId.HasValue)
@@ -306,12 +363,30 @@ public class ServerInstanceService(
         var instance = await db.ServerInstances.FindAsync([id], ct)
             ?? throw new InvalidOperationException($"Server instance {id} not found");
 
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.restart", ActivityKind.Internal);
+        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.name", instance.Name);
+
         instance.Status = ServerInstanceStatus.Restarting;
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
 
-        await StopInstanceAsync(id, ct);
-        await StartInstanceAsync(id, ct);
+        try
+        {
+            await StopInstanceAsync(id, ct);
+            await StartInstanceAsync(id, ct);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = ex.Message
+            }));
+            throw;
+        }
     }
 
     public async Task AddModToInstanceAsync(int instanceId, int modId, int loadOrder = 0, CancellationToken ct = default)
@@ -366,9 +441,16 @@ public class ServerInstanceService(
             .FirstOrDefaultAsync(s => s.Id == instanceId, ct)
             ?? throw new InvalidOperationException($"Server instance {instanceId} not found");
 
+        using var activity = KastActivitySources.Instances.StartActivity(
+            "kast.instance.link_mods", ActivityKind.Internal);
+        activity?.SetTag("instance.id",         instanceId);
+        activity?.SetTag("instance.name",        instance.Name);
+        activity?.SetTag("instance.mods_total",  instance.Mods.Count);
+
         var modsDir = Path.Combine(instance.InstallPath, "mods");
         Directory.CreateDirectory(modsDir);
 
+        int linkedCount = 0;
         foreach (var mod in instance.Mods.Select(modLink => modLink.SteamMod))
         {
             if (string.IsNullOrEmpty(mod.LocalPath) || !Directory.Exists(mod.LocalPath))
@@ -386,7 +468,10 @@ public class ServerInstanceService(
 
             Directory.CreateSymbolicLink(linkPath, mod.LocalPath);
             logger.LogInformation("Linked mod {ModName} -> {LinkPath}", mod.Name, linkPath);
+            linkedCount++;
         }
+
+        activity?.SetTag("instance.mods_linked", linkedCount);
     }
 
     private static string GetServerExecutable(ServerInstance instance)

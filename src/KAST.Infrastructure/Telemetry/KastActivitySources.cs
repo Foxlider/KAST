@@ -19,4 +19,10 @@ public static class KastActivitySources
 
     /// <summary>Mod operations: update checks, downloads, updates.</summary>
     public static readonly ActivitySource Mods = new("KAST.Mods", "1.0.0");
+
+    /// <summary>Steam API calls and CDN pool lifecycle.</summary>
+    public static readonly ActivitySource Steam = new("KAST.Steam", "1.0.0");
+
+    /// <summary>Server instance lifecycle: create, delete, start, stop, restart.</summary>
+    public static readonly ActivitySource Instances = new("KAST.Instances", "1.0.0");
 }
