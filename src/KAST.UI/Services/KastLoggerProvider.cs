@@ -6,7 +6,10 @@ public sealed class KastLoggerProvider(KastLogStore store) : ILoggerProvider
     public ILogger CreateLogger(string categoryName) =>
         new KastLogger(store, categoryName);
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        // No unmanaged resources to release.
+    }
 }
 
 internal sealed class KastLogger(KastLogStore store, string category) : ILogger

@@ -5,7 +5,10 @@ namespace KAST.Infrastructure.Data;
 
 public class KastDbContext : DbContext
 {
-    public KastDbContext(DbContextOptions<KastDbContext> options) : base(options) { }
+    public KastDbContext(DbContextOptions<KastDbContext> options) : base(options)
+    {
+        // DbContext configuration is supplied entirely through DI.
+    }
 
     public DbSet<SteamMod> Mods => Set<SteamMod>();
     public DbSet<ServerInstance> ServerInstances => Set<ServerInstance>();

@@ -19,7 +19,11 @@ public class LocalModInstallerTests : IDisposable
     {
         if (Directory.Exists(_root))
         {
-            try { Directory.Delete(_root, recursive: true); } catch { }
+            try { Directory.Delete(_root, recursive: true); }
+            catch
+            {
+                // Best-effort cleanup for temp test data.
+            }
         }
     }
 

@@ -236,8 +236,14 @@ public class KastApiModsEndToEndTests
         public SteamUserProfile? Profile => null;
         public event Action? AuthStateChanged
         {
-            add { }
-            remove { }
+            add
+            {
+                // Test double does not publish auth-state changes.
+            }
+            remove
+            {
+                // Test double does not publish auth-state changes.
+            }
         }
 
         public Task<bool> LoginAnonymousAsync(CancellationToken ct = default) => Task.FromResult(false);

@@ -11,7 +11,10 @@ namespace KAST.UI.Services;
 public sealed class ActivityEventLoggerProvider : ILoggerProvider
 {
     public ILogger CreateLogger(string categoryName) => new ActivityEventLogger(categoryName);
-    public void Dispose() { }
+    public void Dispose()
+    {
+        // No unmanaged resources to release.
+    }
 }
 
 file sealed class ActivityEventLogger(string categoryName) : ILogger
