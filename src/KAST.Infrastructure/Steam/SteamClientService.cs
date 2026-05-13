@@ -7,6 +7,7 @@ using SteamKit2.Authentication;
 using SteamKit2.CDN;
 using SteamKit2.Internal;
 using System.Text.Json;
+using System.Reflection;
 
 namespace KAST.Infrastructure.Steam;
 
@@ -27,6 +28,7 @@ public class SteamClientService : ISteamService, IDisposable
     private CancellationTokenSource? _callbackCts;
     private bool _isReconnecting;
     private readonly SemaphoreSlim _qrAuthLock = new(1, 1);
+    private readonly SemaphoreSlim _credentialAuthLock = new(1, 1);
     private readonly SemaphoreSlim _anonLoginLock = new(1, 1);
     private Task<bool>? _anonymousLoginTask;
 
@@ -36,6 +38,76 @@ public class SteamClientService : ISteamService, IDisposable
 
     // QR auth state
     private QrAuthSession? _activeQrSession;
+    private CredentialsAuthSession? _activeCredentialSession;
+    private CredentialAuthenticator? _activeCredentialAuthenticator;
+
+    private sealed class CredentialAuthenticator(SteamCredentialAuthSession session, ILogger logger) : IAuthenticator
+    {
+        private readonly object _sync = new();
+        private TaskCompletionSource<string>? _pendingCodeTcs;
+
+        public bool SubmitGuardCode(string code)
+        {
+            TaskCompletionSource<string>? tcs;
+            lock (_sync)
+            {
+                tcs = _pendingCodeTcs;
+                _pendingCodeTcs = null;
+            }
+
+            if (tcs is null)
+                return false;
+
+            tcs.TrySetResult(code);
+            return true;
+        }
+
+        public Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect)
+        {
+            logger.LogInformation("Steam credential auth requested Steam Guard app code");
+            lock (_sync)
+            {
+                _pendingCodeTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            session.RequiresGuardCode = true;
+            session.WaitingForDeviceConfirmation = false;
+            session.GuardCodePrompt = previousCodeWasIncorrect
+                ? "Incorrect app code. Enter a new Steam Guard code from your mobile app."
+                : "Enter the Steam Guard code from your mobile app.";
+            session.StateChanged?.Invoke();
+
+            return _pendingCodeTcs.Task;
+        }
+
+        public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect)
+        {
+            logger.LogInformation("Steam credential auth requested email code for {Email}", email);
+            lock (_sync)
+            {
+                _pendingCodeTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            session.RequiresGuardCode = true;
+            session.WaitingForDeviceConfirmation = false;
+            session.GuardCodePrompt = previousCodeWasIncorrect
+                ? $"Incorrect email code. Enter the new code sent to {email}."
+                : $"Enter the code sent to {email}.";
+            session.StateChanged?.Invoke();
+
+            return _pendingCodeTcs.Task;
+        }
+
+        public Task<bool> AcceptDeviceConfirmationAsync()
+        {
+            logger.LogInformation("Steam credential auth requested device confirmation");
+            session.RequiresGuardCode = false;
+            session.WaitingForDeviceConfirmation = true;
+            session.GuardCodePrompt = "Approve the sign-in request in your Steam mobile or desktop client.";
+            session.StateChanged?.Invoke();
+            return Task.FromResult(true);
+        }
+    }
 
     // CDN state — a persistent pool that discards faulty servers and auto-refills
     private CdnServerPool? _cdnPool;
@@ -224,6 +296,8 @@ public class SteamClientService : ISteamService, IDisposable
     public async Task LogoutAsync()
     {
         _activeQrSession = null;
+        _activeCredentialSession = null;
+        _activeCredentialAuthenticator = null;
         CurrentUsername = null;
         _profile = null;
         _pendingAccessToken = null;
@@ -252,6 +326,8 @@ public class SteamClientService : ISteamService, IDisposable
     public async Task<SteamQrAuthSession> BeginQrLoginAsync(CancellationToken ct = default)
     {
         await _qrAuthLock.WaitAsync(ct);
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.auth.qr.begin", ActivityKind.Client);
         try
         {
             // Ensure we're connected (may not be if logout's auto-reconnect failed)
@@ -260,7 +336,10 @@ public class SteamClientService : ISteamService, IDisposable
                 _logger.LogWarning("Not connected to Steam — reconnecting before QR auth");
                 var ok = await LoginAnonymousAsync(ct);
                 if (!ok || !_isConnected)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, "Failed to connect to Steam");
                     return new SteamQrAuthSession { ErrorMessage = "Failed to connect to Steam" };
+                }
             }
 
             var qrSession = await _steamClient.Authentication.BeginAuthSessionViaQRAsync(
@@ -273,10 +352,13 @@ public class SteamClientService : ISteamService, IDisposable
                 ChallengeUrl = qrSession.ChallengeURL
             };
 
+            activity?.SetTag("auth.challenge_url", qrSession.ChallengeURL);
+            _logger.LogInformation("QR auth session started with challenge URL");
+
             // Steam periodically refreshes the challenge URL — relay it to the UI
             qrSession.ChallengeURLChanged = () =>
             {
-                _logger.LogDebug("QR challenge URL refreshed");
+                _logger.LogInformation("QR challenge URL refreshed");
                 session.ChallengeUrl = qrSession.ChallengeURL;
                 session.ChallengeUrlChanged?.Invoke(qrSession.ChallengeURL);
             };
@@ -285,6 +367,8 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            RecordExceptionEvent(activity, ex);
             _logger.LogError(ex, "Failed to begin QR auth session");
             return new SteamQrAuthSession { ErrorMessage = ex.Message };
         }
@@ -294,16 +378,150 @@ public class SteamClientService : ISteamService, IDisposable
         }
     }
 
+
+
+    public async Task<SteamCredentialAuthSession> BeginCredentialLoginAsync(string username, string password, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return new SteamCredentialAuthSession { ErrorMessage = "Username is required" };
+
+        if (string.IsNullOrWhiteSpace(password))
+            return new SteamCredentialAuthSession { ErrorMessage = "Password is required" };
+
+        await _credentialAuthLock.WaitAsync(ct);
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.auth.credential.begin", ActivityKind.Client);
+        try
+        {
+            activity?.SetTag("auth.username", username);
+            _logger.LogInformation("Starting credential auth for {Username}", username);
+
+            if (!_isConnected)
+            {
+                _logger.LogWarning("Not connected to Steam - reconnecting before credential auth");
+                var ok = await LoginAnonymousAsync(ct);
+                if (!ok || !_isConnected)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, "Failed to connect to Steam");
+                    return new SteamCredentialAuthSession { ErrorMessage = "Failed to connect to Steam" };
+                }
+            }
+
+            var session = new SteamCredentialAuthSession();
+            var authenticator = new CredentialAuthenticator(session, _logger);
+
+            var credentialsSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(
+                new AuthSessionDetails
+                {
+                    Username = username,
+                    Password = password,
+                    IsPersistentSession = true,
+                    Authenticator = authenticator
+                });
+
+            _activeCredentialAuthenticator = authenticator;
+            _activeCredentialSession = credentialsSession;
+            _logger.LogInformation("Credential auth session started for {Username}", username);
+            return session;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            RecordExceptionEvent(activity, ex);
+            _logger.LogError(ex, "Failed to begin credential auth session for {Username}", username);
+            return new SteamCredentialAuthSession { ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            _credentialAuthLock.Release();
+        }
+    }
+
+    public Task<bool> SubmitCredentialGuardCodeAsync(SteamCredentialAuthSession session, string code, CancellationToken ct = default)
+    {
+        _ = session;
+        _ = ct;
+
+        if (string.IsNullOrWhiteSpace(code))
+            return Task.FromResult(false);
+
+        var accepted = _activeCredentialAuthenticator?.SubmitGuardCode(code.Trim()) == true;
+        return Task.FromResult(accepted);
+    }
+
+    public async Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default)
+    {
+        if (_activeCredentialSession is not { } credentialSession)
+            return false;
+
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.auth.credential.poll", ActivityKind.Client);
+        try
+        {
+            _logger.LogInformation("Starting credential auth polling");
+            var result = await credentialSession.PollingWaitForResultAsync(ct);
+
+            activity?.SetTag("auth.account", result.AccountName);
+            activity?.SetTag("auth.success", true);
+            _logger.LogInformation("Credential auth succeeded for {Account}", result.AccountName);
+
+            CurrentUsername = result.AccountName;
+            _pendingAccessToken = result.RefreshToken;
+            _currentRefreshToken = result.RefreshToken;
+            SaveTokenCache(result.AccountName, result.RefreshToken);
+
+            _loginTcs = new TaskCompletionSource<bool>();
+            _isReconnecting = true;
+            _steamClient.Disconnect();
+
+            using var reg = ct.Register(() => _loginTcs.TrySetResult(false));
+            var loggedIn = await _loginTcs.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+            _activeCredentialSession = null;
+            _activeCredentialAuthenticator = null;
+            session.RequiresGuardCode = false;
+            session.WaitingForDeviceConfirmation = false;
+            session.GuardCodePrompt = null;
+            session.StateChanged?.Invoke();
+            activity?.SetTag("auth.logon_complete", loggedIn);
+            return loggedIn;
+        }
+        catch (OperationCanceledException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Credential polling cancelled");
+            _logger.LogWarning("Credential auth polling was cancelled");
+            _activeCredentialSession = null;
+            _activeCredentialAuthenticator = null;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            RecordExceptionEvent(activity, ex);
+            _logger.LogWarning(ex, "Credential auth polling failed");
+            _activeCredentialSession = null;
+            _activeCredentialAuthenticator = null;
+            session.ErrorMessage = ex.Message;
+            session.StateChanged?.Invoke();
+            return false;
+        }
+    }
+
     public async Task<bool> PollQrLoginAsync(SteamQrAuthSession session, CancellationToken ct = default)
     {
         if (_activeQrSession is not { } qrSession)
             return false;
 
+        using var activity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.auth.qr.poll", ActivityKind.Client);
         try
         {
+            _logger.LogInformation("Starting QR auth polling");
             // Block until the user scans the QR code and confirms in the Steam app
             var result = await qrSession.PollingWaitForResultAsync(ct);
 
+            activity?.SetTag("auth.account", result.AccountName);
+            activity?.SetTag("auth.success", true);
             _logger.LogInformation("QR auth succeeded for {Account}", result.AccountName);
 
             // Prepare credentials for the reconnect
@@ -321,15 +539,20 @@ public class SteamClientService : ISteamService, IDisposable
             using var reg = ct.Register(() => _loginTcs.TrySetResult(false));
             var loggedIn = await _loginTcs.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
             _activeQrSession = null;
+            activity?.SetTag("auth.logon_complete", loggedIn);
             return loggedIn;
         }
         catch (OperationCanceledException)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "QR polling cancelled");
+            _logger.LogWarning("QR auth polling was cancelled");
             _activeQrSession = null;
             return false;
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            RecordExceptionEvent(activity, ex);
             _logger.LogWarning(ex, "QR auth polling failed");
             _activeQrSession = null;
             return false;
