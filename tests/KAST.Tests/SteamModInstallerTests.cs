@@ -176,7 +176,11 @@ public class SteamModInstallerTests
         {
             if (Directory.Exists(path))
             {
-                try { Directory.Delete(path, recursive: true); } catch { }
+                try { Directory.Delete(path, recursive: true); }
+                catch
+                {
+                    // Best-effort cleanup for temp test data.
+                }
             }
         }
     }

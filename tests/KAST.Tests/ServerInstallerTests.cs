@@ -241,7 +241,11 @@ public class ServerInstallerTests
         {
             if (Directory.Exists(root))
             {
-                try { Directory.Delete(root, recursive: true); } catch { }
+                try { Directory.Delete(root, recursive: true); }
+                catch
+                {
+                    // Best-effort cleanup for temp test data.
+                }
             }
         }
     }
