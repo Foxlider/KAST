@@ -14,6 +14,8 @@ public class ContentStep
     public ContentStepStatus Status { get; set; } = ContentStepStatus.Pending;
     public double Progress { get; set; }
     public string? Error { get; set; }
+    /// <summary>When true the UI renders an indeterminate (spinning) bar instead of a percentage.</summary>
+    public bool IsIndeterminate { get; set; }
 }
 
 /// <summary>
@@ -104,6 +106,7 @@ public class ContentInstallState
         if (index < 0 || index >= Steps.Count) return;
         Steps[index].Status = ContentStepStatus.Completed;
         Steps[index].Progress = 100;
+        Steps[index].IsIndeterminate = false;
         Changed?.Invoke();
     }
 
@@ -112,6 +115,7 @@ public class ContentInstallState
         if (index < 0 || index >= Steps.Count) return;
         Steps[index].Status = ContentStepStatus.Failed;
         Steps[index].Error = error;
+        Steps[index].IsIndeterminate = false;
         Changed?.Invoke();
     }
 
@@ -120,6 +124,13 @@ public class ContentInstallState
         if (index < 0 || index >= Steps.Count) return;
         Steps[index].Status = ContentStepStatus.Skipped;
         Steps[index].Error = reason;
+        Changed?.Invoke();
+    }
+
+    public void SetStepIndeterminate(int index, bool indeterminate)
+    {
+        if (index < 0 || index >= Steps.Count) return;
+        Steps[index].IsIndeterminate = indeterminate;
         Changed?.Invoke();
     }
 
@@ -145,6 +156,7 @@ public class ContentInstallState
             s.Status = ContentStepStatus.Pending;
             s.Progress = 0;
             s.Error = null;
+            s.IsIndeterminate = false;
         }
     }
 }

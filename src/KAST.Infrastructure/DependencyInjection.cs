@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddSingleton<IServerConfigService, ServerConfigService>();
 
         // Content install system — lives entirely in Infrastructure
+        services.AddHttpClient<SteamWebApiClient>();
         services.AddSingleton<IFileSystemService, FileSystemService>();
         services.AddSingleton<IContentInstaller, LocalModInstaller>();
         services.AddSingleton<IContentInstaller, SteamModInstaller>();
