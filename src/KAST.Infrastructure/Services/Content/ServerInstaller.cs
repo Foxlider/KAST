@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using System.Security.Principal;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
@@ -11,10 +13,11 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Installs the Arma 3 dedicated server + Creator DLC depots via SteamKit2.
 /// </summary>
-public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger<ServerInstaller> logger) : IContentInstaller
+public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpClientFactory httpClientFactory, ILogger<ServerInstaller> logger) : IContentInstaller
 {
     public const uint Arma3ServerAppId = 233780;
     private const string CreatorDlcBranch = "creatordlc";
+    private const string DxRedistUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe"; // NOSONAR — fixed Microsoft CDN URI for DirectX End-User Runtimes June 2010
 
     public static readonly (Func<ServerInstance, bool> Enabled, uint DepotId, string? Branch, string Name, string Folder)[] DlcTable =
     [
@@ -49,6 +52,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
             steps.Add(new ContentStep { Name = dlc.Name, Detail = detail });
         }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            steps.Add(new ContentStep { Name = "DirectX", Detail = "DXSETUP.exe /silent" });
 
         return steps;
     }
@@ -153,6 +159,10 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
             logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
                 instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
         }
+
+        // ── DirectX (Windows only) ────────────────────────────────────────────────
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            await InstallDirectXAsync(request, state, stepIdx + 1, ct);
         }
         catch (Exception ex)
         {
@@ -195,11 +205,127 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            var dxInstalled = IsDirectXInstalled();
-            results.Add(new("DirectX", dxInstalled, dxInstalled ? "Present" : "Not found"));
+            string sys   = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            string sys86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
+            string? found = new[]
+            {
+                Path.Combine(sys,   "D3DX9_43.dll"),
+                Path.Combine(sys86, "D3DX9_43.dll"),
+                Path.Combine(sys,   "XINPUT1_3.dll"),
+            }.FirstOrDefault(File.Exists);
+            results.Add(new("DirectX", found is not null,
+                found ?? $"D3DX9_43.dll not found in {sys} or {sys86}"));
         }
 
         return results;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private async Task InstallDirectXAsync(ContentInstallRequest request, ContentInstallState state, int stepIdx, CancellationToken ct)
+    {
+        var instance = request.Instance!;
+        state.BeginStep(stepIdx);
+        state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Checking DirectX...");
+        logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — DirectX",
+            instance.Name, stepIdx + 1, state.Steps.Count);
+
+        if (IsDirectXInstalled())
+        {
+            state.SkipStep(stepIdx, "already installed");
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] DirectX already installed — skipping.");
+            logger.LogInformation("Server install [{Instance}]: DirectX already installed, skipping", instance.Name);
+            return;
+        }
+
+        var tempRedist  = Path.Combine(Path.GetTempPath(), "kast_directx_Jun2010_redist.exe");
+        var tempExtract = Path.Combine(Path.GetTempPath(), "kast_dxredist");
+        try
+        {
+            bool isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
+                .IsInRole(WindowsBuiltInRole.Administrator);
+
+            if (!isAdmin)
+            {
+                // KAST runs as a web application — there is no interactive desktop session
+                // for a UAC prompt to appear on. Fail early with a clear remediation message
+                // rather than hanging on a dialog the remote user can never see.
+                const string msg = "DirectX setup requires administrator privileges. "
+                                 + "Restart KAST as an administrator and re-run the server install.";
+                state.FailStep(stepIdx, msg);
+                state.AddLog($"⚠ {msg}");
+                logger.LogError("Server install [{Instance}]: DirectX setup aborted — process is not elevated", instance.Name);
+                return;
+            }
+
+            // ── Download ──────────────────────────────────────────────────────────
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading DirectX End-User Runtimes (June 2010)...");
+            logger.LogInformation("Server install [{Instance}]: downloading DirectX June 2010 redistributable", instance.Name);
+
+            using var http = httpClientFactory.CreateClient();
+            await DownloadFileWithProgressAsync(http, DxRedistUrl, tempRedist,
+                pct => state.SetStepProgress(stepIdx, pct), ct);
+            // file is closed inside helper before returning
+
+            state.SetStepIndeterminate(stepIdx, true);
+
+            // ── Extract ───────────────────────────────────────────────────────────
+            // directx_Jun2010_redist.exe is an IExpress self-extractor.
+            // /T sets the extraction directory; /C extracts without launching setup.
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Extracting DirectX setup files...");
+            logger.LogInformation("Server install [{Instance}]: extracting DirectX redistributable", instance.Name);
+
+            Directory.CreateDirectory(tempExtract);
+            using (var extract = Process.Start(new ProcessStartInfo(tempRedist, $"/Q /C /T:\"{tempExtract}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }) ?? throw new InvalidOperationException("Failed to start DirectX self-extractor."))
+                await extract.WaitForExitAsync(ct);
+
+            // ── Install ───────────────────────────────────────────────────────────
+            var dxSetup = Path.Combine(tempExtract, "DXSETUP.exe");
+            if (!File.Exists(dxSetup))
+                throw new FileNotFoundException("DXSETUP.exe not found after extraction.", dxSetup);
+
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Running DXSETUP.exe /silent...");
+            logger.LogInformation("Server install [{Instance}]: running DXSETUP.exe /silent", instance.Name);
+
+            using var proc = Process.Start(new ProcessStartInfo(dxSetup, "/silent")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }) ?? throw new InvalidOperationException("Failed to start DXSETUP.exe.");
+            await proc.WaitForExitAsync(ct);
+
+            if (proc.ExitCode == 0)
+            {
+                if (IsDirectXInstalled())
+                {
+                    state.CompleteStep(stepIdx);
+                    state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] DirectX complete.");
+                    logger.LogInformation("Server install [{Instance}]: DirectX setup complete", instance.Name);
+                }
+                else
+                {
+                    string sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                    state.FailStep(stepIdx, "DXSETUP.exe reported success but D3DX9_43.dll was not found.");
+                    state.AddLog($"⚠ D3DX9_43.dll not found in {sys} after DXSETUP.exe.");
+                    logger.LogError("Server install [{Instance}]: DXSETUP.exe exited 0 but D3DX9_43.dll absent", instance.Name);
+                }
+            }
+            else
+            {
+                state.FailStep(stepIdx, $"DXSETUP.exe exited with code {proc.ExitCode}");
+                state.AddLog($"⚠ DirectX setup failed (exit code {proc.ExitCode}).");
+                logger.LogError("Server install [{Instance}]: DXSETUP.exe failed with exit code {ExitCode}",
+                    instance.Name, proc.ExitCode);
+            }
+        }
+        finally
+        {
+            if (File.Exists(tempRedist))           File.Delete(tempRedist);
+            if (Directory.Exists(tempExtract))     Directory.Delete(tempExtract, recursive: true);
+        }
     }
 
     public static bool IsDirectXInstalled()
@@ -207,14 +333,47 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, ILogger
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return true;
 
-        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        string[] requiredFiles =
-        {
-            Path.Combine(windows, "System32", "D3DX9_43.dll"),
-            Path.Combine(windows, "System32", "XINPUT1_3.dll"),
-            Path.Combine(windows, "SysWOW64", "D3DX9_43.dll")
-        };
-
-        return requiredFiles.Any(File.Exists);
+        // Use SpecialFolder.System (= System32 on 64-bit processes) and
+        // SpecialFolder.SystemX86 (= SysWOW64) rather than constructing paths
+        // from the Windows directory to correctly handle WOW64 redirection.
+        string sys   = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        string sys86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
+        return File.Exists(Path.Combine(sys,   "D3DX9_43.dll"))
+            || File.Exists(Path.Combine(sys86, "D3DX9_43.dll"))
+            || File.Exists(Path.Combine(sys,   "XINPUT1_3.dll"));
     }
+
+    /// <summary>
+    /// Downloads <paramref name="url"/> to <paramref name="destPath"/> and reports
+    /// percentage progress via <paramref name="onProgress"/>.
+    /// The destination file is fully closed before this method returns.
+    /// </summary>
+    private static async Task DownloadFileWithProgressAsync(
+        HttpClient http, string url, string destPath,
+        Action<double> onProgress, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        long? totalBytes = response.Content.Headers.ContentLength;
+
+        await using var responseStream = await response.Content.ReadAsStreamAsync(ct);
+        await using var fileStream = File.Create(destPath);
+
+        if (totalBytes is > 0)
+        {
+            var buf = new byte[81920]; // 80 KB chunks
+            long downloaded = 0;
+            int read;
+            while ((read = await responseStream.ReadAsync(buf, ct)) > 0)
+            {
+                await fileStream.WriteAsync(buf.AsMemory(0, read), ct);
+                downloaded += read;
+                onProgress(downloaded * 100.0 / totalBytes.Value);
+            }
+        }
+        else
+        {
+            await responseStream.CopyToAsync(fileStream, ct);
+        }
+    } // responseStream + fileStream disposed here — destPath fully released
 }

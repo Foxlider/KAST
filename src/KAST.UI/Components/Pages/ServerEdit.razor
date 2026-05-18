@@ -398,8 +398,11 @@
                                             <MudText Typo="Typo.caption" Align="Align.Center">@_tstep.Name</MudText>
                                             @if (_tstep.Status == ContentStepStatus.InProgress)
                                             {
-                                                <MudText Typo="Typo.caption" Color="Color.Primary" Align="Align.Center">@_tstep.Progress.ToString("F0")%</MudText>
-                                                <MudProgressLinear Value="@_tstep.Progress" Color="Color.Primary"
+                                                @if (!_tstep.IsIndeterminate)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Primary" Align="Align.Center">@_tstep.Progress.ToString("F0")%</MudText>
+                                                }
+                                                <MudProgressLinear Value="@_tstep.Progress" Indeterminate="@_tstep.IsIndeterminate" Color="Color.Primary"
                                                                    Rounded="true" Size="Size.Small" Class="mt-1" />
                                             }
                                             else if (_tstep.Status == ContentStepStatus.Failed)
@@ -896,7 +899,7 @@
 
     private static string? GetStepLabel(ContentStep step) => step.Status switch
     {
-        ContentStepStatus.InProgress => $"{step.Progress:F0}%",
+        ContentStepStatus.InProgress => step.IsIndeterminate ? "…" : $"{step.Progress:F0}%",
         ContentStepStatus.Completed  => "Done",
         ContentStepStatus.Failed     => step.Error ?? "Failed",
         ContentStepStatus.Skipped    => step.Error ?? "Skipped",
