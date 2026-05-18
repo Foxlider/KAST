@@ -4,6 +4,7 @@ using KAST.Core.Models;
 using KAST.Infrastructure.Services.Content;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 
 namespace KAST.Tests;
@@ -16,7 +17,7 @@ public class ServerInstallerTests
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -35,7 +36,7 @@ public class ServerInstallerTests
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var instance = new ServerInstance
         {
@@ -69,7 +70,7 @@ public class ServerInstallerTests
 
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var instance = new ServerInstance { Id = 10, Name = "Srv" };
         var request = new ContentInstallRequest
@@ -98,7 +99,7 @@ public class ServerInstallerTests
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var request = new ContentInstallRequest
         {
@@ -137,7 +138,7 @@ public class ServerInstallerTests
 
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var instance = new ServerInstance
         {
@@ -186,7 +187,7 @@ public class ServerInstallerTests
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
         var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, logger);
+        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
         var results = sut.Validate(new ContentInstallRequest
         {
@@ -224,7 +225,7 @@ public class ServerInstallerTests
             var steam = Substitute.For<ISteamService>();
             var fs = Substitute.For<IFileSystemService>();
             var logger = Substitute.For<ILogger<ServerInstaller>>();
-            var sut = new ServerInstaller(steam, fs, logger);
+            var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger);
 
             var results = sut.Validate(new ContentInstallRequest
             {
