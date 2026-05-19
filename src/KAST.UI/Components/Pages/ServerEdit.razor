@@ -361,7 +361,8 @@
         <div class="mt-3">
             @if (!_isNew)
             {
-                <div class="d-flex gap-2 mb-4 align-center">
+                @* ── Action bar ── *@
+                <div class="d-flex gap-2 mb-4 align-center flex-wrap">
                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.Download"
                                OnClick="StartInstall"
@@ -370,60 +371,132 @@
                     </MudButton>
                     @if (_installState?.IsDownloading == true)
                     {
-                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="CancelInstall">Cancel</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.Cancel"
+                                   OnClick="CancelInstall">Cancel</MudButton>
                     }
-                    <MudButton Variant="Variant.Text" OnClick="ValidateInstall">Validate</MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.FactCheck"
+                               OnClick="ValidateInstall"
+                               Disabled="@(!_instance.InstalledAt.HasValue)">Validate</MudButton>
+                    <MudSpacer />
                     @if (_instance.InstalledAt.HasValue)
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            Installed @_instance.InstalledAt.Value.ToString("g")
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(_installState?.ErrorMessage != null ? Color.Warning : Color.Success)"
+                                 Variant="Variant.Outlined"
+                                 Icon="@(_installState?.ErrorMessage != null ? Icons.Material.Filled.Warning : Icons.Material.Filled.CheckCircle)">
+                            @_instance.InstalledAt.Value.ToString("g")
                             @if (!string.IsNullOrEmpty(_instance.InstalledBuildId))
-                            { <text> (build @_instance.InstalledBuildId)</text> }
-                        </MudText>
+                            {<text>&nbsp;&middot; build @_instance.InstalledBuildId</text>}
+                        </MudChip>
                     }
                 </div>
 
+                @* ── Progress stepper ── *@
                 @if (_installState != null)
                 {
-                    <div class="kast-install-panel">
-                        <div class="kast-install-timeline">
-                            <MudTimeline TimelinePosition="TimelinePosition.Top"
-                                         TimelineOrientation="TimelineOrientation.Horizontal">
-                                @foreach (var _tstep in _installState.Steps)
-                                {
-                                    <MudTimelineItem Color="@GetStepColor(_tstep.Status)"
-                                                     Icon="@GetStepIcon(_tstep.Status)"
-                                                     Size="Size.Small">
-                                        <ItemContent>
-                                            <MudText Typo="Typo.caption" Align="Align.Center">@_tstep.Name</MudText>
-                                            @if (_tstep.Status == ContentStepStatus.InProgress)
-                                            {
-                                                @if (!_tstep.IsIndeterminate)
-                                                {
-                                                    <MudText Typo="Typo.caption" Color="Color.Primary" Align="Align.Center">@_tstep.Progress.ToString("F0")%</MudText>
-                                                }
-                                                <MudProgressLinear Value="@_tstep.Progress" Indeterminate="@_tstep.IsIndeterminate" Color="Color.Primary"
-                                                                   Rounded="true" Size="Size.Small" Class="mt-1" />
-                                            }
-                                            else if (_tstep.Status == ContentStepStatus.Failed)
-                                            {
-                                                <MudText Typo="Typo.caption" Color="Color.Error" Align="Align.Center">@(_tstep.Error ?? "Failed")</MudText>
-                                            }
-                                            else if (_tstep.Status == ContentStepStatus.Skipped)
-                                            {
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Align="Align.Center">Skipped</MudText>
-                                            }
-                                            else if (_tstep.Status == ContentStepStatus.Completed)
-                                            {
-                                                <MudText Typo="Typo.caption" Color="Color.Success" Align="Align.Center">Done</MudText>
-                                            }
-                                        </ItemContent>
-                                    </MudTimelineItem>
+                    <div class="kast-install-container">
+                    <MudPaper Elevation="1" Class="mb-2 flex-shrink-0">
+                        <MudStepper @bind-ActiveIndex="_installActiveStepIndex"
+                                    NonLinear="false"
+                                    OnPreviewInteraction="@CancelStepperInteraction"
+                                    CenterLabels="true"
+                                    ScrollableNavigation="true"
+                                    CompletedStepColor="Color.Success"
+                                    CurrentStepColor="Color.Primary"
+                                    ErrorStepColor="Color.Error"
+                                    SkippedStepColor="Color.Secondary"
+                                    NavClass="kast-stepper-nav"
+                                    StepClass="kast-stepper-step">
+                            <ConnectorTemplate Context="connStep">
+                                <div class="mud-stepper-nav-connector">
+                                    <MudProgressLinear Value="@(connStep.Completed || connStep.Skipped ? 100 : 0)"
+                                                       Indeterminate="@(connStep.IsActive && !connStep.Completed && !connStep.HasError && (_installState?.IsDownloading == true))"
+                                                       Striped="@(connStep.IsActive && !connStep.Completed && !connStep.HasError && (_installState?.IsDownloading == true))"
+                                                       Color="Color.Success"
+                                                       Style="height:2px; border-radius:2px;" />
+                                </div>
+                            </ConnectorTemplate>
+                            <LabelTemplate>
+                                @{
+                                    var _lStep = _installState?.Steps.FirstOrDefault(s => s.Name == context.Title);
+                                    var _lProg = _lStep?.Progress ?? 0;
+                                    var _lIndet = _lStep?.IsIndeterminate ?? true;
                                 }
-                            </MudTimeline>
-                        </div>
+                                @if (context.HasError)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                                }
+                                else if (context.Skipped)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.SkipNext" Color="Color.Secondary" Size="Size.Small" />
+                                }
+                                else if (context.Completed)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                }
+                                else if (context.IsActive)
+                                {
+                                    <MudProgressCircular Color="Color.Primary" Size="Size.Small"
+                                                         Indeterminate="@_lIndet"
+                                                         Value="@_lProg" Min="0" Max="100" StrokeWidth="4">
+                                        @if (!_lIndet)
+                                        {
+                                            <MudText Style="font-size:7px; font-weight:700; line-height:1;">@((int)_lProg)%</MudText>
+                                        }
+                                    </MudProgressCircular>
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Outlined.Circle" Color="Color.Default" Size="Size.Small" />
+                                }
+                            </LabelTemplate>
+                            <ChildContent>
+                                @foreach (var step in _installState.Steps)
+                                {
+                                    <MudStep Title="@step.Name"
+                                             SecondaryText="@GetStepSecondaryText(step)"
+                                             HasError="@(step.Status == ContentStepStatus.Failed)"
+                                             Completed="@(step.Status == ContentStepStatus.Completed)"
+                                             Skipped="@(step.Status == ContentStepStatus.Skipped)">
+                                        <div class="px-2 pb-2">
+                                            @if (step.Status == ContentStepStatus.InProgress)
+                                            {
+                                                <MudProgressLinear Value="@step.Progress"
+                                                                   Indeterminate="@step.IsIndeterminate"
+                                                                   Striped="@step.IsIndeterminate"
+                                                                   Color="Color.Primary"
+                                                                   Rounded="true"
+                                                                   Class="mb-1" />
+                                                @if (!step.IsIndeterminate)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Primary" Align="Align.Center">@step.Progress.ToString("F1")%</MudText>
+                                                }
+                                            }
+                                            else if (step.Status == ContentStepStatus.Failed)
+                                            {
+                                                <MudAlert Severity="Severity.Error" Dense="true">@(step.Error ?? "Step failed")</MudAlert>
+                                            }
+                                        </div>
+                                    </MudStep>
+                                }
+                            </ChildContent>
+                            <ActionContent>@* Install is driven automatically — no navigation buttons needed *@</ActionContent>
+                            <CompletedContent>
+                                <div class="pa-3">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Color="Color.Success" />
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Success">Installation complete — server is ready to launch.</MudText>
+                                    </MudStack>
+                                </div>
+                            </CompletedContent>
+                        </MudStepper>
+                    </MudPaper>
 
-                        <div class="d-flex align-center justify-space-between px-1 mb-1">
+                    @* ── Install Log ── *@
+                    <MudPaper Elevation="1" Class="overflow-hidden">
+                        <div class="d-flex align-center justify-space-between px-3 pt-2 pb-1 flex-shrink-0">
                             <MudText Typo="Typo.overline" Color="Color.Secondary">Install Log</MudText>
                             <MudTooltip Text='@(_followLog ? "Auto-scroll on \u2014 click to disable" : "Auto-scroll off \u2014 click to enable")'>
                                 <MudIconButton Icon="@(_followLog ? Icons.Material.Filled.LockOpen : Icons.Material.Outlined.VerticalAlignBottom)"
@@ -432,33 +505,15 @@
                                                OnClick="@(() => { _followLog = !_followLog; if (_followLog) _scrollInstallLog = true; })" />
                             </MudTooltip>
                         </div>
-
-                        <div class="kast-install-log"
-                             style="background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px; border-radius:4px; padding:8px;"
+                        <div class="kast-install-log px-3 pb-2"
                              @ref="_installLogRef">
                             @foreach (var line in _installState.Log)
                             {
                                 <div>@line</div>
                             }
                         </div>
+                    </MudPaper>
                     </div>
-                }
-
-                @if (_validationResults != null)
-                {
-                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Validation Results</MudText>
-                    @foreach (var r in _validationResults)
-                    {
-                        <div class="d-flex align-center gap-2 mb-1">
-                            <MudIcon Icon="@(r.OK ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
-                                     Color="@(r.OK ? Color.Success : Color.Error)" Size="Size.Small" />
-                            <MudText Typo="Typo.body2">@r.Label</MudText>
-                            @if (!string.IsNullOrEmpty(r.Detail))
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@r.Detail</MudText>
-                            }
-                        </div>
-                    }
                 }
             }
             else
@@ -536,6 +591,61 @@
 
 </MudTabs>
 
+@* ── Validation Dialog ── *@
+<MudDialog @bind-Visible="_validationDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck"
+                     Color="@(_validationResults?.All(r => r.OK) == true ? Color.Success : Color.Error)" />
+            <MudText Typo="Typo.h6">Validation</MudText>
+            <MudSpacer />
+            @if (_validationResults?.All(r => r.OK) == true)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text"
+                         Icon="@Icons.Material.Filled.CheckCircle">All OK</MudChip>
+            }
+            else if (_validationResults?.Any(r => !r.OK) == true)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">@_validationResults!.Count(r => !r.OK) issue(s)</MudChip>
+            }
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_validationResults != null)
+        {
+            @foreach (var r in _validationResults)
+            {
+                <div class="d-flex align-start gap-2 mb-2">
+                    <MudIcon Icon="@(r.OK ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                             Color="@(r.OK ? Color.Success : Color.Error)" Size="Size.Small"
+                             Style="margin-top:2px; flex-shrink:0;" />
+                    <div>
+                        <MudText Typo="Typo.body2">@r.Label</MudText>
+                        @if (!string.IsNullOrEmpty(r.Detail))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@r.Detail</MudText>
+                        }
+                    </div>
+                </div>
+            }
+            @if (_validationResults.All(r => r.OK))
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">Validation passes but something still feels off?</MudText>
+                <MudTooltip Text="Re-downloads all server files from Steam, bypassing any cached state.">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="@(() => { _validationDialogOpen = false; _ = StartInstall(); })"
+                               Disabled="@(_installState?.IsDownloading == true)">Force re-download</MudButton>
+                </MudTooltip>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _validationDialogOpen = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     [Parameter] public int? Id { get; set; }
 
@@ -548,6 +658,8 @@
     private ElementReference _installLogRef;
     private bool _scrollInstallLog;
     private bool _followLog = true;
+    private int _installActiveStepIndex;
+    private bool _validationDialogOpen;
     private IReadOnlyList<ContentValidationResult>? _validationResults;
     private bool _disposed;
     private bool _cmdExpanded;
@@ -776,6 +888,7 @@
     {
         if (_isNew) return;
         _validationResults = null;
+        _validationDialogOpen = false;
         if (_installState is not null) _installState.Changed -= OnInstallStateChanged;
 
         var settings = await SettingsService.GetSettingsAsync();
@@ -783,10 +896,17 @@
 
         _installState = ContentOrchestrator.StartServerInstall(_instance.Id, _instance.InstallPath, _instance, maxPar);
         _installState.Changed += OnInstallStateChanged;
+        _installActiveStepIndex = 0;
         StateHasChanged();
     }
 
     private void CancelInstall() => ContentOrchestrator.Cancel(ContentProgressTracker.ServerKey(_instance.Id));
+
+    private Task CancelStepperInteraction(StepperInteractionEventArgs args)
+    {
+        args.Cancel = true;
+        return Task.CompletedTask;
+    }
 
     private void ValidateInstall()
     {
@@ -794,6 +914,7 @@
         {
             Type = ContentType.Server, DestinationPath = _instance.InstallPath, Instance = _instance
         });
+        _validationDialogOpen = true;
         StateHasChanged();
     }
 
@@ -801,6 +922,14 @@
     {
         if (_disposed) return;
         if (_followLog) _scrollInstallLog = true;
+        if (_installState != null)
+        {
+            var _idx = _installState.Steps.FindIndex(s => s.Status == ContentStepStatus.InProgress);
+            if (_idx < 0)
+                _idx = _installState.Steps.FindIndex(s => s.Status == ContentStepStatus.Failed);
+            _installActiveStepIndex = _idx >= 0 ? _idx
+                : (_installState.IsComplete ? _installState.Steps.Count : Math.Max(0, _installState.CurrentStepIndex));
+        }
         InvokeAsync(async () =>
         {
             if (_disposed) return;
@@ -810,10 +939,13 @@
                 if (fresh != null) _instance = fresh;
             }
             if (_installState?.IsComplete == true && _validationResults == null)
+            {
                 _validationResults = ContentOrchestrator.Validate(ContentType.Server, new ContentInstallRequest
                 {
                     Type = ContentType.Server, DestinationPath = _instance.InstallPath, Instance = _instance
                 });
+                _validationDialogOpen = true;
+            }
             StateHasChanged();
         });
     }
@@ -897,12 +1029,12 @@
         _ => Color.Default
     };
 
-    private static string? GetStepLabel(ContentStep step) => step.Status switch
+    private static string? GetStepSecondaryText(ContentStep step) => step.Status switch
     {
-        ContentStepStatus.InProgress => step.IsIndeterminate ? "…" : $"{step.Progress:F0}%",
-        ContentStepStatus.Completed  => "Done",
-        ContentStepStatus.Failed     => step.Error ?? "Failed",
-        ContentStepStatus.Skipped    => step.Error ?? "Skipped",
+        ContentStepStatus.InProgress => step.IsIndeterminate ? "running\u2026" : $"{step.Progress:F0}%",
+        ContentStepStatus.Completed  => "done",
+        ContentStepStatus.Failed     => step.Error ?? "failed",
+        ContentStepStatus.Skipped    => "skipped",
         _                            => step.Detail
     };
 
