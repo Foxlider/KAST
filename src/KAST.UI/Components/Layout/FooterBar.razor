@@ -6,120 +6,123 @@
 
 @* ── Fixed footer bar ── *@
 <div style="position:fixed; bottom:0; left:0; right:0; height:28px; z-index:1200;
-            background:var(--mud-palette-appbar-background); border-top:1px solid var(--mud-palette-lines-default);
-            display:flex; align-items:center; padding:0 8px; gap:12px;">
+    background:var(--mud-palette-appbar-background); border-top:1px solid var(--mud-palette-lines-default);
+    display:flex; align-items:center; padding:0 8px; gap:12px;">
 
     @* ══ Left: service status pills ══ *@
     <div class="d-flex align-center gap-2" style="flex:1; overflow:hidden; font-size:11px;">
         @* API *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@GetApiColor(MonitoringState.ApiStatus);flex-shrink:0;display:inline-block;"></span>
+            <span
+            style="width:7px;height:7px;border-radius:50%;background:@GetApiColor(MonitoringState.ApiStatus);flex-shrink:0;display:inline-block;"></span>
             <span style="color:var(--mud-palette-text-secondary);">API</span>
         </div>
         @* DB *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsDbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span
+            style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsDbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
             <span style="color:var(--mud-palette-text-secondary);">DB</span>
         </div>
         @* Steam *@
         <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@(SteamService.IsAuthenticated ? "#3dcb6c" : SteamService.IsConnected ? "#ffb545" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
-            <span style="color:var(--mud-palette-text-secondary);">Steam@(SteamService.IsAuthenticated && SteamService.Profile?.PersonaName != null ? $" · {SteamService.Profile.PersonaName}" : "")</span>
-        </div>
-        @* Monitoring *@
-        <div class="d-flex align-center gap-1">
-            <span style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsMonitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
-            <span style="color:var(--mud-palette-text-secondary);">Monitor</span>
-        </div>
-        @* Error badge *@
-        @if (_errorCount > 0)
-        {
-            <span style="cursor:pointer; padding:0 6px; border-radius:10px; font-size:10px; font-weight:600;
-                          background:rgba(255,63,95,.15); color:#ff3f5f;"
-                  @onclick="@(() => { _logOpen = true; _filterLevel = LogLevel.Error; })">
-                @_errorCount error@(_errorCount == 1 ? "" : "s")
-            </span>
-        }
-    </div>
-
-    @* ══ Right: log console toggle ══ *@
-    <div class="d-flex align-center gap-2" style="flex-shrink:0;">
-        @if (!_logOpen && _lastMessage != "")
-        {
-            <span style="font-size:10px; font-family:monospace; color:var(--mud-palette-text-disabled);
-                          max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                @_lastMessage
-            </span>
-        }
-        <MudIconButton Icon="@(_logOpen ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.Terminal)"
-                       Size="Size.Small" Style="width:22px; height:22px; padding:2px;"
-                       Color="@(_errorCount > 0 ? Color.Error : (_logOpen ? Color.Primary : Color.Default))"
-                       OnClick="@(() => _logOpen = !_logOpen)"
-                       aria-label="Toggle log console" />
-    </div>
-</div>
-
-@* ══ Log console panel ══ *@
-@if (_logOpen)
-{
-    <div @onclick:stopPropagation="true"
-         style="position:fixed; top:0; bottom:28px; right:0; width:@(_panelWidth)px; max-width:95vw;
-                z-index:2000; display:flex; flex-direction:column;
-                background:rgba(18,17,30,0.72);
-                backdrop-filter:blur(20px) saturate(1.6);
-                -webkit-backdrop-filter:blur(20px) saturate(1.6);
-                border-left:1px solid rgba(255,255,255,.08);
-                box-shadow:-8px 0 32px rgba(0,0,0,.45);">
-
-        @* Resize handle (left edge) *@
-        <div style="position:absolute; top:0; left:0; bottom:0; width:5px; cursor:ew-resize; z-index:10;"
-             @onmousedown="StartResize"
-             @onmousedown:preventDefault="true"
-             title="Drag to resize"></div>
-
-        @* Toolbar *@
-        <div class="d-flex align-center gap-1 px-2" style="height:32px; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.07);">
-            <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Style="opacity:.6; font-size:14px;" />
-            <MudText Typo="Typo.caption" Style="font-weight:600; font-size:11px; letter-spacing:.05em;">LOG CONSOLE</MudText>
-            <MudSpacer />
-            @* Level filter chips *@
-            @foreach (var item in _filterOptions)
+            <span
+            style="width:7px;height:7px;border-radius:50%;background:@(SteamService.IsAuthenticated ? "#3dcb6c" : SteamService.IsConnected ? "#ffb545" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+            <span style="color:var(--mud-palette-text-secondary);">Steam@(SteamService.IsAuthenticated &&
+                                SteamService.Profile?.PersonaName != null ? $" · {SteamService.Profile.PersonaName}" : "")</span>
+            </div>
+            @* Monitoring *@
+            <div class="d-flex align-center gap-1">
+                <span
+                style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsMonitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
+                <span style="color:var(--mud-palette-text-secondary);">Monitor</span>
+            </div>
+            @* Error badge *@
+            @if (_errorCount > 0)
             {
-                <span style="cursor:pointer; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; line-height:18px;
-                              background:@(_filterLevel == item.Level ? GetLevelBg(item.Level) : "rgba(255,255,255,.05)");
-                              color:@(_filterLevel == item.Level ? GetLevelFg(item.Level) : "var(--mud-palette-text-secondary)");"
-                      @onclick="@(() => _filterLevel = (_filterLevel == item.Level ? null : (LogLevel?)item.Level))">
-                    @item.Label
+                <span style="cursor:pointer; padding:0 6px; border-radius:10px; font-size:10px; font-weight:600;
+                    background:rgba(255,63,95,.15); color:#ff3f5f;"
+                      @onclick="@(() => { _logOpen = true; _filterLevel = LogLevel.Error; })">
+                    @_errorCount error@(_errorCount == 1 ? "" : "s")
                 </span>
             }
-            <MudDivider Vertical="true" FlexItem="true" Style="margin:4px 4px;" />
-            <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
-                           Style="width:20px; height:20px; padding:2px;" aria-label="Clear log"
-                           OnClick="@(() => LogStore.Clear())" />
         </div>
 
-        @* Log output *@
-        <div @ref="_logScrollRef"
-             style="flex:1; overflow-y:auto; font-family:'Cascadia Code','Consolas',monospace; font-size:11px; padding:4px 8px; line-height:1.6;">
-            @{
-                var entries = GetFilteredEntries();
-            }
-            @if (entries.Count == 0)
+        @* ══ Right: log console toggle ══ *@
+        <div class="d-flex align-center gap-2" style="flex-shrink:0;">
+            @if (!_logOpen && _lastMessage != "")
             {
-                <span style="color:var(--mud-palette-text-disabled);">No log entries.</span>
+                <span style="font-size:10px; font-family:monospace; color:var(--mud-palette-text-disabled);
+                    max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    @_lastMessage
+                </span>
             }
-            @foreach (var entry in entries)
-            {
-                <div style="display:flex; gap:8px; border-bottom:1px solid rgba(255,255,255,.02);">
-                    <span style="color:rgba(255,255,255,.25); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
-                    <span style="flex-shrink:0; min-width:30px; color:@GetLevelFg(entry.Level);">@GetLevelTag(entry.Level)</span>
-                    <span style="color:rgba(255,255,255,.35); flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="@entry.Category">@ShortCategory(entry.Category)</span>
-                    <span style="color:var(--mud-palette-text-primary); word-break:break-word;">@entry.Message</span>
-                </div>
-            }
+            <MudIconButton Icon="@(_logOpen ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.Terminal)"
+                           Size="Size.Small" Style="width:22px; height:22px; padding:2px;"
+                           Color="@(_errorCount > 0 ? Color.Error : (_logOpen ? Color.Primary : Color.Default))"
+                           OnClick="@(() => _logOpen = !_logOpen)" aria-label="Toggle log console" />
         </div>
     </div>
-}
+
+    @* ══ Log console drawer ══ *@
+    <MudDrawer @bind-Open="@_logOpen" Anchor="Anchor.Right" Variant="DrawerVariant.Persistent"
+               ClipMode="DrawerClipMode.Always" Elevation="4" Width="@($"{_panelWidth}px")"
+               Style="background:rgba(18,17,30,0.92); backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6); border-left:1px solid rgba(255,255,255,.08); box-shadow:-8px 0 32px rgba(0,0,0,.45);">
+        <div style="display:flex; flex-direction:column; height:100%; position:relative; padding-bottom:28px;">
+
+            @* Resize handle (left edge) *@
+            <div style="position:absolute; top:0; left:0; bottom:0; width:5px; cursor:ew-resize; z-index:10;"
+                 @onmousedown="StartResize" @onmousedown:preventDefault="true" title="Drag to resize"></div>
+
+            @* Toolbar *@
+            <div class="d-flex align-center gap-1 px-2"
+                 style="height:32px; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.07);">
+                <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Style="opacity:.6; font-size:14px;" />
+                <MudText Typo="Typo.caption" Style="font-weight:600; font-size:11px; letter-spacing:.05em;">LOG CONSOLE
+                </MudText>
+                <MudSpacer />
+                @* Level filter chips *@
+                @foreach (var item in _filterOptions)
+                {
+                    <span
+                        style="cursor:pointer; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; line-height:18px;
+                        background:@(_filterLevel == item.Level ? GetLevelBg(item.Level) : "rgba(255,255,255,.05)");
+                        color:@(_filterLevel == item.Level ? GetLevelFg(item.Level) : "var(--mud-palette-text-secondary)");"
+                        @onclick="@(() => _filterLevel = (_filterLevel == item.Level ? null : (LogLevel?)item.Level))">
+                        @item.Label
+                    </span>
+                }
+                <MudDivider Vertical="true" FlexItem="true" Style="margin:4px 4px;" />
+                <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
+                               Style="width:20px; height:20px; padding:2px;" aria-label="Clear log"
+                               OnClick="@(() => LogStore.Clear())" />
+            </div>
+
+            @* Log output *@
+            <div @ref="_logScrollRef"
+                 style="flex:1; overflow-y:auto; font-family:'Cascadia Code','Consolas',monospace; font-size:11px; padding:4px 8px; line-height:1.6;">
+                @{
+                    var entries = GetFilteredEntries();
+                }
+                @if (entries.Count == 0)
+                {
+                    <span style="color:var(--mud-palette-text-disabled);">No log entries.</span>
+                }
+                @foreach (var entry in entries)
+                {
+                    <div style="display:flex; gap:8px; border-bottom:1px solid rgba(255,255,255,.02);">
+                        <span
+                        style="color:rgba(255,255,255,.25); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                        <span
+                        style="flex-shrink:0; min-width:30px; color:@GetLevelFg(entry.Level);">@GetLevelTag(entry.Level)</span>
+                        <span
+                        style="color:rgba(255,255,255,.35); flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                        title="@entry.Category">@ShortCategory(entry.Category)</span>
+                        <span style="color:var(--mud-palette-text-primary); word-break:break-word;">@entry.Message</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </MudDrawer>
 
 @code {
     private bool _logOpen;
