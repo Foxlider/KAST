@@ -35,3 +35,13 @@
     resize: both;
     box-sizing: border-box;
 }
+
+/* ── Mod drag items — ensure the full MudBlazor wrapper is grabbable ── */
+::deep .mud-drop-item {
+    cursor: grab;
+    margin-bottom: 3px;
+}
+
+::deep .mud-drop-item:active {
+    cursor: grabbing;
+}

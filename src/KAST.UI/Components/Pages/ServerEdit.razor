@@ -281,79 +281,62 @@
 
     @* ════════════ MODS ════════════ *@
     <MudTabPanel Text="Mods">
-        <MudGrid Class="mt-3" Spacing="2">
-            @* Available *@
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small" Class="mr-1" />
-                        Available Mods
-                    </MudText>
-                    @foreach (var mod in _unassignedMods)
-                    {
-                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
-                            @if (!string.IsNullOrEmpty(mod.ThumbnailUrl))
-                            {
-                                <img src="@mod.ThumbnailUrl" alt="" style="width:20px;height:20px;object-fit:cover;border-radius:3px;flex-shrink:0;" />
-                            }
-                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@mod.Name</MudText>
-                            <MudTooltip Text="Add as client mod">
-                                <MudIconButton Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" OnClick="@(() => AddMod(mod.Id, false))" />
-                            </MudTooltip>
-                            <MudTooltip Text="Add as server-side mod">
-                                <MudIconButton Icon="@Icons.Material.Filled.Storage" Size="Size.Small" OnClick="@(() => AddMod(mod.Id, true))" />
-                            </MudTooltip>
-                        </div>
-                    }
-                    @if (_unassignedMods.Count == 0)
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-flex justify-center mt-8">All mods assigned</MudText>
-                    }
+        <MudDropContainer T="ModDragItem" @ref="_dropContainer"
+                          Items="@_modDragItems"
+                          ItemsSelector="@((item, zone) => item.Zone == zone)"
+                          ItemDropped="@OnModDropped"
+                          Class="d-flex flex-row gap-3 mt-3">
+            <ChildContent>
+                @* ── Available ── *@
+                <MudPaper Elevation="1" Class="pa-3" Style="flex:1; min-width:0; min-height:300px; display:flex; flex-direction:column;">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle2">Available Mods</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "available")</MudText>
+                    </div>
+                    <MudDropZone T="ModDragItem" Identifier="available" AllowReorder="false"
+                                 Class="flex-grow-1" Style="min-height:160px;" />
                 </MudPaper>
-            </MudItem>
-            @* Client-Side *@
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Class="mr-1" />
-                        Client-Side (@_clientMods.Count)
-                    </MudText>
-                    @foreach (var im in _clientMods)
-                    {
-                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
-                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@im.SteamMod.Name</MudText>
-                            <MudTooltip Text="Move to server-side">
-                                <MudIconButton Icon="@Icons.Material.Filled.Storage" Size="Size.Small" OnClick="@(() => MoveToServerSide(im.SteamModId))" />
-                            </MudTooltip>
-                            <MudTooltip Text="Remove mod">
-                                <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveMod(im.SteamModId))" />
-                            </MudTooltip>
-                        </div>
-                    }
+                @* ── Client-Side ── *@
+                <MudPaper Elevation="1" Class="pa-3" Style="flex:1; min-width:0; min-height:300px; display:flex; flex-direction:column;">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle2">Client-Side</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "client")</MudText>
+                    </div>
+                    <MudDropZone T="ModDragItem" Identifier="client" AllowReorder="true"
+                                 Class="flex-grow-1" Style="min-height:160px;" />
                 </MudPaper>
-            </MudItem>
-            @* Server-Side *@
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-3" Elevation="1" Style="min-height:300px;">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Class="mr-1" />
-                        Server-Side (@_serverMods.Count)
-                    </MudText>
-                    @foreach (var im in _serverMods)
-                    {
-                        <div class="d-flex align-center gap-1 mb-1 pa-1" style="border-radius:4px; background:rgba(255,255,255,.03);">
-                            <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@im.SteamMod.Name</MudText>
-                            <MudTooltip Text="Move to client-side">
-                                <MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small" OnClick="@(() => MoveToClientSide(im.SteamModId))" />
-                            </MudTooltip>
-                            <MudTooltip Text="Remove mod">
-                                <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveMod(im.SteamModId))" />
-                            </MudTooltip>
-                        </div>
-                    }
+                @* ── Server-Side ── *@
+                <MudPaper Elevation="1" Class="pa-3" Style="flex:1; min-width:0; min-height:300px; display:flex; flex-direction:column;">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle2">Server-Side</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "server")</MudText>
+                    </div>
+                    <MudDropZone T="ModDragItem" Identifier="server" AllowReorder="true"
+                                 Class="flex-grow-1" Style="min-height:160px;" />
                 </MudPaper>
-            </MudItem>
-        </MudGrid>
+            </ChildContent>
+            <ItemRenderer>
+                <div class="d-flex align-center gap-2 pa-2 rounded"
+                     style="background:rgba(255,255,255,.05); cursor:grab; user-select:none;">
+                    @if (!string.IsNullOrEmpty(context.ThumbnailUrl))
+                    {
+                        <img src="@context.ThumbnailUrl" alt="" style="width:20px;height:20px;object-fit:cover;border-radius:3px;flex-shrink:0;" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small" Style="opacity:.35; flex-shrink:0;" />
+                    }
+                    <MudText Typo="Typo.caption" Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@context.Name</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Style="opacity:.55; flex-shrink:0;" />
+                </div>
+            </ItemRenderer>
+        </MudDropContainer>
     </MudTabPanel>
 
     @* ════════════ INSTALL ════════════ *@
@@ -652,6 +635,8 @@
     private ServerInstance _instance = new();
     private bool _isNew => Id == null || Id == 0;
     private IReadOnlyList<SteamMod> _availableMods = [];
+    private List<ModDragItem> _modDragItems = [];
+    private MudDropContainer<ModDragItem>? _dropContainer;
     private string _serversDirectory = "./servers";
 
     private ContentInstallState? _installState;
@@ -745,6 +730,7 @@
         }
 
         _availableMods = await ModService.GetAllModsAsync();
+        BuildDragItems();
 
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
         if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
@@ -835,34 +821,33 @@
 
     private async Task AddMod(int modId, bool serverSide)
     {
+        // Persist to DB for existing instances. We never re-fetch the whole instance
+        // here because that would overwrite any in-memory IsServerSide/LoadOrder changes
+        // made by previous drag operations that have not been saved yet.
         if (!_isNew)
-        {
             await ServerService.AddModToInstanceAsync(_instance.Id, modId);
-            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-            var added = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
-            if (added != null) added.IsServerSide = serverSide;
-        }
-        else
-        {
-            var mod = _availableMods.FirstOrDefault(m => m.Id == modId);
-            if (mod != null)
-                _instance.Mods.Add(new ServerInstanceMod { SteamModId = modId, SteamMod = mod, IsServerSide = serverSide, LoadOrder = _instance.Mods.Count });
-        }
+
+        var steamMod = _availableMods.FirstOrDefault(m => m.Id == modId);
+        if (steamMod != null)
+            _instance.Mods.Add(new ServerInstanceMod
+            {
+                SteamModId = modId,
+                SteamMod   = steamMod,
+                IsServerSide = serverSide,
+                LoadOrder    = _instance.Mods.Count
+            });
+
         ReindexMods(); StateHasChanged();
     }
 
     private async Task RemoveMod(int modId)
     {
         if (!_isNew)
-        {
             await ServerService.RemoveModFromInstanceAsync(_instance.Id, modId);
-            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-        }
-        else
-        {
-            var toRemove = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
-            if (toRemove != null) _instance.Mods.Remove(toRemove);
-        }
+
+        var toRemove = _instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+        if (toRemove != null) _instance.Mods.Remove(toRemove);
+
         ReindexMods(); StateHasChanged();
     }
 
@@ -1079,6 +1064,75 @@
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
         if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    // ── Drag-and-drop mod management ────────────────────────────────────────
+
+    private sealed class ModDragItem
+    {
+        public int ModId { get; set; }
+        public string Name { get; set; } = "";
+        public string? ThumbnailUrl { get; set; }
+        public string Zone { get; set; } = "available"; // "available" | "client" | "server"
+    }
+
+    private void BuildDragItems()
+    {
+        _modDragItems =
+            _unassignedMods
+                .Select(m => new ModDragItem { ModId = m.Id, Name = m.Name ?? "", ThumbnailUrl = m.ThumbnailUrl, Zone = "available" })
+            .Concat(_clientMods
+                .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "client" }))
+            .Concat(_serverMods
+                .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "server" }))
+            .ToList();
+    }
+
+    private async Task OnModDropped(MudItemDropInfo<ModDragItem> info)
+    {
+        if (info.Item is not { } item) return;
+        var oldZone = item.Zone;
+        var newZone = info.DropzoneIdentifier;
+        var newIndex = info.IndexInZone;
+
+        item.Zone = newZone; // keep item in sync for ItemsSelector
+
+        if (oldZone == newZone)
+        {
+            // Reorder within client or server zone
+            if (newZone is "client" or "server")
+            {
+                bool serverSide = newZone == "server";
+                var zoneMods = _instance.Mods
+                    .Where(m => m.IsServerSide == serverSide)
+                    .OrderBy(m => m.LoadOrder)
+                    .ToList();
+                var mod = zoneMods.FirstOrDefault(m => m.SteamModId == item.ModId);
+                if (mod != null)
+                {
+                    zoneMods.Remove(mod);
+                    zoneMods.Insert(Math.Clamp(newIndex, 0, zoneMods.Count), mod);
+                    int idx = 0;
+                    foreach (var m in zoneMods) m.LoadOrder = idx++;
+                }
+            }
+        }
+        else if (newZone == "available")
+        {
+            await RemoveMod(item.ModId);
+        }
+        else if (oldZone == "available")
+        {
+            await AddMod(item.ModId, newZone == "server");
+        }
+        else // client ↔ server
+        {
+            if (newZone == "client") MoveToClientSide(item.ModId);
+            else MoveToServerSide(item.ModId);
+        }
+
+        BuildDragItems();
+        _dropContainer?.Refresh();
     }
 
     public async ValueTask DisposeAsync()
