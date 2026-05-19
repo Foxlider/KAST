@@ -173,6 +173,21 @@
 
         // ── Dismiss loading splash once Blazor circuit is ready ──
         (function () {
+            function removeSplash() {
+                var s = document.getElementById('kast-splash');
+                if (s && s.parentNode) s.parentNode.removeChild(s);
+            }
+
+            // In Docker, Blazor's enhanced navigation morphs the full <body> against
+            // the fresh server HTML, which always contains the visible #kast-splash div.
+            // The IIFE has already run and won't run again, so the re-inserted splash
+            // would never be dismissed. Guard with a sessionStorage flag (per-tab, survives
+            // within-tab reloads but clears when the tab is closed).
+            if (sessionStorage.getItem('kastBooted')) {
+                removeSplash();
+                return;
+            }
+
             var splashStartedAt = performance.now();
             var minDurationMs = 1000;
 
@@ -192,9 +207,16 @@
 
             document.addEventListener('blazor:afterstart', function onReady() {
                 document.removeEventListener('blazor:afterstart', onReady);
+                sessionStorage.setItem('kastBooted', '1');
                 var elapsed = performance.now() - splashStartedAt;
                 var wait = Math.max(0, minDurationMs - elapsed);
                 setTimeout(finishSequence, wait);
+            });
+
+            // Belt-and-suspenders: remove any splash the enhanced-nav DOM morph re-inserts
+            // after Blazor is already running (fires after every enhanced navigation update).
+            document.addEventListener('blazor:after-update-dom', function () {
+                if (sessionStorage.getItem('kastBooted')) removeSplash();
             });
 
             // safety fallback if startup event never arrives
