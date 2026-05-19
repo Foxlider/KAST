@@ -1,9 +1,83 @@
-﻿
+﻿@using Microsoft.AspNetCore.SignalR.Client
+@using KAST.Core.Events
+@inject IServerInstanceService ServerService
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
 <MudNavMenu>
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
-    <MudNavLink Href="servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Storage">Servers</MudNavLink>
+    <MudNavLink Href="/servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Storage">Servers</MudNavLink>
+    @if (_servers.Count > 0)
+    {
+        <div class="kast-sub-nav">
+            @foreach (var s in _servers)
+            {
+                <MudNavLink Href="@($"/servers/{s.Id}")" Match="NavLinkMatch.All"
+                            Icon="@GetStatusIcon(s.Status)"
+                            IconColor="@GetStatusColor(s.Status)">
+                    @s.Name
+                </MudNavLink>
+            }
+        </div>
+    }
     <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Extension">Mods</MudNavLink>
     <MudNavLink Href="monitoring" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart">Monitoring</MudNavLink>
     <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
 </MudNavMenu>
+
+@code {
+    private IReadOnlyList<ServerInstance> _servers = [];
+    private HubConnection? _hub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        Nav.LocationChanged += OnLocationChanged;
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<ServerStatusChangedEvent>("ServerStatusChanged", async _ =>
+        {
+            await RefreshAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _hub.StartAsync();
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await RefreshAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshAsync()
+        => _servers = await ServerService.GetAllInstancesAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        if (_hub is not null) await _hub.DisposeAsync();
+    }
+
+    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running                                      => Color.Success,
+        ServerInstanceStatus.Crashed                                      => Color.Error,
+        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
+        _                                                                 => Color.Default
+    };
+
+    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
+    {
+        ServerInstanceStatus.Running     => Icons.Material.Filled.PlayCircle,
+        ServerInstanceStatus.Crashed     => Icons.Material.Filled.Error,
+        ServerInstanceStatus.Starting    => Icons.Material.Filled.HourglassTop,
+        ServerInstanceStatus.Downloading => Icons.Material.Filled.Downloading,
+        _                                => Icons.Material.Outlined.StopCircle
+    };
+}
 

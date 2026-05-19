@@ -248,6 +248,12 @@ public class ContentOrchestrator(
 
         if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
             state.FailStep(state.CurrentStepIndex, "Cancelled");
+        else
+        {
+            var firstPending = state.Steps.FindIndex(s => s.Status == ContentStepStatus.Pending);
+            if (firstPending >= 0)
+                state.FailStep(firstPending, "Cancelled");
+        }
 
         await HandleErrorCallbackAsync(onError, state, new OperationCanceledException());
         state.NotifyChanged();
@@ -266,6 +272,13 @@ public class ContentOrchestrator(
 
         if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
             state.FailStep(state.CurrentStepIndex, ex.Message);
+        else
+        {
+            // Error occurred before any step was started (e.g. Steam connection failure)
+            var firstPending = state.Steps.FindIndex(s => s.Status == ContentStepStatus.Pending);
+            if (firstPending >= 0)
+                state.FailStep(firstPending, ex.Message);
+        }
 
         await HandleErrorCallbackAsync(onError, state, ex);
         state.NotifyChanged();
