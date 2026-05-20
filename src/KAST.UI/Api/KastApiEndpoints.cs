@@ -76,7 +76,7 @@ public static class KastApiEndpoints
 
         g.MapPost("/{id:int}/mods/{modId:int}", async (int id, int modId, [FromQuery] int loadOrder, IServerInstanceService svc, CancellationToken ct) =>
         {
-            await svc.AddModToInstanceAsync(id, modId, loadOrder, ct);
+            await svc.AddModToInstanceAsync(id, modId, loadOrder, ct: ct);
             return Results.Ok();
         });
 

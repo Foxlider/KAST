@@ -14,9 +14,10 @@ public interface IServerInstanceService
     Task StopInstanceAsync(int id, CancellationToken ct = default);
     Task RestartInstanceAsync(int id, CancellationToken ct = default);
 
-    Task AddModToInstanceAsync(int instanceId, int modId, int loadOrder = 0, CancellationToken ct = default);
+    Task AddModToInstanceAsync(int instanceId, int modId, int loadOrder = 0, bool isClientSide = false, bool isServerSide = false, CancellationToken ct = default);
     Task RemoveModFromInstanceAsync(int instanceId, int modId, CancellationToken ct = default);
     Task UpdateModLoadOrderAsync(int instanceId, int modId, int newOrder, CancellationToken ct = default);
+    Task UpdateModFlagsAsync(int instanceId, int modId, bool isClientSide, bool isServerSide, CancellationToken ct = default);
 
     Task LinkModsAsync(int instanceId, CancellationToken ct = default);
 
