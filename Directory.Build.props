@@ -2,4 +2,9 @@
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1873</NoWarn>
   </PropertyGroup>
+
+  <!-- MinVer: derives version from git tags at build time -->
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="5.*" PrivateAssets="All" />
+  </ItemGroup>
 </Project>

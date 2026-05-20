@@ -1,6 +1,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Version injected by CI (e.g. 0.2.1 or 0.2.1-nightly.20260520.abc1234)
+ARG APP_VERSION=0.0.0-local
+
 # Copy solution and project files
 COPY KAST.slnx .
 COPY src/KAST.Core/KAST.Core.csproj src/KAST.Core/
@@ -14,7 +17,7 @@ RUN dotnet restore KAST.slnx
 # Copy source and publish
 COPY src/ src/
 WORKDIR /src/src/KAST.UI
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish --no-restore /p:MinVerVersionOverride=$APP_VERSION
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

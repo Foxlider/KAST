@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # NuGet packages
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - "chore"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      microsoft:
+        patterns:
+          - "Microsoft.*"
+          - "System.*"
+      mudblazor:
+        patterns:
+          - "MudBlazor*"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - "chore"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"

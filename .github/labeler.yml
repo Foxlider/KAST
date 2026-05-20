@@ -1,0 +1,56 @@
+# Auto-labeller config for actions/labeler@v5
+# Applied automatically to every PR by .github/workflows/labeler.yml
+
+"area: ui":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.UI/**"
+
+"area: core":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.Core/**"
+
+"area: steam":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.Infrastructure/Steam/**"
+
+"area: content":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.Infrastructure/Services/Content/**"
+
+"area: api":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.UI/Api/**"
+      - "src/KAST.Infrastructure/Services/*Api*"
+
+"area: database":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/KAST.Infrastructure/Data/**"
+
+"area: ci":
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "Directory.Build.props"
+      - "global.json"
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "*.md"
+      - "docs/**"
+
+chore:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".editorconfig"
+      - ".gitattributes"
+      - ".gitignore"
+      - "cliff.toml"
