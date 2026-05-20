@@ -17,6 +17,8 @@ public class SteamMod
     public string LocalPath { get; set; } = string.Empty;
     public DateTime? LastUpdatedSteam { get; set; }
     public DateTime? LastUpdatedLocal { get; set; }
+    public DateTime? LastChecked { get; set; }
+    public string? Comment { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>Manifest ID of the locally installed version (0 = not tracked).</summary>
