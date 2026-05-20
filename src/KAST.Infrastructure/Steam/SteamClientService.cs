@@ -637,7 +637,7 @@ public class SteamClientService : ISteamService, IDisposable
     // Arma 3 AppID — used as both appId and depotId for workshop items (same as FASTER & BytexDigital)
     private const uint Arma3AppId = 107410;
 
-    public async Task DownloadWorkshopItemAsync(
+    public async Task<ulong> DownloadWorkshopItemAsync(
         long workshopId, string destinationPath,
         IProgress<double>? progress = null, CancellationToken ct = default)
     {
@@ -726,6 +726,7 @@ public class SteamClientService : ISteamService, IDisposable
         _logger.LogInformation("Workshop item {Id} download complete → {Path}  ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
             workshopId, destinationPath, totalMbDownloaded, dlElapsed.TotalSeconds, avgMbps);
         progress?.Report(100);
+        return manifestId;
         }
         catch (Exception ex)
         {

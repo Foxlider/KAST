@@ -135,7 +135,7 @@ public static class KastApiEndpoints
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
             orchestrator.StartModInstall(mod.Id, ContentType.SteamMod, destPath, mod.WorkshopId,
-                onComplete: async (sp, _) =>
+                onComplete: async (sp, state) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
                     var m = await db.Mods.FindAsync(id, ct);
@@ -144,6 +144,11 @@ public static class KastApiEndpoints
                     m.LocalPath = Path.GetFullPath(destPath);
                     m.SizeBytes = fs.GetDirectorySize(destPath);
                     m.LastUpdatedLocal = DateTime.UtcNow;
+                    if (state?.InstalledManifestId > 0)
+                    {
+                        m.InstalledManifestId = state.InstalledManifestId;
+                        m.SteamManifestId = state.InstalledManifestId;
+                    }
                     await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
@@ -176,7 +181,7 @@ public static class KastApiEndpoints
             var destPath = mod.LocalPath;
 
             orchestrator.StartModInstall(mod.Id, ContentType.SteamMod, destPath, mod.WorkshopId,
-                onComplete: async (sp, _) =>
+                onComplete: async (sp, state) =>
                 {
                     var db = sp.GetRequiredService<KastDbContext>();
                     var m = await db.Mods.FindAsync(id, ct);
@@ -184,6 +189,11 @@ public static class KastApiEndpoints
                     m.Status = ModStatus.Installed;
                     m.SizeBytes = fs.GetDirectorySize(destPath);
                     m.LastUpdatedLocal = DateTime.UtcNow;
+                    if (state?.InstalledManifestId > 0)
+                    {
+                        m.InstalledManifestId = state.InstalledManifestId;
+                        m.SteamManifestId = state.InstalledManifestId;
+                    }
                     await db.SaveChangesAsync(ct);
                     await sp.GetRequiredService<IAppEventBroadcaster>()
                         .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
@@ -206,6 +216,12 @@ public static class KastApiEndpoints
         {
             await svc.CheckForUpdatesAsync(ct);
             return Results.Ok();
+        });
+
+        g.MapPost("/update-all", async (IModService svc, CancellationToken ct) =>
+        {
+            _ = Task.Run(() => svc.UpdateAllOutdatedModsAsync(ct), ct);
+            return Results.Accepted();
         });
     }
 

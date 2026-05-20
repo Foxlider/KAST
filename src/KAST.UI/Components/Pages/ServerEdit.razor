@@ -704,8 +704,6 @@
             if (!string.IsNullOrEmpty(_instance.ArmaProfileContent))
             { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
 
-            await InitializeSignalR();
-
             // Seed console history from the singleton store (survives navigation)
             foreach (var entry in ConsoleStore.GetHistory(_instance.Id))
                 _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
@@ -739,6 +737,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender && !_isNew)
+            await InitializeSignalR();
+
         if (_scrollInstallLog)
         {
             _scrollInstallLog = false;

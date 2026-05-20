@@ -231,7 +231,7 @@ public class ModServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         _steamService.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
 
@@ -248,7 +248,7 @@ public class ModServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         _steamService.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
 

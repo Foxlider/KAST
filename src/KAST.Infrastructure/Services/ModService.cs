@@ -51,7 +51,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 ExpectedSizeBytes = info?.SizeBytes ?? 0,
                 Source = ModSource.SteamWorkshop,
                 Status = ModStatus.NotInstalled,
-                LastUpdatedSteam = info?.LastUpdated
+                LastUpdatedSteam = info?.LastUpdated,
+                SteamManifestId = info?.ManifestId ?? 0
             };
 
             db.Mods.Add(mod);
@@ -157,7 +158,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         activity?.SetTag("mod.name",        mod.Name);
 
         mod.Status = ModStatus.Downloading;
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
 
         // Wrap the user's progress to also broadcast over SignalR
@@ -173,12 +174,19 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             var settings = await settingsService.GetSettingsAsync(ct);
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
+            mod.InstalledManifestId = installedManifestId;
+            mod.SteamManifestId = installedManifestId;
+        }
+        catch (OperationCanceledException)
+        {
+            mod.Status = ModStatus.NotInstalled;
+            throw;
         }
         catch (Exception ex)
         {
@@ -191,7 +199,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         }
         finally
         {
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
             await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
         }
     }
@@ -208,7 +216,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         activity?.SetTag("mod.name",        mod.Name);
 
         mod.Status = ModStatus.Updating;
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
 
         var broadcastProgress = new Progress<double>(async pct =>
@@ -225,11 +233,19 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 ? Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString())
                 : mod.LocalPath;
 
-            await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
             mod.LastUpdatedLocal = DateTime.UtcNow;
+            mod.InstalledManifestId = installedManifestId;
+            mod.SteamManifestId = installedManifestId;
+        }
+        catch (OperationCanceledException)
+        {
+            // Revert to a recoverable status so the user can retry
+            mod.Status = mod.InstalledManifestId > 0 ? ModStatus.UpdateAvailable : ModStatus.NotInstalled;
+            throw;
         }
         catch (Exception ex)
         {
@@ -241,7 +257,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         }
         finally
         {
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
             await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
         }
     }
@@ -261,16 +277,96 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         foreach (var mod in mods)
         {
             var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
-            if (info != null && info.LastUpdated > mod.LastUpdatedLocal)
+            if (info == null) continue;
+
+            mod.SteamManifestId = info.ManifestId;
+            mod.LastUpdatedSteam = info.LastUpdated;
+
+            // Primary: manifest ID comparison (reliable — changes on every depot publish)
+            // Fallback: timestamp comparison when we have no tracked installed manifest
+            var isOutdated = mod.InstalledManifestId != 0
+                ? mod.InstalledManifestId != info.ManifestId
+                : info.LastUpdated > mod.LastUpdatedLocal;
+
+            if (isOutdated)
             {
                 mod.Status = ModStatus.UpdateAvailable;
-                mod.LastUpdatedSteam = info.LastUpdated;
                 updatesFound++;
             }
         }
 
         activity?.SetTag("mods.updates_found", updatesFound);
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task CheckModForUpdateAsync(int id, CancellationToken ct = default)
+    {
+        var mod = await db.Mods.FindAsync([id], ct)
+            ?? throw new InvalidOperationException($"Mod {id} not found");
+
+        if (mod.Source != ModSource.SteamWorkshop) return;
+
+        var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
+        if (info == null) return;
+
+        mod.SteamManifestId = info.ManifestId;
+        mod.LastUpdatedSteam = info.LastUpdated;
+
+        var isOutdated = mod.InstalledManifestId != 0
+            ? mod.InstalledManifestId != info.ManifestId
+            : info.LastUpdated > mod.LastUpdatedLocal;
+
+        if (isOutdated && mod.Status == ModStatus.Installed)
+            mod.Status = ModStatus.UpdateAvailable;
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateAllOutdatedModsAsync(CancellationToken ct = default)
+    {
+        using var activity = KastActivitySources.Mods.StartActivity(
+            "kast.mod.update_all_outdated", ActivityKind.Internal);
+
+        var mods = await db.Mods
+            .Where(m => m.Source == ModSource.SteamWorkshop &&
+                        (m.Status == ModStatus.NotInstalled ||
+                         m.Status == ModStatus.UpdateAvailable ||
+                         m.Status == ModStatus.Error))
+            .ToListAsync(ct);
+
+        activity?.SetTag("mods.to_update", mods.Count);
+
+        var settings = await settingsService.GetSettingsAsync(ct);
+        int parallelism = Math.Max(1, settings.ParallelDownloads);
+        var semaphore = new SemaphoreSlim(parallelism);
+
+        var tasks = mods.Select(async mod =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                // NotInstalled mods need a fresh download; others need an update
+                if (mod.Status == ModStatus.NotInstalled)
+                    await DownloadModAsync(mod.Id, progress: null, ct);
+                else
+                    await UpdateModFilesAsync(mod.Id, progress: null, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // User-initiated cancel — status already reverted in DownloadModAsync/UpdateModFilesAsync
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Bulk update failed for mod {Id} ({Name})", mod.Id, mod.Name);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        activity?.SetTag("mods.updated", mods.Count);
     }
 
     private static long GetSizeOnDisk(string path)
