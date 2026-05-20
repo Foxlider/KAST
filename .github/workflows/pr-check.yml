@@ -1,0 +1,150 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, edited]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  # ── Always runs on every PR ──────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test with coverage
+        run: |
+          dotnet test --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./coverage \
+            --logger "trx;LogFileName=test-results.trx" \
+            --verbosity normal
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        run: |
+          reportgenerator \
+            -reports:"./coverage/**/coverage.cobertura.xml" \
+            -targetdir:"./coverage/report" \
+            -reporttypes:"MarkdownSummaryGithub;Html" \
+            -title:"KAST Coverage — PR #${{ github.event.pull_request.number }}"
+
+      - name: Post coverage summary
+        run: cat ./coverage/report/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test results & coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-coverage-pr-${{ github.event.pull_request.number }}
+          path: |
+            **/TestResults/*.trx
+            ./coverage/report/
+
+  # ── Conventional commit checks — uncomment when ready ───────────────────
+  #
+  # ── Option A: validate PR title only (recommended for squash-merge) ─────
+  #
+  #   conventional-title:
+  #     name: Conventional Commit — PR Title
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - name: Check PR title
+  #         uses: amannn/action-semantic-pull-request@v5
+  #         env:
+  #           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         with:
+  #           types: |
+  #             feat
+  #             fix
+  #             perf
+  #             refactor
+  #             docs
+  #             test
+  #             chore
+  #             ci
+  #             build
+  #           requireScope: false
+  #           subjectPattern: ^(?![A-Z]).+$
+  #           subjectPatternError: |
+  #             The PR title "{{ title }}" doesn't follow the conventional commit format.
+  #             Example: "feat: add server scheduling" or "fix: steam reconnect loop"
+  #
+  # ── Option B: validate every individual commit on the branch ─────────────
+  #
+  #   commitlint:
+  #     name: Conventional Commits — All commits
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #         with:
+  #           fetch-depth: 0
+  #       - uses: actions/setup-node@v4
+  #         with:
+  #           node-version: '20'
+  #       - run: npm install --save-dev @commitlint/cli @commitlint/config-conventional
+  #       - run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+
+# ── Option A: validate PR title only (recommended for squash-merge workflow) ─
+#
+#   conventional-title:
+#     name: Conventional Commit — PR Title
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Check PR title
+#         uses: amannn/action-semantic-pull-request@v5
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         with:
+#           types: |
+#             feat
+#             fix
+#             perf
+#             refactor
+#             docs
+#             test
+#             chore
+#             ci
+#             build
+#           requireScope: false
+#           subjectPattern: ^(?![A-Z]).+$
+#           subjectPatternError: |
+#             The PR title "{{ title }}" doesn't follow the conventional commit format.
+#             Example: "feat: add server scheduling" or "fix: steam reconnect loop"
+#
+# ── Option B: validate every individual commit on the branch ─────────────────
+#
+#   commitlint:
+#     name: Conventional Commits — All commits
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: '20'
+#       - run: npm install --save-dev @commitlint/cli @commitlint/config-conventional
+#       - run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose

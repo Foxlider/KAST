@@ -1,0 +1,192 @@
+@page "/about"
+@using System.Reflection
+@using System.Runtime.InteropServices
+
+<PageTitle>KAST -- About</PageTitle>
+
+@* ══ Hero ════════════════════════════════════════════════════════════════ *@
+<MudCard Elevation="3" Class="mb-4" Style="overflow:hidden; position:relative;">
+    @* subtle ember glow in the background *@
+    <div style="position:absolute; top:-60px; right:-60px; width:260px; height:260px;
+                border-radius:50%; background:radial-gradient(circle, rgba(224,101,24,.18) 0%, transparent 70%);
+                pointer-events:none;"></div>
+
+    <MudCardContent Class="pa-8">
+        <div class="d-flex align-center gap-4 flex-wrap justify-center justify-sm-start">
+
+            @* K logo — scaled from favicon.svg *@
+            <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"
+                 width="88" height="88" style="flex-shrink:0; filter:drop-shadow(0 0 12px rgba(224,101,24,.5));">
+                <defs>
+                    <linearGradient id="hero-k" x1="0" y1="4" x2="0" y2="28" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%"   stop-color="#f5b040"/>
+                        <stop offset="45%"  stop-color="#e06518"/>
+                        <stop offset="100%" stop-color="#8a3200"/>
+                    </linearGradient>
+                </defs>
+                <g fill="url(#hero-k)">
+                    <rect x="4"  y="4"  width="7" height="24"/>
+                    <polygon points="10,4  28,4  10,14"/>
+                    <polygon points="10,17 10,28 28,28"/>
+                </g>
+            </svg>
+
+            @* Title block *@
+            <div>
+                <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+                    <span style="font-size:3rem; font-weight:800; letter-spacing:.06em; line-height:1;
+                                 background:linear-gradient(160deg,#f5b040 0%,#e06518 45%,#8a3200 100%);
+                                 -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                                 background-clip:text;">KAST</span>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="Color.Warning" Style="font-family:monospace; font-size:11px; margin:0;">
+                        @_version
+                    </MudChip>
+                </div>
+                <MudText Typo="Typo.subtitle1" Color="Color.Secondary" Style="margin-top:2px;">
+                    Keelah's Arma Server Tool
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Style="margin-top:6px; opacity:.75;">
+                    Manage your Arma 3 dedicated servers with ease —
+                    download mods, configure instances, monitor performance.
+                </MudText>
+            </div>
+        </div>
+    </MudCardContent>
+</MudCard>
+
+@* ══ System info + Tech stack ════════════════════════════════════════════ *@
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6">
+        <MudCard Elevation="2" Style="height:100%;">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudIcon Icon="@Icons.Material.Filled.Computer" Color="Color.Primary" />
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle1">System Information</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pt-0">
+                <MudSimpleTable Dense="true" Hover="false" Striped="false" Style="background:transparent;">
+                    <tbody>
+                        @foreach (var (label, value) in _sysInfo)
+                        {
+                            <tr>
+                                <td style="width:110px; color:var(--mud-palette-text-secondary); font-size:12px; padding:6px 8px;">@label</td>
+                                <td style="font-family:monospace; font-size:11px; word-break:break-all; padding:6px 8px;">@value</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6">
+        <MudCard Elevation="2" Style="height:100%;">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudIcon Icon="@Icons.Material.Filled.Code" Color="Color.Primary" />
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle1">Built With</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pt-0">
+                @foreach (var (tech, url) in _stack)
+                {
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudIcon Icon="@Icons.Material.Filled.Circle"
+                                 Style="font-size:5px; color:var(--mud-palette-warning); flex-shrink:0;" />
+                        <MudLink Href="@url" Target="_blank" Typo="Typo.body2"
+                                 Style="color:var(--mud-palette-text-primary);">@tech</MudLink>
+                    </div>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@* ══ Links + Report Bug ═══════════════════════════════════════════════════ *@
+<MudCard Elevation="2">
+    <MudCardContent Class="d-flex flex-wrap gap-2 align-center pa-4">
+        <MudButton StartIcon="@Icons.Custom.Brands.GitHub"
+                   Href="https://github.com/Foxlider/KAST" Target="_blank"
+                   Variant="Variant.Outlined" Size="Size.Small">GitHub</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.Forum"
+                   Href="https://discord.gg/2BUuZa3" Target="_blank"
+                   Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary">Discord</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.Article"
+                   Href="https://github.com/Foxlider/KAST/blob/main/CHANGELOG.md" Target="_blank"
+                   Variant="Variant.Outlined" Size="Size.Small">Changelog</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.People"
+                   Href="https://github.com/Foxlider/KAST/blob/main/CONTRIBUTING.md" Target="_blank"
+                   Variant="Variant.Outlined" Size="Size.Small">Contributing</MudButton>
+        <MudSpacer />
+        <MudButton StartIcon="@Icons.Material.Filled.BugReport"
+                   Href="@_issueUrl" Target="_blank"
+                   Variant="Variant.Filled" Size="Size.Small" Color="Color.Error">
+            Report a Bug
+        </MudButton>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    private static readonly string _version =
+        Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "dev";
+
+    private static readonly string _runtime  = RuntimeInformation.FrameworkDescription;
+    private static readonly string _platform = RuntimeInformation.OSDescription;
+    private static readonly string _arch     = RuntimeInformation.ProcessArchitecture.ToString();
+    private static readonly string _deploy   =
+        Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
+            ? "Docker" : "Native (.NET)";
+
+    private static readonly (string Label, string Value)[] _sysInfo =
+    [
+        ("Version",    _version),
+        ("Runtime",    _runtime),
+        ("Platform",   _platform),
+        ("Arch",       _arch),
+        ("Deployment", _deploy),
+    ];
+
+    private static readonly (string Tech, string Url)[] _stack =
+    [
+        (".NET 10 + ASP.NET Core",  "https://dotnet.microsoft.com/"),
+        ("Blazor Server",           "https://learn.microsoft.com/aspnet/core/blazor/"),
+        ("MudBlazor",               "https://mudblazor.com/"),
+        ("SteamKit2",               "https://github.com/SteamRE/SteamKit"),
+        ("Entity Framework Core",   "https://learn.microsoft.com/ef/core/"),
+        ("SignalR",                 "https://learn.microsoft.com/aspnet/core/signalr/"),
+        ("OpenTelemetry",           "https://opentelemetry.io/"),
+        ("SQLite",                  "https://sqlite.org/"),
+    ];
+
+    // Prefills a GitHub bug report with current session's system information.
+    private static readonly string _issueUrl = BuildIssueUrl();
+
+    private static string BuildIssueUrl()
+    {
+        var body =
+            $"**KAST Version:** `{_version}`\n" +
+            $"**Runtime:** `{_runtime}`\n" +
+            $"**Platform:** `{_platform}`\n" +
+            $"**Arch:** `{_arch}`\n" +
+            $"**Deployment:** `{_deploy}`\n\n" +
+            "---\n\n" +
+            "**Describe the bug**\n<!-- A clear and concise description of what the bug is. -->\n\n" +
+            "**Steps to reproduce**\n1. \n2. \n3. \n\n" +
+            "**Expected behaviour**\n<!-- What should have happened -->\n\n" +
+            "**Actual behaviour**\n<!-- What happened instead -->\n\n" +
+            "**Logs**\n```\n<!-- Paste relevant output from the KAST log console -->\n```\n";
+
+        return "https://github.com/Foxlider/KAST/issues/new" +
+               "?labels=bug%2Cneeds-triage" +
+               "&title=%5BBug%5D%3A+" +
+               "&body=" + Uri.EscapeDataString(body);
+    }
+}

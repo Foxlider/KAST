@@ -10,6 +10,15 @@
 [![Github total downloads](https://img.shields.io/github/downloads/Foxlider/KAST/total.svg?logo=github&style=flat-square)](https://GitHub.com/Foxlider/KAST/releases/)
 [![Github latest downloads](https://img.shields.io/github/downloads/Foxlider/KAST/latest/total.svg?logo=github&style=flat-square)](https://GitHub.com/Foxlider/KAST/releases/)
 
+***CI / Quality***  
+[![CI](https://github.com/Foxlider/KAST/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Foxlider/KAST/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Foxlider/KAST/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/Foxlider/KAST/actions/workflows/codeql-analysis.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Foxlider_KAST&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Foxlider_KAST)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Foxlider_KAST&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Foxlider_KAST)
+
+***Docker***  
+[![Docker Image](https://ghcr-badge.egpl.dev/foxlider/kast/latest_tag?trim=major&label=nightly&style=flat-square)](https://github.com/Foxlider/KAST/pkgs/container/kast)
+
 [![Discord](https://img.shields.io/discord/366955806777671681?label=Discord&logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/2BUuZa3)
 
 

@@ -1,29 +1,62 @@
-<!--- Provide a general summary of your changes in the Title above -->
+<!--
+  PR TITLE — must follow Conventional Commits:
+    feat: add server scheduling
+    fix: steam reconnect loop
+    perf(db): index ServerInstance by status
+    chore: bump SteamKit2 to 3.1.0
+    feat!: breaking change (bumps major version)
 
-## Description
-<!--- Describe your changes in detail -->
+  Branch rules:
+    feature/<name>  →  target: develop
+    hotfix/<name>   →  target: main  (then a second PR into develop)
+    chore/...       →  target: develop
+-->
 
-## Motivation and Context
-<!--- Why is this change required? What problem does it solve? -->
-<!--- If it fixes an open issue, please link to the issue here. -->
+## Summary
 
-## How Has This Been Tested?
-<!--- Please describe in detail how you tested your changes. -->
-<!--- Include details of your testing environment, and the tests you ran to -->
-<!--- see how your change affects other areas of the code, etc. -->
+<!-- What does this PR do? One paragraph is enough. -->
 
-## Screenshots (if appropriate):
+Closes #<!-- issue number, or remove this line -->
 
-## Types of changes
-<!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
+---
 
-## Checklist:
-<!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
-<!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
-- [ ] My code follows the code style of this project.
-- [ ] My change requires a change to the documentation.
-- [ ] I have updated the documentation accordingly.
-- [ ] I have read the **CONTRIBUTING** document.
+## Type of Change
+
+<!-- Check all that apply -->
+
+- [ ] `feat` — new feature
+- [ ] `fix` — bug fix
+- [ ] `perf` — performance improvement
+- [ ] `refactor` — code restructure, no behaviour change
+- [ ] `docs` — documentation only
+- [ ] `chore` / `ci` — build, tooling, dependencies
+- [ ] **Breaking change** — existing behaviour changes (add `!` to the PR title type)
+
+---
+
+## What Changed
+
+<!-- Bullet points are fine. Focus on the *why*, not just the *what*. -->
+
+-
+
+---
+
+## Testing
+
+<!-- How did you verify this works? Which tests cover it? -->
+
+- [ ] Existing tests pass (`dotnet test`)
+- [ ] New tests added for the changed behaviour
+- [ ] Manually tested — describe below if relevant
+
+---
+
+## Checklist
+
+- [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/) format
+- [ ] Targets the correct branch (`develop` for features, `main` for hotfixes)
+- [ ] No unrelated changes mixed in (whitespace, refactors, unrelated fixes)
+- [ ] EF Core migration included if any entity model changed
+- [ ] I have read [CONTRIBUTING.md](../CONTRIBUTING.md)
+

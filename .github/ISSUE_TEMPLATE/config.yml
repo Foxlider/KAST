@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord Community
+    url: https://discord.gg/2BUuZa3
+    about: Ask questions, get help, and discuss ideas with the community.
+  - name: Contributing Guide
+    url: https://github.com/Foxlider/KAST/blob/main/CONTRIBUTING.md
+    about: Read before opening a PR — branching rules, conventional commits, and the release process.
