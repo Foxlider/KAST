@@ -23,12 +23,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Normalize repository owner
+        id: repo
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Extract version from tag
         id: version
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          echo "tag=$TAG"         >> $GITHUB_OUTPUT
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup .NET
@@ -40,7 +46,11 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release /p:MinVerVersionOverride=${{ steps.version.outputs.version }}
+        run: |
+          dotnet build \
+            --no-restore \
+            --configuration Release \
+            /p:MinVerVersionOverride=${{ steps.version.outputs.version }}
 
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
@@ -72,8 +82,8 @@ jobs:
           push: true
           build-args: APP_VERSION=${{ steps.version.outputs.version }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kast:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/kast:latest
+            ghcr.io/${{ steps.repo.outputs.owner }}/kast:${{ steps.version.outputs.version }}
+            ghcr.io/${{ steps.repo.outputs.owner }}/kast:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -87,13 +97,18 @@ jobs:
 
       - name: Update CHANGELOG.md on main
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git fetch origin main
           git checkout main
+
           # Regenerate the full cumulative changelog
           git cliff --output CHANGELOG.md
+
           git add CHANGELOG.md
+
           git diff --staged --quiet && echo "No changelog changes." && exit 0
+
           git commit -m "chore: update CHANGELOG for ${{ steps.version.outputs.tag }} [skip ci]"
           git push origin main
