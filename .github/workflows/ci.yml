@@ -118,7 +118,7 @@ jobs:
 
       - name: Build Docker image (main / PR — validate only, no push)
         if: github.ref != 'refs/heads/develop'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -129,7 +129,7 @@ jobs:
 
       - name: Build and push nightly image to GHCR
         if: github.ref == 'refs/heads/develop'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
