@@ -1,0 +1,92 @@
+name: Bug Report
+description: Something isn't working as expected
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report.
+        Before submitting, please search existing issues to avoid duplicates.
+
+  - type: input
+    id: version
+    attributes:
+      label: KAST Version
+      description: Found in the bottom-left footer of the UI, or run `docker inspect` on the image tag.
+      placeholder: "0.2.1  or  0.2.1-nightly.20260520.abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Type
+      options:
+        - Docker (docker compose)
+        - Native (.NET — dotnet run)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Host OS
+      placeholder: "Ubuntu 24.04 / Debian 12 / Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to reliably trigger the issue.
+      placeholder: |
+        1. Navigate to ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behaviour
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Paste any relevant output from the KAST log console or `docker logs kast`. Automatically rendered as code.
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag and drop images here if they help illustrate the problem.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Anything else — related issues, attempted workarounds, config specifics.

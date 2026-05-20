@@ -1,0 +1,45 @@
+# Normalise line endings to LF on commit
+* text=auto eol=lf
+
+# C# / .NET source
+*.cs        text diff=csharp
+*.razor     text diff=html
+*.csproj    text diff=xml
+*.props     text diff=xml
+*.targets   text diff=xml
+*.slnx      text
+*.sln       text
+
+# Web
+*.css       text diff=css
+*.js        text
+*.ts        text
+*.html      text diff=html
+
+# Config / data
+*.json      text
+*.toml      text
+*.yml       text
+*.yaml      text
+*.xml       text diff=xml
+*.md        text diff=markdown
+*.sh        text eol=lf
+
+# Docker
+Dockerfile  text
+*.conf      text
+
+# Binary — never diff or merge
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.dll       binary
+*.exe       binary
+*.db        binary
+*.sqlite    binary

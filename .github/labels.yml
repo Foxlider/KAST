@@ -1,0 +1,115 @@
+# Label definitions — synced to GitHub by .github/workflows/sync-labels.yml
+# Run that workflow manually after editing this file.
+
+# ── Type ─────────────────────────────────────────────────────────────────────
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or request
+
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+
+- name: chore
+  color: "e4e669"
+  description: Build process, dependencies, tooling
+
+- name: breaking-change
+  color: "b60205"
+  description: Introduces a breaking API or behaviour change
+
+- name: dependencies
+  color: "0366d6"
+  description: Dependency version updates
+
+# ── Area ─────────────────────────────────────────────────────────────────────
+- name: "area: ui"
+  color: "bfd4f2"
+  description: KAST.UI — Blazor components, pages, layout
+
+- name: "area: steam"
+  color: "1b4f72"
+  description: SteamKit2 integration, Steam authentication, downloads
+
+- name: "area: content"
+  color: "2ecc71"
+  description: Mod/server install pipeline, content orchestration
+
+- name: "area: core"
+  color: "7d3c98"
+  description: KAST.Core — domain models, interfaces, enums
+
+- name: "area: api"
+  color: "f39c12"
+  description: REST API, API key auth
+
+- name: "area: database"
+  color: "5d6d7e"
+  description: EF Core, migrations, SQLite
+
+- name: "area: ci"
+  color: "95a5a6"
+  description: GitHub Actions workflows, Docker, build
+
+# ── Status ────────────────────────────────────────────────────────────────────
+- name: needs-triage
+  color: "e99695"
+  description: Needs review and classification
+
+- name: needs-repro
+  color: "f9d0c4"
+  description: Cannot reproduce — awaiting more information
+
+- name: in-progress
+  color: "fbca04"
+  description: Actively being worked on
+
+- name: stale
+  color: "cfd3d7"
+  description: No recent activity
+
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+
+# ── Priority ──────────────────────────────────────────────────────────────────
+- name: "priority: critical"
+  color: "b60205"
+  description: Blocking — must be fixed immediately
+
+- name: "priority: high"
+  color: "e11d48"
+  description: Important — target next release
+
+- name: "priority: low"
+  color: "6c757d"
+  description: Nice to have — no immediate deadline
+
+# ── Community ────────────────────────────────────────────────────────────────
+- name: "good first issue"
+  color: "7057ff"
+  description: Good for newcomers
+
+- name: "help wanted"
+  color: "008672"
+  description: Extra attention is needed
+
+- name: pinned
+  color: "0052cc"
+  description: Pinned — exempt from stale closure
+
+- name: security
+  color: "d73a4a"
+  description: Security-related issue — exempt from stale closure
+
+- name: ci
+  color: "95a5a6"
+  description: CI/CD related (used by Dependabot)
