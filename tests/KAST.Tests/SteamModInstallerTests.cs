@@ -65,7 +65,7 @@ public class SteamModInstallerTests
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
-                return Task.CompletedTask;
+                return Task.FromResult(0UL);
             });
 
         var fs = Substitute.For<IFileSystemService>();
@@ -105,7 +105,7 @@ public class SteamModInstallerTests
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
-                return Task.CompletedTask;
+                return Task.FromResult(0UL);
             });
 
         var fs = Substitute.For<IFileSystemService>();

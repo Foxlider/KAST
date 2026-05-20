@@ -19,6 +19,11 @@ public class SteamMod
     public DateTime? LastUpdatedLocal { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Manifest ID of the locally installed version (0 = not tracked).</summary>
+    public ulong InstalledManifestId { get; set; }
+    /// <summary>Latest manifest ID fetched from Steam (0 = not yet checked).</summary>
+    public ulong SteamManifestId { get; set; }
+
     public bool IsClientSide { get; set; }
     public bool IsServerSide { get; set; } = true;
 
