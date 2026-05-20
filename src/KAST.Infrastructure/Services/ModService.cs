@@ -281,8 +281,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
             mod.SteamManifestId = info.ManifestId;
             mod.LastUpdatedSteam = info.LastUpdated;
-
-            // Primary: manifest ID comparison (reliable — changes on every depot publish)
+            mod.LastChecked = DateTime.UtcNow;
             // Fallback: timestamp comparison when we have no tracked installed manifest
             var isOutdated = mod.InstalledManifestId != 0
                 ? mod.InstalledManifestId != info.ManifestId
@@ -311,6 +310,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         mod.SteamManifestId = info.ManifestId;
         mod.LastUpdatedSteam = info.LastUpdated;
+        mod.LastChecked = DateTime.UtcNow;
 
         var isOutdated = mod.InstalledManifestId != 0
             ? mod.InstalledManifestId != info.ManifestId

@@ -2,6 +2,7 @@
 @using KAST.Core.Events
 @using System.Text.RegularExpressions
 @using System.Net
+@using Microsoft.AspNetCore.Components.Forms
 @inject IModService ModService
 @inject IAppEventBroadcaster Broadcaster
 @inject ISnackbar Snackbar
@@ -39,6 +40,10 @@
         <MudButton Variant="Variant.Outlined"
                    StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="@(() => _showImportDialog = true)">
             Import Local
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.PlaylistAdd" OnClick="@(() => _showPresetImportDialog = true)">
+            Import Preset
         </MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Info"
                    StartIcon="@Icons.Material.Filled.Refresh"
@@ -178,6 +183,23 @@ else
                 </CellTemplate>
             </TemplateColumn>
 
+            <TemplateColumn Title="Last Checked" Sortable="false" HeaderStyle="width:110px">
+                <CellTemplate>
+                    @if (context.Item.LastChecked.HasValue)
+                    {
+                        <MudTooltip Text="@context.Item.LastChecked.Value.ToLocalTime().ToString("g")" Arrow="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="white-space:nowrap;">
+                                @FormatRelativeTime(context.Item.LastChecked.Value)
+                            </MudText>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="opacity:.4;">Never</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
             <TemplateColumn Title="Actions" Sortable="false" HeaderStyle="width:118px" Filterable="false">
                 <CellTemplate>
                     <div class="d-flex gap-0 justify-end" @onclick:stopPropagation="true">
@@ -223,7 +245,7 @@ else
 @* ── Downloads task panel (fixed bottom overlay, always present) ── *@
 <div class="dl-fixed-panel">
     <MudExpansionPanels Elevation="5">
-        <MudExpansionPanel @bind-IsExpanded="_showDownloadsDrawer" Dense="true">
+        <MudExpansionPanel @bind-Expanded="_showDownloadsDrawer" Dense="true">
             <TitleContent>
                 <div class="d-flex align-center gap-2" style="width:100%;">
                     @{
@@ -440,11 +462,15 @@ else
                             }
                             @if (_selectedMod.LastUpdatedSteam.HasValue)
                             {
-                                <tr><td style="opacity:.7;">Updated (Steam)</td><td>@_selectedMod.LastUpdatedSteam.Value.ToString("g")</td></tr>
+                                <tr><td style="opacity:.7;">Updated (Steam)</td><td>@_selectedMod.LastUpdatedSteam.Value.ToLocalTime().ToString("g")</td></tr>
                             }
                             @if (_selectedMod.LastUpdatedLocal.HasValue)
                             {
-                                <tr><td style="opacity:.7;">Updated (Local)</td><td>@_selectedMod.LastUpdatedLocal.Value.ToString("g")</td></tr>
+                                <tr><td style="opacity:.7;">Updated (Local)</td><td>@_selectedMod.LastUpdatedLocal.Value.ToLocalTime().ToString("g")</td></tr>
+                            }
+                            @if (_selectedMod.LastChecked.HasValue)
+                            {
+                                <tr><td style="opacity:.7;">Last Checked</td><td>@_selectedMod.LastChecked.Value.ToLocalTime().ToString("g")</td></tr>
                             }
                             @if (!string.IsNullOrWhiteSpace(_selectedMod.LocalPath))
                             {
@@ -466,6 +492,13 @@ else
                     @RenderDescription(_selectedMod.Description)
                 </MudPaper>
             }
+            <MudDivider Class="my-3" />
+            <MudTextField @bind-Value="_commentInput"
+                          Label="Notes / Comment"
+                          Placeholder="Add a personal note about this mod…"
+                          Lines="3" FullWidth="true"
+                          Variant="Variant.Outlined"
+                          @onblur="SaveComment" />
         }
     </DialogContent>
     <DialogActions>
@@ -495,6 +528,94 @@ else
     </DialogActions>
 </MudDialog>
 
+@* ── Import Preset Dialog ── *@
+<MudDialog @bind-Visible="_showPresetImportDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudIcon Icon="@Icons.Material.Filled.PlaylistAdd" Class="mr-2" />
+        <MudText Typo="Typo.h6" Style="display:inline;">Import Arma 3 Preset</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnPresetFileSelected" Accept=".html">
+            <CustomContent>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile"
+                           FullWidth="true" Color="@(_presetFile is null ? Color.Default : Color.Primary)"
+                           OnClick="@context.OpenFilePickerAsync">
+                    @(_presetFile is null ? "Select HTML preset file (.html)" : _presetFile.Name)
+                </MudButton>
+            </CustomContent>
+        </MudFileUpload>
+        @if (_parsedPresetMods.Count > 0)
+        {
+            var selectableMods = _parsedPresetMods
+                    .Where(p => !_mods.Any(m => m.WorkshopId == p.WorkshopId)).ToList();
+            var selectedNewCount = selectableMods.Count(p => _presetSelectedIds.Contains(p.WorkshopId));
+            bool? selectAllState = selectedNewCount == selectableMods.Count && selectableMods.Count > 0
+                    ? true
+                    : selectedNewCount == 0 ? false : null;
+            <div class="d-flex align-center justify-space-between mt-3 mb-1">
+                <MudText Typo="Typo.body2">
+                    Preset <strong>@_parsedPresetName</strong> — @_parsedPresetMods.Count mod(s)
+                </MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@selectedNewCount selected</MudText>
+            </div>
+            <div class="d-flex align-center gap-2 px-1 py-1" style="border-bottom:1px solid var(--mud-palette-divider);">
+                <MudCheckBox T="bool?" Value="@selectAllState"
+                             ValueChanged="ToggleSelectAllPresetMods"
+                             Size="Size.Small" Dense="true"
+                             Disabled="_isImportingPreset" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Select all new</MudText>
+            </div>
+            <div style="max-height:260px; overflow-y:auto;">
+                @foreach (var (wid, dname) in _parsedPresetMods)
+                {
+                    var exists = _mods.Any(m => m.WorkshopId == wid);
+                    var isChecked = exists || _presetSelectedIds.Contains(wid);
+                    <div class="d-flex align-center gap-2 py-1 px-1"
+                         style="border-bottom:1px solid var(--mud-palette-divider); opacity:@(exists ? "0.55" : "1");">
+                        <MudCheckBox T="bool" Value="@isChecked"
+                                     ValueChanged="@((v) => TogglePresetMod(wid, v))"
+                                     Size="Size.Small" Dense="true"
+                                     Disabled="@(exists || _isImportingPreset)" />
+                        <MudText Typo="Typo.body2"
+                                 Style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                                 title="@dname">@dname</MudText>
+                        @if (exists)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                     Variant="Variant.Text" Style="font-size:10px; flex-shrink:0; margin:0;">added</MudChip>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (_isImportingPreset)
+        {
+            <MudProgressLinear Value="@_presetImportDone" Max="@_presetImportTotal"
+                               Color="Color.Primary" Rounded="true" Size="Size.Small" Class="mt-3" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                @_presetImportDone / @_presetImportTotal processed…
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="ClosePresetImportDialog" Disabled="_isImportingPreset">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(_presetSelectedIds.Count == 0 || _isImportingPreset)"
+                   OnClick="ImportPresetMods">
+            @if (_isImportingPreset)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                @($"Importing… ({_presetImportDone}/{_presetImportTotal})")
+            }
+            else
+            {
+                @($"Add {_presetSelectedIds.Count} mod(s)")
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @* ── Import Local Mod Dialog ── *@
 <MudDialog @bind-Visible="_showImportDialog">
     <TitleContent><MudText Typo="Typo.h6">Import Local Mod</MudText></TitleContent>
@@ -515,12 +636,23 @@ else
     private bool _showDetailDialog;
     private bool _showAddDialog;
     private bool _showImportDialog;
+    private bool _showPresetImportDialog;
     private bool _showDownloadsDrawer;
     private bool _isCheckingUpdates;
     private bool _isUpdatingAll;
     private int _outdatedCount;
     private int _errorCount;
     private int _pendingCount;
+    private string _commentInput = "";
+
+    // Preset import
+    private IBrowserFile? _presetFile;
+    private string _parsedPresetName = "";
+    private List<(long WorkshopId, string DisplayName)> _parsedPresetMods = [];
+    private HashSet<long> _presetSelectedIds = [];
+    private bool _isImportingPreset;
+    private int _presetImportDone;
+    private int _presetImportTotal;
 
     private readonly Dictionary<int, double> _taskProgress = new(); // progress for active downloads
     private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
@@ -603,7 +735,129 @@ else
     private void ShowModDetails(SteamMod mod)
     {
         _selectedMod = mod;
+        _commentInput = mod.Comment ?? "";
         _showDetailDialog = true;
+    }
+
+    private async Task SaveComment()
+    {
+        if (_selectedMod is null) return;
+        var trimmed = _commentInput.Trim();
+        if (trimmed == (_selectedMod.Comment ?? "")) return; // no change
+        _selectedMod.Comment = trimmed.Length == 0 ? null : trimmed;
+        await ModService.UpdateModAsync(_selectedMod);
+        _commentInput = _selectedMod.Comment ?? "";
+    }
+
+    private void ClosePresetImportDialog()
+    {
+        _showPresetImportDialog = false;
+        _presetFile = null;
+        _parsedPresetName = "";
+        _parsedPresetMods.Clear();
+        _presetSelectedIds.Clear();
+        _presetImportDone = 0;
+        _presetImportTotal = 0;
+    }
+
+    private async Task OnPresetFileSelected(IBrowserFile file)
+    {
+        _presetFile = file;
+        _parsedPresetName = "";
+        _parsedPresetMods = [];
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var html = await reader.ReadToEndAsync();
+
+            var nameMatch = Regex.Match(html, @"<meta\s+name=""arma:PresetName""\s+content=""([^""]+)""",
+                RegexOptions.IgnoreCase);
+            _parsedPresetName = nameMatch.Success
+                ? nameMatch.Groups[1].Value
+                : file.Name.Replace(".html", "", StringComparison.OrdinalIgnoreCase);
+
+            var rows = Regex.Matches(html,
+                @"<tr\s+data-type=""ModContainer"">(.*?)</tr>",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            foreach (Match row in rows)
+            {
+                var nameM = Regex.Match(row.Groups[1].Value,
+                    @"data-type=""DisplayName""[^>]*>([^<]+)<", RegexOptions.IgnoreCase);
+                var urlM = Regex.Match(row.Groups[1].Value, @"\?id=(\d+)", RegexOptions.IgnoreCase);
+                if (urlM.Success && long.TryParse(urlM.Groups[1].Value, out var id))
+                {
+                    var displayName = nameM.Success
+                        ? System.Net.WebUtility.HtmlDecode(nameM.Groups[1].Value.Trim())
+                        : $"Workshop/{id}";
+                    _parsedPresetMods.Add((id, displayName));
+                }
+            }
+
+            // Pre-select all mods that don't already exist
+            _presetSelectedIds = [.. _parsedPresetMods
+                .Where(p => !_mods.Any(m => m.WorkshopId == p.WorkshopId))
+                .Select(p => p.WorkshopId)];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to parse preset file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImportPresetMods()
+    {
+        if (_presetSelectedIds.Count == 0) return;
+        _isImportingPreset = true;
+        _presetImportDone = 0;
+        _presetImportTotal = _presetSelectedIds.Count;
+        var comment = $"Preset: {_parsedPresetName}";
+        int added = 0, failed = 0;
+
+        foreach (var (workshopId, _) in _parsedPresetMods.Where(p => _presetSelectedIds.Contains(p.WorkshopId)))
+        {
+            try
+            {
+                var wasNew = !_mods.Any(m => m.WorkshopId == workshopId);
+                var mod = await ModService.AddWorkshopModAsync(workshopId);
+                if (wasNew)
+                {
+                    mod.Comment = comment;
+                    await ModService.UpdateModAsync(mod);
+                }
+                added++;
+            }
+            catch
+            {
+                failed++;
+            }
+            _presetImportDone++;
+            StateHasChanged();
+        }
+
+        await RefreshMods();
+        _isImportingPreset = false;
+        var msg = $"Preset '{_parsedPresetName}': {added} mod(s) added";
+        if (failed > 0) msg += $", {failed} failed";
+        ClosePresetImportDialog();
+        Snackbar.Add(msg, failed > 0 ? Severity.Warning : Severity.Success);
+    }
+
+    private void TogglePresetMod(long workshopId, bool selected)
+    {
+        if (selected) _presetSelectedIds.Add(workshopId);
+        else _presetSelectedIds.Remove(workshopId);
+    }
+
+    private void ToggleSelectAllPresetMods(bool? value)
+    {
+        var selectable = _parsedPresetMods
+            .Where(p => !_mods.Any(m => m.WorkshopId == p.WorkshopId))
+            .Select(p => p.WorkshopId);
+        if (value == true)
+            foreach (var id in selectable) _presetSelectedIds.Add(id);
+        else
+            foreach (var id in selectable) _presetSelectedIds.Remove(id);
     }
 
     private async Task AddWorkshopMod()
@@ -840,6 +1094,17 @@ else
         int order = 0; double size = bytes;
         while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
         return $"{size:F1} {sizes[order]}";
+    }
+
+    private static string FormatRelativeTime(DateTime utc)
+    {
+        var elapsed = DateTime.UtcNow - utc;
+        if (elapsed.TotalSeconds < 60)  return "Just now";
+        if (elapsed.TotalMinutes < 60)  return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed.TotalHours   < 24)  return $"{(int)elapsed.TotalHours}h ago";
+        if (elapsed.TotalDays    < 30)  return $"{(int)elapsed.TotalDays}d ago";
+        if (elapsed.TotalDays    < 365) return $"{(int)(elapsed.TotalDays / 30)}mo ago";
+        return $"{(int)(elapsed.TotalDays / 365)}y ago";
     }
 
     /// <summary>
