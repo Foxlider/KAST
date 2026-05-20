@@ -3,6 +3,7 @@ using System;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KAST.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(KastDbContext))]
-    partial class KastDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260520140253_AddLastCheckedToMod")]
+    partial class AddLastCheckedToMod
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.7");
@@ -278,9 +281,6 @@ namespace KAST.Infrastructure.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Author")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Comment")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
