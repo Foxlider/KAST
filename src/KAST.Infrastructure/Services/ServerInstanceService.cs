@@ -389,7 +389,7 @@ public class ServerInstanceService(
         }
     }
 
-    public async Task AddModToInstanceAsync(int instanceId, int modId, int loadOrder = 0, CancellationToken ct = default)
+    public async Task AddModToInstanceAsync(int instanceId, int modId, int loadOrder = 0, bool isClientSide = false, bool isServerSide = false, CancellationToken ct = default)
     {
         var exists = await db.ServerInstanceMods
             .AnyAsync(m => m.ServerInstanceId == instanceId && m.SteamModId == modId, ct);
@@ -400,8 +400,22 @@ public class ServerInstanceService(
             {
                 ServerInstanceId = instanceId,
                 SteamModId = modId,
+                IsClientSide = isClientSide,
+                IsServerSide = isServerSide,
                 LoadOrder = loadOrder
             });
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    public async Task UpdateModFlagsAsync(int instanceId, int modId, bool isClientSide, bool isServerSide, CancellationToken ct = default)
+    {
+        var link = await db.ServerInstanceMods
+            .FirstOrDefaultAsync(m => m.ServerInstanceId == instanceId && m.SteamModId == modId, ct);
+        if (link != null)
+        {
+            link.IsClientSide = isClientSide;
+            link.IsServerSide = isServerSide;
             await db.SaveChangesAsync(ct);
         }
     }
@@ -607,7 +621,7 @@ public class ServerInstanceService(
     private static List<string> GetClientModsList(ServerInstance instance)
     {
         return instance.Mods
-            .Where(m => !m.IsServerSide)
+            .Where(m => m.IsClientSide)
             .OrderBy(m => m.LoadOrder)
             .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"))
             .ToList();

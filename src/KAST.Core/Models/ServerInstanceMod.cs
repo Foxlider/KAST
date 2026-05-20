@@ -8,7 +8,8 @@ public class ServerInstanceMod
     public int SteamModId { get; set; }
     public SteamMod SteamMod { get; set; } = null!;
 
-    public bool IsServerSide { get; set; } = true;
+    public bool IsClientSide { get; set; }
+    public bool IsServerSide { get; set; }
     public int LoadOrder { get; set; }
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 }
