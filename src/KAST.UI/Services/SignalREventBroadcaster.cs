@@ -13,11 +13,20 @@ public class SignalREventBroadcaster(
     IHubContext<MonitoringHub> monitoringHub,
     ServerConsoleStore consoleStore) : IAppEventBroadcaster
 {
+    public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
+    public event Action<ModStatusChangedEvent>? OnModStatusChanged;
+
     public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress)
-        => DownloadHub.BroadcastDownloadProgress(downloadHub, progress);
+    {
+        OnModDownloadProgress?.Invoke(progress);
+        return DownloadHub.BroadcastDownloadProgress(downloadHub, progress);
+    }
 
     public Task BroadcastModStatusChangedAsync(ModStatusChangedEvent status)
-        => DownloadHub.BroadcastModStatusChanged(downloadHub, status);
+    {
+        OnModStatusChanged?.Invoke(status);
+        return DownloadHub.BroadcastModStatusChanged(downloadHub, status);
+    }
 
     public Task BroadcastServerStatusChangedAsync(ServerStatusChangedEvent status)
         => MonitoringHub.BroadcastServerStatus(monitoringHub, status);

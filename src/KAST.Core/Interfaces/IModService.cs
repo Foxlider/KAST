@@ -14,4 +14,6 @@ public interface IModService
     Task DownloadModAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default);
     Task UpdateModFilesAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default);
     Task CheckForUpdatesAsync(CancellationToken ct = default);
+    Task CheckModForUpdateAsync(int id, CancellationToken ct = default);
+    Task UpdateAllOutdatedModsAsync(CancellationToken ct = default);
 }

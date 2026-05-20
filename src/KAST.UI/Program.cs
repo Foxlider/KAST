@@ -8,6 +8,7 @@ using KAST.UI.Components;
 using KAST.UI.Hubs;
 using KAST.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor;
 using MudBlazor.Services;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -29,7 +30,13 @@ var connectionString = builder.Configuration.GetConnectionString("Default") ?? "
 builder.Services.AddKastInfrastructure(connectionString);
 
 // ── MudBlazor + Blazor Server ────────────────────────────────────────────────
-builder.Services.AddMudServices();
+builder.Services.AddMudServices(config =>
+{
+    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomLeft;
+    config.SnackbarConfiguration.VisibleStateDuration = 2000;
+    config.SnackbarConfiguration.HideTransitionDuration = 200;
+    config.SnackbarConfiguration.ShowTransitionDuration = 150;
+});
 builder.Services.AddScoped<KAST.UI.Services.ThemeService>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

@@ -40,7 +40,8 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
             throw new InvalidOperationException("Failed to connect to Steam.");
 
         var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
-        await steam.DownloadWorkshopItemAsync(request.WorkshopId, request.DestinationPath, progress, ct);
+        var installedManifestId = await steam.DownloadWorkshopItemAsync(request.WorkshopId, request.DestinationPath, progress, ct);
+        state.InstalledManifestId = installedManifestId;
 
         state.CompleteStep(0);
         state.AddLog("Download complete.");

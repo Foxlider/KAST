@@ -64,6 +64,9 @@ public class ContentInstallState
     public bool IsComplete { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>For workshop mod installs: the manifest ID used during the download. Set by SteamModInstaller.</summary>
+    public ulong InstalledManifestId { get; set; }
+
     public int CurrentStepIndex { get; set; } = -1;
     public ContentStep? CurrentStep => CurrentStepIndex >= 0 && CurrentStepIndex < Steps.Count
         ? Steps[CurrentStepIndex] : null;

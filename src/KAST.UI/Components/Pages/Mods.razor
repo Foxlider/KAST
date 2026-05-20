@@ -1,28 +1,76 @@
 @page "/mods"
+@using KAST.Core.Events
+@using System.Text.RegularExpressions
+@using System.Net
 @inject IModService ModService
-@inject ISteamService SteamService
+@inject IAppEventBroadcaster Broadcaster
 @inject ISnackbar Snackbar
+@implements IAsyncDisposable
 
 <PageTitle>KAST -- Mods</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4 flex-wrap gap-2">
-    <MudText Typo="Typo.h5">Mod Management</MudText>
+@* ── Top bar ── *@
+<div class="d-flex justify-space-between align-center mb-3 flex-wrap gap-2">
+    <div class="d-flex align-center gap-3">
+        <MudText Typo="Typo.h5">Mod Management</MudText>
+        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+            @_mods.Count total
+        </MudChip>
+        @if (_outdatedCount > 0)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled"
+                     Icon="@Icons.Material.Filled.SystemUpdateAlt">
+                @_outdatedCount outdated
+            </MudChip>
+        }
+        @if (_errorCount > 0)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled"
+                     Icon="@Icons.Material.Filled.Error">
+                @_errorCount error(s)
+            </MudChip>
+        }
+    </div>
     <div class="d-flex gap-2 flex-wrap">
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _showAddDialog = true)">
-            Add Workshop Mod
+            Add Mod
         </MudButton>
         <MudButton Variant="Variant.Outlined"
                    StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="@(() => _showImportDialog = true)">
-            Import Local Mod
+            Import Local
         </MudButton>
-        <MudButton Variant="Variant.Text"
-                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="CheckForUpdates">
-            Check for Updates
+        <MudButton Variant="Variant.Outlined" Color="Color.Info"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="CheckForUpdates"
+                   Disabled="_isCheckingUpdates || _isUpdatingAll">
+            @(_isCheckingUpdates && !_isUpdatingAll ? "Checking…" : "Check for Updates")
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                   StartIcon="@Icons.Material.Filled.CloudDownload"
+                   OnClick="UpdateAllOutdated"
+                   Disabled="_isUpdatingAll || _isCheckingUpdates || _taskProgress.Count > 0">
+            @if (_isCheckingUpdates)
+            {
+                @("Checking…")
+            }
+            else if (_isUpdatingAll)
+            {
+                @("Queuing…")
+            }
+            else if (_pendingCount > 0)
+            {
+                @($"Update All ({_pendingCount})")
+            }
+            else
+            {
+                @("Update All")
+            }
         </MudButton>
     </div>
 </div>
 
+@* ── Mod grid ── *@
 @if (_mods.Count == 0)
 {
     <MudPaper Class="pa-12 text-center" Elevation="1">
@@ -35,70 +83,136 @@
 }
 else
 {
-    <MudDataGrid T="SteamMod" Items="@_mods" Filterable="true" SortMode="SortMode.Multiple" Hover="true" Dense="true">
+    <MudDataGrid T="SteamMod" Items="@_mods" Filterable="true" SortMode="SortMode.Multiple"
+                 Hover="true" Dense="true" RowClick="@(args => ShowModDetails(args.Item))"
+                 Virtualize="true" FixedHeader="true" Height="@GridHeight">
         <Columns>
-            <TemplateColumn Title="" HeaderStyle="width:48px">
+            <TemplateColumn Title="" HeaderStyle="width:48px" Sortable="false" Filterable="false">
                 <CellTemplate>
                     @if (!string.IsNullOrEmpty(context.Item.ThumbnailUrl))
                     {
                         <img src="@context.Item.ThumbnailUrl" alt=""
-                             style="width:32px;height:32px;object-fit:cover;border-radius:4px;display:block;" />
+                             style="width:36px;height:36px;object-fit:cover;border-radius:4px;display:block;" />
                     }
                     else
                     {
-                        <MudIcon Icon="@Icons.Material.Outlined.Extension" Style="opacity:.35;" />
+                        <MudIcon Icon="@Icons.Material.Outlined.Extension" Style="opacity:.4;" />
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="m => m.Name" Title="Name" Sortable="true">
+
+            <PropertyColumn Property="m => m.Name" Title="Name" Sortable="true" HeaderStyle="min-width:150px; max-width:260px;">
                 <CellTemplate>
-                    <span style="cursor:pointer; color:var(--mud-palette-primary);"
-                          @onclick="@(() => ShowModDetails(context.Item))" @onclick:stopPropagation="true">
-                        @context.Item.Name
-                    </span>
+                    <MudText Style="cursor:pointer; font-weight:500;">@context.Item.Name</MudText>
+                    @if (context.Item.Author != null)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Item.Author</MudText>
+                    }
                 </CellTemplate>
             </PropertyColumn>
-            <PropertyColumn Property="m => m.Source" Title="Source" Sortable="true" />
-            <TemplateColumn Title="Status" Sortable="false">
+
+            <PropertyColumn Property="m => m.Source" Title="Source" Sortable="true" HeaderStyle="width:110px" />
+
+            <TemplateColumn Title="Status" Sortable="false" HeaderStyle="width:180px">
                 <CellTemplate>
-                    @if (context.Item.Status is ModStatus.Downloading or ModStatus.Updating)
+                    @{
+                        var isActive = context.Item.Status is ModStatus.Downloading or ModStatus.Updating;
+                        var pct = GetModProgress(context.Item.Id);
+                    }
+                    @if (isActive)
                     {
-                        <div style="min-width:120px;">
+                        <div style="min-width:140px;">
                             <div class="d-flex justify-space-between mb-1">
-                                <MudText Typo="Typo.caption">@context.Item.Status</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@GetModProgress(context.Item.Id).ToString("F0")%</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Warning">@context.Item.Status</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
                             </div>
-                            <MudProgressLinear Value="@GetModProgress(context.Item.Id)" Min="0" Max="100" Color="Color.Warning" />
+                            <MudProgressLinear Value="@pct" Min="0" Max="100"
+                                              Color="Color.Warning" Rounded="true" Size="Size.Small" />
                         </div>
                     }
                     else
                     {
-                        <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Item.Status)" Variant="Variant.Outlined">
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@GetStatusColor(context.Item.Status)"
+                                 Variant="Variant.Outlined"
+                                 Icon="@GetStatusIcon(context.Item.Status)">
                             @context.Item.Status
                         </MudChip>
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <TemplateColumn Title="Size on Disk" Sortable="false">
+
+            <TemplateColumn Title="Size" Sortable="false" HeaderStyle="white-space:nowrap;">
                 <CellTemplate>
-                    @(context.Item.SizeBytes > 0 ? FormatBytes(context.Item.SizeBytes) : "—")
+                    <MudText Typo="Typo.body2" Style="white-space:nowrap;">
+                        @(context.Item.SizeBytes > 0 ? FormatBytes(context.Item.SizeBytes) : "—")
+                    </MudText>
+                    @if (context.Item.ExpectedSizeBytes > 0 && context.Item.SizeBytes == 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="white-space:nowrap;">
+                            ~@FormatBytes(context.Item.ExpectedSizeBytes)
+                        </MudText>
+                    }
                 </CellTemplate>
             </TemplateColumn>
-            <TemplateColumn Title="Actions" Sortable="false">
+
+            <TemplateColumn Title="Version" Sortable="false" HeaderStyle="width:80px">
                 <CellTemplate>
-                    <div class="d-flex gap-1">
-                        @if (CanDownloadOrUpdate(context.Item))
+                    @if (context.Item.InstalledManifestId > 0)
+                    {
+                        var isLatest = context.Item.SteamManifestId == 0 ||
+                                       context.Item.InstalledManifestId == context.Item.SteamManifestId;
+                        <MudTooltip Text="@(isLatest ? "Up to date" : "Outdated — manifest ID differs from Steam")" Arrow="true">
+                            <MudIcon Icon="@(isLatest ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.NewReleases)"
+                                     Color="@(isLatest ? Color.Success : Color.Warning)"
+                                     Size="Size.Small" />
+                        </MudTooltip>
+                    }
+                    else if (context.Item.Status == ModStatus.Installed)
+                    {
+                        <MudTooltip Text="Manifest not tracked — run Check for Updates" Arrow="true">
+                            <MudIcon Icon="@Icons.Material.Filled.HelpOutline"
+                                     Color="Color.Default" Size="Size.Small" Style="opacity:.4;" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
+            <TemplateColumn Title="Actions" Sortable="false" HeaderStyle="width:118px" Filterable="false">
+                <CellTemplate>
+                    <div class="d-flex gap-0 justify-end" @onclick:stopPropagation="true">
+                        @if (context.Item.Source == ModSource.SteamWorkshop &&
+                             context.Item.Status == ModStatus.Installed)
                         {
-                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                       OnClick="@(() => DownloadMod(context.Item))"
-                                       Disabled="@(context.Item.Status is ModStatus.Downloading or ModStatus.Updating)">
-                                @GetDownloadButtonLabel(context.Item)
-                            </MudButton>
+                            <MudTooltip Text="Check for Update" Arrow="true">
+                                <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch"
+                                               Size="Size.Small" Color="Color.Info"
+                                               Disabled="@_checkingMods.Contains(context.Item.Id)"
+                                               OnClick="@(() => CheckSingleModUpdate(context.Item))" />
+                            </MudTooltip>
                         }
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
-                                   OnClick="@(() => DeleteMod(context.Item))">
-                            Delete
-                        </MudButton>
+                        @if (context.Item.Status is ModStatus.Downloading or ModStatus.Updating)
+                        {
+                            <MudTooltip Text="Cancel" Arrow="true">
+                                <MudIconButton Icon="@Icons.Material.Filled.Cancel"
+                                               Size="Size.Small" Color="Color.Warning"
+                                               OnClick="@(() => CancelModDownload(context.Item.Id))" />
+                            </MudTooltip>
+                        }
+                        else if (CanDownloadOrUpdate(context.Item))
+                        {
+                            <MudTooltip Text="@GetDownloadButtonLabel(context.Item)" Arrow="true">
+                                <MudIconButton Icon="@GetActionIcon(context.Item)"
+                                               Size="Size.Small"
+                                               Color="@GetActionColor(context.Item)"
+                                               OnClick="@(() => DownloadMod(context.Item))" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Delete" Arrow="true">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete"
+                                           Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => DeleteMod(context.Item))" />
+                        </MudTooltip>
                     </div>
                 </CellTemplate>
             </TemplateColumn>
@@ -106,11 +220,153 @@ else
     </MudDataGrid>
 }
 
+@* ── Downloads task panel (fixed bottom overlay, always present) ── *@
+<div class="dl-fixed-panel">
+    <MudExpansionPanels Elevation="5">
+        <MudExpansionPanel @bind-IsExpanded="_showDownloadsDrawer" Dense="true">
+            <TitleContent>
+                <div class="d-flex align-center gap-2" style="width:100%;">
+                    @{
+                        var activeCount = _taskIds.Count(id => _mods.Any(m => m.Id == id &&
+                            m.Status is ModStatus.Downloading or ModStatus.Updating));
+                        var taskErrCount = _taskIds.Count(id => _mods.Any(m => m.Id == id &&
+                            m.Status == ModStatus.Error));
+                    }
+                    @if (activeCount > 0)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Outlined.DownloadDone" Size="Size.Small"
+                                 Color="@(_taskIds.Count > 0 ? Color.Success : Color.Default)"
+                                 Style="opacity:.7;" />
+                    }
+                    <MudText Typo="Typo.body2" Style="font-weight:600;">Downloads</MudText>
+                    @if (activeCount > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled"
+                                 Style="height:20px; font-size:11px; margin:0;">
+                            @activeCount active
+                        </MudChip>
+                    }
+                    @if (taskErrCount > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled"
+                                 Style="height:20px; font-size:11px; margin:0;">
+                            @taskErrCount failed
+                        </MudChip>
+                    }
+                    @if (_taskIds.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="opacity:.55;">No recent tasks</MudText>
+                    }
+                    <div style="flex:1" />
+                    @if (activeCount > 0)
+                    {
+                        <div @onclick:stopPropagation="true">
+                            <MudTooltip Text="Cancel all" Arrow="true">
+                                <MudIconButton Icon="@Icons.Material.Filled.StopCircle"
+                                               Size="Size.Small" Color="Color.Error"
+                                               OnClick="CancelAllDownloads" />
+                            </MudTooltip>
+                        </div>
+                    }
+                </div>
+            </TitleContent>
+            <ChildContent>
+                <div class="dl-body">
+                    @if (_taskIds.Count == 0)
+                    {
+                        <div class="dl-empty">
+                            <MudIcon Icon="@Icons.Material.Outlined.CloudQueue" Style="font-size:36px; opacity:.35;" />
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1" Style="opacity:.55;">No recent downloads</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var modId in _taskIds)
+                        {
+                            var dlMod = _mods.FirstOrDefault(m => m.Id == modId);
+                            if (dlMod is null) continue;
+                            var pct = _taskProgress.TryGetValue(modId, out var tp) ? tp : 100.0;
+                            var isActive = dlMod.Status is ModStatus.Downloading or ModStatus.Updating;
+                            <div class="dl-row">
+                                <div class="dl-thumb">
+                                    @if (!string.IsNullOrEmpty(dlMod.ThumbnailUrl))
+                                    {
+                                        <img src="@dlMod.ThumbnailUrl" alt="" class="dl-thumb-img" />
+                                    }
+                                    else
+                                    {
+                                        <div class="dl-thumb-placeholder">
+                                            <MudIcon Icon="@Icons.Material.Outlined.Extension" Style="opacity:.35;" />
+                                        </div>
+                                    }
+                                </div>
+                                <div class="dl-info">
+                                    <div class="d-flex align-center justify-space-between mb-1">
+                                        <MudText Typo="Typo.body2"
+                                                 Style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0;"
+                                                 title="@dlMod.Name">
+                                            @dlMod.Name
+                                        </MudText>
+                                        <div class="d-flex align-center" style="flex-shrink:0;">
+                                            @if (isActive)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
+                                                <MudTooltip Text="Cancel" Arrow="true">
+                                                    <MudIconButton Icon="@Icons.Material.Outlined.Cancel"
+                                                                   Size="Size.Small" Color="Color.Error"
+                                                                   Style="width:28px;height:28px;"
+                                                                   OnClick="@(() => CancelModDownload(modId))" />
+                                                </MudTooltip>
+                                            }
+                                            else
+                                            {
+                                                <MudIcon Icon="@GetStatusIcon(dlMod.Status)"
+                                                         Color="@GetStatusColor(dlMod.Status)"
+                                                         Size="Size.Small" />
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-center gap-2 mb-1">
+                                        <MudChip T="string" Size="Size.Small"
+                                                 Color="@GetStatusColor(dlMod.Status)"
+                                                 Variant="Variant.Text"
+                                                 Style="height:18px; font-size:10px; padding:0 4px; margin:0;">
+                                            @dlMod.Status
+                                        </MudChip>
+                                        @if (isActive && dlMod.ExpectedSizeBytes > 0)
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="white-space:nowrap;">
+                                                @FormatBytes((long)(pct / 100.0 * dlMod.ExpectedSizeBytes)) / @FormatBytes(dlMod.ExpectedSizeBytes)
+                                            </MudText>
+                                        }
+                                    </div>
+                                    @if (isActive)
+                                    {
+                                        <MudProgressLinear Value="@pct" Min="0" Max="100"
+                                                          Color="Color.Warning" Rounded="true" Size="Size.Small" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+</div>
+
 @* ── Mod Detail Dialog ── *@
-<MudDialog @bind-Visible="_showDetailDialog">
+<MudDialog @bind-Visible="_showDetailDialog" Options="_detailDialogOptions">
     <TitleContent>
-        <div class="d-flex align-center gap-2">
-            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(_selectedMod?.Status ?? ModStatus.NotInstalled)" Variant="Variant.Outlined">
+        <div class="d-flex align-center gap-3 flex-wrap">
+            <MudChip T="string" Size="Size.Small"
+                     Color="@GetStatusColor(_selectedMod?.Status ?? ModStatus.NotInstalled)"
+                     Variant="Variant.Filled"
+                     Icon="@GetStatusIcon(_selectedMod?.Status ?? ModStatus.NotInstalled)">
                 @_selectedMod?.Status
             </MudChip>
             <MudText Typo="Typo.h6">@_selectedMod?.Name</MudText>
@@ -119,53 +375,103 @@ else
     <DialogContent>
         @if (_selectedMod != null)
         {
-            <div class="d-flex gap-4">
+            <div class="d-flex gap-4 flex-wrap">
                 @if (!string.IsNullOrEmpty(_selectedMod.ThumbnailUrl))
                 {
                     <img src="@_selectedMod.ThumbnailUrl" alt="@_selectedMod.Name"
-                         style="width:150px;height:150px;object-fit:cover;border-radius:6px;flex-shrink:0;" />
+                         style="width:200px;height:200px;object-fit:cover;border-radius:8px;flex-shrink:0;align-self:flex-start;" />
                 }
-                <div style="flex:1; min-width:0;">
-                    @if (_selectedMod.Author != null)
-                    { <MudText Typo="Typo.body2"><b>Author:</b> @_selectedMod.Author</MudText> }
-                    <MudText Typo="Typo.body2"><b>Source:</b> @_selectedMod.Source</MudText>
-                    @if (_selectedMod.WorkshopId > 0)
-                    {
-                        <MudText Typo="Typo.body2">
-                            <b>Workshop ID:</b>
-                            <MudLink Href="@($"https://steamcommunity.com/sharedfiles/filedetails/?id={_selectedMod.WorkshopId}")"
-                                     Target="_blank">@_selectedMod.WorkshopId</MudLink>
-                        </MudText>
-                    }
-                    <MudText Typo="Typo.body2">
-                        <b>Size on Disk:</b> @(_selectedMod.SizeBytes > 0 ? FormatBytes(_selectedMod.SizeBytes) : "Not downloaded")
-                    </MudText>
-                    @if (_selectedMod.ExpectedSizeBytes > 0)
-                    { <MudText Typo="Typo.body2"><b>Expected (Steam):</b> @FormatBytes(_selectedMod.ExpectedSizeBytes)</MudText> }
-                    @if (_selectedMod.LastUpdatedSteam.HasValue)
-                    { <MudText Typo="Typo.body2"><b>Last Updated (Steam):</b> @_selectedMod.LastUpdatedSteam.Value.ToString("g")</MudText> }
-                    @if (_selectedMod.LastUpdatedLocal.HasValue)
-                    { <MudText Typo="Typo.body2"><b>Last Updated (Local):</b> @_selectedMod.LastUpdatedLocal.Value.ToString("g")</MudText> }
-                    @if (!string.IsNullOrWhiteSpace(_selectedMod.LocalPath))
-                    {
-                        <MudText Typo="Typo.body2"><b>Path:</b></MudText>
-                        <code style="font-size:11px; word-break:break-all;">@_selectedMod.LocalPath</code>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_selectedMod.Description))
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2"
-                                 Style="max-height:100px; overflow-y:auto; display:block;">
-                            @StripBbCode(_selectedMod.Description)
-                        </MudText>
-                    }
+                <div style="flex:1; min-width:260px;">
+                    <MudSimpleTable Dense="true" Hover="false" Style="background:transparent;">
+                        <tbody>
+                            @if (_selectedMod.Author != null)
+                            {
+                                <tr><td style="width:130px;opacity:.7;">Author</td><td>@_selectedMod.Author</td></tr>
+                            }
+                            <tr><td style="opacity:.7;">Source</td><td>@_selectedMod.Source</td></tr>
+                            @if (_selectedMod.WorkshopId > 0)
+                            {
+                                <tr>
+                                    <td style="opacity:.7;">Workshop ID</td>
+                                    <td>
+                                        <MudLink Href="@($"https://steamcommunity.com/sharedfiles/filedetails/?id={_selectedMod.WorkshopId}")"
+                                                 Target="_blank" Typo="Typo.body2">
+                                            @_selectedMod.WorkshopId
+                                        </MudLink>
+                                    </td>
+                                </tr>
+                            }
+                            <tr>
+                                <td style="opacity:.7;">Size on Disk</td>
+                                <td>@(_selectedMod.SizeBytes > 0 ? FormatBytes(_selectedMod.SizeBytes) : "Not downloaded")</td>
+                            </tr>
+                            @if (_selectedMod.ExpectedSizeBytes > 0)
+                            {
+                                <tr><td style="opacity:.7;">Steam Size</td><td>@FormatBytes(_selectedMod.ExpectedSizeBytes)</td></tr>
+                            }
+                            @if (_selectedMod.InstalledManifestId > 0)
+                            {
+                                <tr>
+                                    <td style="opacity:.7;">Installed Manifest</td>
+                                    <td><code style="font-size:11px;">@_selectedMod.InstalledManifestId</code></td>
+                                </tr>
+                            }
+                            @if (_selectedMod.SteamManifestId > 0)
+                            {
+                                <tr>
+                                    <td style="opacity:.7;">Steam Manifest</td>
+                                    <td>
+                                        <code style="font-size:11px;">@_selectedMod.SteamManifestId</code>
+                                        @if (_selectedMod.InstalledManifestId > 0)
+                                        {
+                                            @if (_selectedMod.InstalledManifestId == _selectedMod.SteamManifestId)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle"
+                                                         Color="Color.Success" Size="Size.Small" Class="ml-1" />
+                                            }
+                                            else
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.NewReleases"
+                                                         Color="Color.Warning" Size="Size.Small" Class="ml-1" />
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (_selectedMod.LastUpdatedSteam.HasValue)
+                            {
+                                <tr><td style="opacity:.7;">Updated (Steam)</td><td>@_selectedMod.LastUpdatedSteam.Value.ToString("g")</td></tr>
+                            }
+                            @if (_selectedMod.LastUpdatedLocal.HasValue)
+                            {
+                                <tr><td style="opacity:.7;">Updated (Local)</td><td>@_selectedMod.LastUpdatedLocal.Value.ToString("g")</td></tr>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_selectedMod.LocalPath))
+                            {
+                                <tr>
+                                    <td style="opacity:.7;vertical-align:top;">Path</td>
+                                    <td><code style="font-size:11px; word-break:break-all;">@_selectedMod.LocalPath</code></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
                 </div>
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(_selectedMod.Description))
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Description</MudText>
+                <MudPaper Elevation="0" Class="pa-3 mod-description" Style="background:var(--mud-palette-background-grey); border-radius:6px; max-height:300px; overflow-y:auto;">
+                    @RenderDescription(_selectedMod.Description)
+                </MudPaper>
+            }
         }
     </DialogContent>
     <DialogActions>
         @if (_selectedMod != null && CanDownloadOrUpdate(_selectedMod))
         {
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+            <MudButton Variant="Variant.Filled" Color="@GetActionColor(_selectedMod)"
                        OnClick="DownloadModFromDialog"
                        Disabled="@(_selectedMod.Status is ModStatus.Downloading or ModStatus.Updating)">
                 @GetDownloadButtonLabel(_selectedMod)
@@ -180,11 +486,11 @@ else
     <TitleContent><MudText Typo="Typo.h6">Add Workshop Mod</MudText></TitleContent>
     <DialogContent>
         <MudTextField @bind-Value="_workshopIdInput" Label="Workshop ID or URL"
-                      Placeholder="e.g. 450814997 or full Steam URL"
-                      FullWidth="true" />
+                      Placeholder="e.g. 450814997 or full Steam Workshop URL"
+                      FullWidth="true" Immediate="true" />
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _showAddDialog = false)">Cancel</MudButton>
+        <MudButton OnClick="@(() => { _showAddDialog = false; _workshopIdInput = ""; })">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddWorkshopMod">Add Mod</MudButton>
     </DialogActions>
 </MudDialog>
@@ -194,43 +500,126 @@ else
     <TitleContent><MudText Typo="Typo.h6">Import Local Mod</MudText></TitleContent>
     <DialogContent>
         <MudTextField @bind-Value="_localModName" Label="Mod Name" FullWidth="true" Class="mb-3" />
-        <MudTextField @bind-Value="_localModPath" Label="Path (folder or .zip)" FullWidth="true" />
+        <MudTextField @bind-Value="_localModPath" Label="Path (folder or .zip file)" FullWidth="true" />
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _showImportDialog = false)">Cancel</MudButton>
+        <MudButton OnClick="@(() => { _showImportDialog = false; _localModName = ""; _localModPath = ""; })">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ImportLocalMod">Import</MudButton>
     </DialogActions>
 </MudDialog>
 
 @code {
+    // ── State ────────────────────────────────────────────────────────────────
     private IReadOnlyList<SteamMod> _mods = [];
     private SteamMod? _selectedMod;
     private bool _showDetailDialog;
     private bool _showAddDialog;
     private bool _showImportDialog;
+    private bool _showDownloadsDrawer;
+    private bool _isCheckingUpdates;
+    private bool _isUpdatingAll;
+    private int _outdatedCount;
+    private int _errorCount;
+    private int _pendingCount;
+
+    private readonly Dictionary<int, double> _taskProgress = new(); // progress for active downloads
+    private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
+    private readonly Dictionary<int, CancellationTokenSource> _downloadCts = new();
+    private CancellationTokenSource? _bulkUpdateCts;
+    private readonly HashSet<int> _checkingMods = new();
+
     private string _workshopIdInput = "";
     private string _localModName = "";
     private string _localModPath = "";
-    private readonly Dictionary<int, double> _downloadProgress = new();
 
-    private double GetModProgress(int modId) => _downloadProgress.TryGetValue(modId, out var p) ? p : 0;
+    private readonly DialogOptions _detailDialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true,
+        CloseButton = true,
+        BackdropClick = true
+    };
 
-    protected override async Task OnInitializedAsync() => await RefreshMods();
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshMods();
+        Broadcaster.OnModDownloadProgress += HandleDownloadProgress;
+        Broadcaster.OnModStatusChanged    += HandleStatusChanged;
+    }
 
-    private async Task RefreshMods() => _mods = await ModService.GetAllModsAsync();
+    public async ValueTask DisposeAsync()
+    {
+        Broadcaster.OnModDownloadProgress -= HandleDownloadProgress;
+        Broadcaster.OnModStatusChanged    -= HandleStatusChanged;
+        foreach (var cts in _downloadCts.Values) cts.Cancel();
+        _bulkUpdateCts?.Cancel();
+        _bulkUpdateCts?.Dispose();
+        await Task.CompletedTask;
+    }
 
-    private void ShowModDetails(SteamMod mod) { _selectedMod = mod; _showDetailDialog = true; }
+    // ── In-process event handlers ─────────────────────────────────────────────
+    private void HandleDownloadProgress(ModDownloadProgressEvent evt)
+    {
+        _taskProgress[evt.ModId] = evt.ProgressPercent;
+        if (!_taskIds.Contains(evt.ModId))
+            _taskIds.Insert(0, evt.ModId);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleStatusChanged(ModStatusChangedEvent _)
+    {
+        InvokeAsync(async () =>
+        {
+            await RefreshMods();
+            // Clear progress for mods no longer actively downloading (keep in _taskIds for history)
+            foreach (var id in _taskProgress.Keys
+                .Where(id => !_mods.Any(m => m.Id == id &&
+                             m.Status is ModStatus.Downloading or ModStatus.Updating))
+                .ToList())
+                _taskProgress.Remove(id);
+            StateHasChanged();
+        });
+    }
+
+    // ── Data ─────────────────────────────────────────────────────────────────
+    private async Task RefreshMods()
+    {
+        _mods = await ModService.GetAllModsAsync();
+        _outdatedCount = _mods.Count(m => m.Status == ModStatus.UpdateAvailable);
+        _errorCount    = _mods.Count(m => m.Status == ModStatus.Error);
+        _pendingCount  = _mods.Count(m => m.Source == ModSource.SteamWorkshop &&
+                                           m.Status is ModStatus.NotInstalled or
+                                                       ModStatus.UpdateAvailable or
+                                                       ModStatus.Error);
+    }
+
+    private double GetModProgress(int modId) =>
+        _taskProgress.TryGetValue(modId, out var p) ? p : 0;
+
+    private static string GridHeight => "calc(100vh - 232px)"; // task panel always present
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+    private void ShowModDetails(SteamMod mod)
+    {
+        _selectedMod = mod;
+        _showDetailDialog = true;
+    }
 
     private async Task AddWorkshopMod()
     {
         if (string.IsNullOrWhiteSpace(_workshopIdInput)) return;
         var workshopId = ParseWorkshopId(_workshopIdInput);
         if (workshopId <= 0) { Snackbar.Add("Invalid Workshop ID or URL", Severity.Error); return; }
-        await ModService.AddWorkshopModAsync(workshopId);
-        _showAddDialog = false;
-        _workshopIdInput = "";
-        await RefreshMods();
-        Snackbar.Add("Mod added successfully", Severity.Success);
+        try
+        {
+            await ModService.AddWorkshopModAsync(workshopId);
+            _showAddDialog = false;
+            _workshopIdInput = "";
+            await RefreshMods();
+            Snackbar.Add("Mod added successfully", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
     }
 
     private async Task ImportLocalMod()
@@ -243,32 +632,53 @@ else
         Snackbar.Add("Mod imported successfully", Severity.Success);
     }
 
-    private async Task DownloadMod(SteamMod mod)
+    private async Task DownloadMod(SteamMod mod, CancellationToken parentCt = default)
     {
+        var cts = parentCt.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(parentCt)
+            : new CancellationTokenSource();
+        _downloadCts[mod.Id] = cts;
         try
         {
             var isUpdate = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error;
             mod.Status = isUpdate ? ModStatus.Updating : ModStatus.Downloading;
-            _downloadProgress[mod.Id] = 0;
+            _taskProgress[mod.Id] = 0;
+            if (!_taskIds.Contains(mod.Id))
+                _taskIds.Insert(0, mod.Id);
             StateHasChanged();
 
-            var progress = new Progress<double>(p => { _downloadProgress[mod.Id] = p; InvokeAsync(StateHasChanged); });
+            if (isUpdate) await ModService.UpdateModFilesAsync(mod.Id, progress: null, cts.Token);
+            else          await ModService.DownloadModAsync(mod.Id,     progress: null, cts.Token);
 
-            if (isUpdate) await ModService.UpdateModFilesAsync(mod.Id, progress);
-            else await ModService.DownloadModAsync(mod.Id, progress);
-
-            _downloadProgress.Remove(mod.Id);
+            _taskProgress.Remove(mod.Id);
             await RefreshMods();
             Snackbar.Add($"Downloaded {mod.Name}", Severity.Success);
         }
-        catch (Exception ex) { _downloadProgress.Remove(mod.Id); Snackbar.Add($"Download failed: {ex.Message}", Severity.Error); await RefreshMods(); }
+        catch (OperationCanceledException)
+        {
+            _taskProgress.Remove(mod.Id);
+            Snackbar.Add($"{mod.Name}: cancelled", Severity.Info);
+            await RefreshMods();
+        }
+        catch (Exception ex)
+        {
+            _taskProgress.Remove(mod.Id);
+            Snackbar.Add($"Download failed: {ex.Message}", Severity.Error);
+            await RefreshMods();
+        }
+        finally
+        {
+            _downloadCts.Remove(mod.Id);
+            cts.Dispose();
+        }
     }
 
     private async Task DownloadModFromDialog()
     {
         if (_selectedMod == null) return;
         var mod = _selectedMod;
-        _showDetailDialog = false; _selectedMod = null;
+        _showDetailDialog = false;
+        _selectedMod = null;
         await DownloadMod(mod);
     }
 
@@ -282,36 +692,145 @@ else
 
     private async Task CheckForUpdates()
     {
-        await ModService.CheckForUpdatesAsync();
-        await RefreshMods();
-        Snackbar.Add("Update check complete", Severity.Info);
+        _isCheckingUpdates = true;
+        StateHasChanged();
+        try
+        {
+            await ModService.CheckForUpdatesAsync();
+            await RefreshMods();
+            Snackbar.Add(
+                _outdatedCount > 0
+                    ? $"{_outdatedCount} mod(s) have updates available"
+                    : "All mods are up to date",
+                _outdatedCount > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Check failed: {ex.Message}", Severity.Error); }
+        finally { _isCheckingUpdates = false; }
     }
 
+    private async Task UpdateAllOutdated()
+    {
+        if (_isUpdatingAll || _isCheckingUpdates) return;
+        _isUpdatingAll = true;
+        _isCheckingUpdates = true;
+        StateHasChanged();
+        try
+        {
+            // Phase 1: check Steam for manifest changes
+            await ModService.CheckForUpdatesAsync();
+            await RefreshMods();
+            _isCheckingUpdates = false;
+            StateHasChanged();
+
+            // Phase 2: fire individual downloads — each gets its own CTS linked to the bulk CTS
+            var pendingMods = _mods
+                .Where(m => m.Source == ModSource.SteamWorkshop &&
+                            m.Status is ModStatus.NotInstalled or ModStatus.UpdateAvailable or ModStatus.Error)
+                .ToList();
+            if (pendingMods.Count == 0)
+            {
+                Snackbar.Add("All mods are already up to date", Severity.Success);
+                return;
+            }
+            _bulkUpdateCts?.Dispose();
+            _bulkUpdateCts = new CancellationTokenSource();
+            foreach (var mod in pendingMods)
+                _ = DownloadMod(mod, _bulkUpdateCts.Token);
+            Snackbar.Add($"Updating {pendingMods.Count} mod(s) in parallel…", Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add($"Update failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _isUpdatingAll = false;
+            _isCheckingUpdates = false;
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
     private static bool CanDownloadOrUpdate(SteamMod mod) => mod.Source == ModSource.SteamWorkshop;
+    private void CancelModDownload(int modId)
+    {
+        if (_downloadCts.TryGetValue(modId, out var cts))
+            cts.Cancel();
+        // For mods started via bulk update, use Cancel All
+    }
+
+    private void CancelAllDownloads()
+    {
+        foreach (var cts in _downloadCts.Values) cts.Cancel();
+        _bulkUpdateCts?.Cancel();
+    }
+
+    private async Task CheckSingleModUpdate(SteamMod mod)
+    {
+        _checkingMods.Add(mod.Id);
+        StateHasChanged();
+        try
+        {
+            await ModService.CheckModForUpdateAsync(mod.Id);
+            await RefreshMods();
+            var updated = _mods.FirstOrDefault(m => m.Id == mod.Id);
+            var isOutdated = updated?.Status == ModStatus.UpdateAvailable;
+            Snackbar.Add(
+                isOutdated ? $"{mod.Name}: update available" : $"{mod.Name}: up to date",
+                isOutdated ? Severity.Warning : Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Check failed: {ex.Message}", Severity.Error); }
+        finally { _checkingMods.Remove(mod.Id); }
+    }
 
     private static string GetDownloadButtonLabel(SteamMod mod) => mod.Status switch
     {
-        ModStatus.NotInstalled => "Download",
-        ModStatus.UpdateAvailable => "Update",
-        ModStatus.Error => "Retry",
-        ModStatus.Downloading or ModStatus.Updating => "In Progress...",
-        _ => "Re-download"
+        ModStatus.NotInstalled                          => "Download",
+        ModStatus.UpdateAvailable                       => "Update",
+        ModStatus.Error                                 => "Retry",
+        ModStatus.Downloading or ModStatus.Updating     => "In Progress…",
+        _                                               => "Re-download"
+    };
+
+    private static Color GetActionColor(SteamMod mod) => mod.Status switch
+    {
+        ModStatus.UpdateAvailable => Color.Warning,
+        ModStatus.Error           => Color.Error,
+        _                         => Color.Primary
     };
 
     private static Color GetStatusColor(ModStatus status) => status switch
     {
-        ModStatus.Installed => Color.Success,
-        ModStatus.Downloading or ModStatus.Updating => Color.Warning,
-        ModStatus.Error => Color.Error,
-        ModStatus.UpdateAvailable => Color.Info,
-        _ => Color.Default
+        ModStatus.Installed                             => Color.Success,
+        ModStatus.Downloading or ModStatus.Updating     => Color.Warning,
+        ModStatus.Error                                 => Color.Error,
+        ModStatus.UpdateAvailable                       => Color.Warning,
+        _                                               => Color.Default
+    };
+
+    private static string GetActionIcon(SteamMod mod) => mod.Status switch
+    {
+        ModStatus.UpdateAvailable                   => Icons.Material.Filled.SystemUpdateAlt,
+        ModStatus.Error                             => Icons.Material.Filled.Refresh,
+        ModStatus.Downloading or ModStatus.Updating => Icons.Material.Filled.CloudDownload,
+        ModStatus.Installed                         => Icons.Material.Outlined.CloudDownload,
+        _                                           => Icons.Material.Filled.CloudDownload
+    };
+
+    private static string GetStatusIcon(ModStatus status) => status switch
+    {
+        ModStatus.Installed       => Icons.Material.Filled.CheckCircle,
+        ModStatus.Downloading     => Icons.Material.Filled.CloudDownload,
+        ModStatus.Updating        => Icons.Material.Filled.Sync,
+        ModStatus.Error           => Icons.Material.Filled.Error,
+        ModStatus.UpdateAvailable => Icons.Material.Filled.NewReleases,
+        _                         => Icons.Material.Outlined.RadioButtonUnchecked
     };
 
     private static long ParseWorkshopId(string input)
     {
         if (long.TryParse(input.Trim(), out var directId)) return directId;
         if (input.Contains("id="))
-        { var idPart = input.Split("id=").Last().Split('&').First(); if (long.TryParse(idPart, out var urlId)) return urlId; }
+        {
+            var idPart = input.Split("id=").Last().Split('&').First();
+            if (long.TryParse(idPart, out var urlId)) return urlId;
+        }
         return -1;
     }
 
@@ -323,10 +842,93 @@ else
         return $"{size:F1} {sizes[order]}";
     }
 
-    private static string StripBbCode(string text)
+    /// <summary>
+    /// Converts a Steam Workshop BBCode description to safe HTML for rendering.
+    /// Handles all documented Steam BBCode tags.
+    /// </summary>
+    private static MarkupString RenderDescription(string raw)
     {
-        var result = System.Text.RegularExpressions.Regex.Replace(text, @"\[/?[a-zA-Z0-9]+(?:=[^\]]+)?\]", "");
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"\n{3,}", "\n\n");
-        return result.Trim();
+        if (string.IsNullOrWhiteSpace(raw)) return new MarkupString(string.Empty);
+
+        const RegexOptions SI = RegexOptions.Singleline | RegexOptions.IgnoreCase;
+        const RegexOptions I  = RegexOptions.IgnoreCase;
+
+        var t = raw.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        // 1. <br> → \n, then decode HTML entities
+        t = Regex.Replace(t, @"<br\s*/?>", "\n", I);
+        t = WebUtility.HtmlDecode(t);
+
+        // 2. HTML-encode to prevent XSS — BBCode [tags] use [ ] which are not HTML-special
+        t = WebUtility.HtmlEncode(t);
+
+        // 3. [noparse] — strip the wrapper, leave content as literal text
+        t = Regex.Replace(t, @"\[noparse\](.*?)\[/noparse\]", "$1", SI);
+
+        // 4. Headings
+        t = Regex.Replace(t, @"\[h1\](.*?)\[/h1\]", "<strong class=\"bb-h1\">$1</strong>", SI);
+        t = Regex.Replace(t, @"\[h2\](.*?)\[/h2\]", "<strong class=\"bb-h2\">$1</strong>", SI);
+        t = Regex.Replace(t, @"\[h3\](.*?)\[/h3\]", "<strong class=\"bb-h3\">$1</strong>", SI);
+
+        // 5. Inline formatting
+        t = Regex.Replace(t, @"\[b\](.*?)\[/b\]",           "<strong>$1</strong>",  SI);
+        t = Regex.Replace(t, @"\[i\](.*?)\[/i\]",           "<em>$1</em>",          SI);
+        t = Regex.Replace(t, @"\[u\](.*?)\[/u\]",           "<u>$1</u>",            SI);
+        t = Regex.Replace(t, @"\[strike\](.*?)\[/strike\]", "<s>$1</s>",            SI);
+        t = Regex.Replace(t, @"\[spoiler\](.*?)\[/spoiler\]",
+            "<span style=\"background:currentColor;color:transparent;border-radius:2px;padding:0 2px;\" title=\"spoiler\">$1</span>", SI);
+
+        // 6. URLs — only http/https allowed (prevents javascript: etc.)
+        t = Regex.Replace(t, @"\[url=(https?://[^\]]*?)\](.*?)\[/url\]",
+            "<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$2</a>", SI);
+        t = Regex.Replace(t, @"\[url\](https?://[^\[]*?)\[/url\]",
+            "<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>", SI);
+
+        // 7. Horizontal rule
+        t = Regex.Replace(t, @"\[hr\](\[/hr\])?", "<hr class=\"bb-hr\" />", I);
+
+        // 8. Images — only http/https
+        t = Regex.Replace(t, @"\[img\](https?://[^\[]*?)\[/img\]",
+            "<img src=\"$1\" class=\"bb-img\" alt=\"\" loading=\"lazy\" />", SI);
+
+        // 9. Lists — inline formatting inside items already processed above
+        t = Regex.Replace(t, @"\[list\](.*?)\[/list\]", m =>
+        {
+            var inner = Regex.Replace(m.Groups[1].Value, @"\[\*\]([^\[]*)", "<li>$1</li>", I);
+            return $"<ul class=\"bb-list\">{inner}</ul>";
+        }, SI);
+        t = Regex.Replace(t, @"\[olist\](.*?)\[/olist\]", m =>
+        {
+            var inner = Regex.Replace(m.Groups[1].Value, @"\[\*\]([^\[]*)", "<li>$1</li>", I);
+            return $"<ol class=\"bb-list\">{inner}</ol>";
+        }, SI);
+        // standalone [*] outside list wrappers → bullet
+        t = Regex.Replace(t, @"\[\*\]", "&bull; ", I);
+
+        // 10. Quotes
+        t = Regex.Replace(t, @"\[quote(?:=[^\]]+)?\](.*?)\[/quote\]",
+            "<blockquote class=\"bb-quote\">$1</blockquote>", SI);
+
+        // 11. Code
+        t = Regex.Replace(t, @"\[code\](.*?)\[/code\]",
+            "<pre class=\"bb-code\">$1</pre>", SI);
+
+        // 12. Tables
+        t = Regex.Replace(t, @"\[table[^\]]*\](.*?)\[/table\]", "<table class=\"bb-table\">$1</table>", SI);
+        t = Regex.Replace(t, @"\[tr\](.*?)\[/tr\]", "<tr>$1</tr>",   SI);
+        t = Regex.Replace(t, @"\[th\](.*?)\[/th\]", "<th>$1</th>",   SI);
+        t = Regex.Replace(t, @"\[td\](.*?)\[/td\]", "<td>$1</td>",   SI);
+
+        // 13. [p] paragraphs
+        t = Regex.Replace(t, @"\[p\](.*?)\[/p\]", "<p style=\"margin:.4em 0;\">$1</p>", SI);
+
+        // 14. Strip any remaining unrecognised BBCode tags
+        t = Regex.Replace(t, @"\[/?[a-zA-Z0-9*]+(?:=[^\]]+)?\]", "", I);
+
+        // 15. Newlines → <br>, collapse triple-br
+        t = t.Replace("\n", "<br />");
+        t = Regex.Replace(t, @"(<br />){3,}", "<br /><br />");
+
+        return new MarkupString(t.Trim());
     }
 }

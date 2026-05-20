@@ -220,6 +220,8 @@ public class KastApiModsEndToEndTests
 
     private sealed class NoopAppEventBroadcaster : IAppEventBroadcaster
     {
+        public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
+        public event Action<ModStatusChangedEvent>? OnModStatusChanged;
         public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress) => Task.CompletedTask;
         public Task BroadcastModStatusChangedAsync(ModStatusChangedEvent status) => Task.CompletedTask;
         public Task BroadcastServerStatusChangedAsync(ServerStatusChangedEvent status) => Task.CompletedTask;
@@ -255,7 +257,7 @@ public class KastApiModsEndToEndTests
         public Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default) => Task.FromResult(false);
         public Task LogoutAsync() => Task.CompletedTask;
 
-        public Task DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default)
+        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default)
             => throw new InvalidOperationException("Downloads are intentionally disabled in end-to-end API tests.");
 
         public Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null,
