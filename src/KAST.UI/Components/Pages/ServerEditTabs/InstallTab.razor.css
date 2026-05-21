@@ -1,0 +1,26 @@
+/* ── MudStepper nav bar spacing — compact ── */
+.kast-stepper-nav {
+    padding: 6px 6px 2px;
+}
+
+/* ── MudStepper step panel — compact ── */
+.kast-stepper-step {
+    padding-top: 0 !important;
+}
+
+/* ── Install container — flex column ── */
+.kast-install-container {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Install log — fixed viewport-relative height ── */
+.kast-install-log {
+    height: calc(100vh - 480px);
+    min-height: 150px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+    background: var(--mud-palette-background-grey);
+    border-radius: 0 0 4px 4px;
+}

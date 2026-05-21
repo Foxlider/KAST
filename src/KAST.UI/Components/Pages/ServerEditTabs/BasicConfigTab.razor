@@ -1,0 +1,32 @@
+@* Basic Config: structured fields + raw basic.cfg editor *@
+
+<MudGrid Class="mt-3">
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">View &amp; Network</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.ViewDistance" ValueChanged="@((int v) => { Config.ViewDistance = v; _ = OnConfigChanged.InvokeAsync(); })" Label="View Distance" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="double" Value="@Config.TerrainGrid" ValueChanged="@((double v) => { Config.TerrainGrid = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Terrain Grid" Step="0.125" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxMsgSend" ValueChanged="@((int v) => { Config.MaxMsgSend = v; _ = OnConfigChanged.InvokeAsync(); })" Label="MaxMsgSend" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxSizeGuaranteed" ValueChanged="@((int v) => { Config.MaxSizeGuaranteed = v; _ = OnConfigChanged.InvokeAsync(); })" Label="MaxSizeGuaranteed" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxSizeNonguaranteed" ValueChanged="@((int v) => { Config.MaxSizeNonguaranteed = v; _ = OnConfigChanged.InvokeAsync(); })" Label="MaxSizeNonguaranteed" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxPacketSize" ValueChanged="@((int v) => { Config.MaxPacketSize = v; _ = OnConfigChanged.InvokeAsync(); })" Label="MaxPacketSize" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudTextField Value="@RawContent"
+                      ValueChanged="@((string v) => OnRawContentChanged.InvokeAsync(v))"
+                      Label="Raw basic.cfg" FullWidth="true"
+                      Lines="25" Style="font-family:monospace; font-size:12px;" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public BasicConfigData Config { get; set; } = default!;
+    [Parameter] public string RawContent { get; set; } = "";
+    [Parameter] public EventCallback OnConfigChanged { get; set; }
+    [Parameter] public EventCallback<string> OnRawContentChanged { get; set; }
+}

@@ -1,0 +1,131 @@
+@* General: basic settings, DLC, schedule, performance, launch command preview *@
+
+<MudGrid Class="mt-3">
+    <MudItem xs="12" sm="6">
+        <MudTextField Value="@Instance.Name"
+                      ValueChanged="@((string v) => { Instance.Name = v; _ = OnNameChanged.InvokeAsync(); })"
+                      Label="Instance Name" FullWidth="true" />
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Instance.InstallPath" Label="Install Path" FullWidth="true" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudNumericField @bind-Value="Instance.Port" Label="Game Port" Min="1" Max="65535" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudNumericField @bind-Value="Instance.SteamQueryPort" Label="Steam Query Port" Min="1" Max="65535" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudNumericField @bind-Value="Instance.HeadlessClientCount" Label="Headless Clients" Min="0" Max="10" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudSelect @bind-Value="_restartPolicyStr" Label="Restart Policy" FullWidth="true">
+            <MudSelectItem Value="@("None")">None</MudSelectItem>
+            <MudSelectItem Value="@("OnCrash")">On Crash</MudSelectItem>
+            <MudSelectItem Value="@("Always")">Always</MudSelectItem>
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="Instance.AdditionalParameters" Label="Additional Launch Parameters"
+                      FullWidth="true" Placeholder="-hugepages" />
+    </MudItem>
+</MudGrid>
+
+<MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Creator DLC</MudText>
+<MudGrid Spacing="2">
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.ContactDlc" Label="Contact" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.GmDlc" Label="Global Mobilization" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.PfDlc" Label="Prairie Fire" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.CslaDlc" Label="CSLA Iron Curtain" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.WsDlc" Label="Western Sahara" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.SpeDlc" Label="Spearhead 1944" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.RfDlc" Label="Reaction Forces" Color="Color.Primary" /></MudItem>
+    <MudItem xs="6" sm="3"><MudSwitch @bind-Value="Instance.EfDlc" Label="Expeditionary Forces" Color="Color.Primary" /></MudItem>
+</MudGrid>
+
+<MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Schedule</MudText>
+<MudGrid Spacing="2">
+    <MudItem xs="12"><MudSwitch @bind-Value="Instance.ScheduleEnabled" Label="Enable Schedule" Color="Color.Primary" /></MudItem>
+    @if (Instance.ScheduleEnabled)
+    {
+        <MudItem xs="6">
+            <MudTextField @bind-Value="Instance.AutoStartTime" Label="Auto-Start (HH:mm)" Placeholder="08:00" />
+        </MudItem>
+        <MudItem xs="6">
+            <MudTextField @bind-Value="Instance.AutoStopTime" Label="Auto-Stop (HH:mm)" Placeholder="23:00" />
+        </MudItem>
+    }
+</MudGrid>
+
+<MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Performance</MudText>
+<MudGrid Spacing="2">
+    <MudItem xs="6" sm="3">
+        <MudSwitch Value="@ServerConfig.EnableHT"
+                   ValueChanged="@((bool v) => { ServerConfig.EnableHT = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                   Label="Enable HT" Color="Color.Primary" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudSwitch Value="@ServerConfig.MaxMemOverride"
+                   ValueChanged="@((bool v) => { ServerConfig.MaxMemOverride = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                   Label="Override MaxMem" Color="Color.Primary" />
+    </MudItem>
+    @if (ServerConfig.MaxMemOverride)
+    {
+        <MudItem xs="6" sm="3">
+            <MudNumericField Value="@ServerConfig.MaxMem"
+                             ValueChanged="@((int v) => { ServerConfig.MaxMem = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                             Label="MaxMem (MB)" Min="512" />
+        </MudItem>
+    }
+    <MudItem xs="6" sm="3">
+        <MudSwitch Value="@ServerConfig.CpuCountOverride"
+                   ValueChanged="@((bool v) => { ServerConfig.CpuCountOverride = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                   Label="Override CPU Count" Color="Color.Primary" />
+    </MudItem>
+    @if (ServerConfig.CpuCountOverride)
+    {
+        <MudItem xs="6" sm="3">
+            <MudNumericField Value="@ServerConfig.CpuCount"
+                             ValueChanged="@((int v) => { ServerConfig.CpuCount = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                             Label="CPU Count" Min="1" />
+        </MudItem>
+    }
+    <MudItem xs="6" sm="3">
+        <MudSwitch Value="@ServerConfig.EnableRanking"
+                   ValueChanged="@((bool v) => { ServerConfig.EnableRanking = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+                   Label="Enable Ranking" Color="Color.Primary" />
+    </MudItem>
+</MudGrid>
+
+@* Command line preview *@
+<div class="mt-4">
+    <div class="d-flex align-center gap-2 mb-1">
+        <MudText Typo="Typo.subtitle1">Launch Command</MudText>
+        <MudIconButton Icon="@(_cmdExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                       Size="Size.Small" OnClick="@(() => _cmdExpanded = !_cmdExpanded)" />
+    </div>
+    @if (_cmdExpanded && GetCommandLinePreview != null)
+    {
+        <MudPaper Elevation="0" Class="pa-2"
+                  Style="background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px; overflow-x:auto; word-break:break-all;">
+            @GetCommandLinePreview()
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ServerInstance Instance { get; set; } = default!;
+    [Parameter, EditorRequired] public ServerConfigData ServerConfig { get; set; } = default!;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public EventCallback OnNameChanged { get; set; }
+    [Parameter] public EventCallback OnServerConfigChanged { get; set; }
+    [Parameter] public Func<string>? GetCommandLinePreview { get; set; }
+
+    private bool _cmdExpanded;
+
+    private string _restartPolicyStr
+    {
+        get => Instance.RestartPolicy.ToString();
+        set => Instance.RestartPolicy = Enum.Parse<RestartPolicy>(value);
+    }
+}

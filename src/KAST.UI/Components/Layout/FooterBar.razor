@@ -1,8 +1,16 @@
-@implements IAsyncDisposable
+@implements IDisposable
 @inject KastLogStore LogStore
 @inject ISteamService SteamService
 @inject MonitoringStateService MonitoringState
 @inject IJSRuntime JSRuntime
+
+@* ── Drag-resize capture overlay ── *@
+@if (_isResizing)
+{
+    <div style="position:fixed;inset:0;z-index:99999;cursor:ew-resize;"
+         @onmousemove="OnResizeMove" @onmousemove:preventDefault="true"
+         @onmouseup="StopResize"></div>
+}
 
 @* ── Fixed footer bar ── *@
 <div style="position:fixed; bottom:0; left:0; right:0; height:28px; z-index:1200;
@@ -13,48 +21,40 @@
     <div class="d-flex align-center gap-2" style="flex:1; overflow:hidden; font-size:11px;">
         @* API *@
         <div class="d-flex align-center gap-1">
-            <span
-            style="width:7px;height:7px;border-radius:50%;background:@GetApiColor(MonitoringState.ApiStatus);flex-shrink:0;display:inline-block;"></span>
-            <span style="color:var(--mud-palette-text-secondary);">API</span>
+            <MudIcon Icon="@Icons.Material.Filled.Circle" Style="@($"font-size:8px; color:{GetApiColor(MonitoringState.ApiStatus)};" )" />
+            <MudText Typo="Typo.caption" HtmlTag="span" Style="color:var(--mud-palette-text-secondary); font-size:11px;">API</MudText>
         </div>
         @* DB *@
         <div class="d-flex align-center gap-1">
-            <span
-            style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsDbOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
-            <span style="color:var(--mud-palette-text-secondary);">DB</span>
+            <MudIcon Icon="@Icons.Material.Filled.Circle" Style="@($"font-size:8px; color:{(MonitoringState.IsDbOk ? "#3dcb6c" : "#ff3f5f")};" )" />
+            <MudText Typo="Typo.caption" HtmlTag="span" Style="color:var(--mud-palette-text-secondary); font-size:11px;">DB</MudText>
         </div>
         @* Steam *@
         <div class="d-flex align-center gap-1">
-            <span
-            style="width:7px;height:7px;border-radius:50%;background:@(SteamService.IsAuthenticated ? "#3dcb6c" : SteamService.IsConnected ? "#ffb545" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
-            <span style="color:var(--mud-palette-text-secondary);">Steam@(SteamService.IsAuthenticated &&
-                                SteamService.Profile?.PersonaName != null ? $" · {SteamService.Profile.PersonaName}" : "")</span>
-            </div>
-            @* Monitoring *@
-            <div class="d-flex align-center gap-1">
-                <span
-                style="width:7px;height:7px;border-radius:50%;background:@(MonitoringState.IsMonitoringOk ? "#3dcb6c" : "#ff3f5f");flex-shrink:0;display:inline-block;"></span>
-                <span style="color:var(--mud-palette-text-secondary);">Monitor</span>
-            </div>
-            @* Error badge *@
-            @if (_errorCount > 0)
-            {
-                <span style="cursor:pointer; padding:0 6px; border-radius:10px; font-size:10px; font-weight:600;
-                    background:rgba(255,63,95,.15); color:#ff3f5f;"
-                      @onclick="@(() => { _logOpen = true; _filterLevel = LogLevel.Error; })">
-                    @_errorCount error@(_errorCount == 1 ? "" : "s")
-                </span>
-            }
+            <MudIcon Icon="@Icons.Material.Filled.Circle" Style="@($"font-size:8px; color:{(SteamService.IsAuthenticated ? "#3dcb6c" : SteamService.IsConnected ? "#ffb545" : "#ff3f5f")};" )" />
+            <MudText Typo="Typo.caption" HtmlTag="span" Style="color:var(--mud-palette-text-secondary); font-size:11px;">Steam@(SteamService.IsAuthenticated && SteamService.Profile?.PersonaName != null ? $" · {SteamService.Profile.PersonaName}" : "")</MudText>
         </div>
+        @* Monitoring *@
+        <div class="d-flex align-center gap-1">
+            <MudIcon Icon="@Icons.Material.Filled.Circle" Style="@($"font-size:8px; color:{(MonitoringState.IsMonitoringOk ? "#3dcb6c" : "#ff3f5f")};" )" />
+            <MudText Typo="Typo.caption" HtmlTag="span" Style="color:var(--mud-palette-text-secondary); font-size:11px;">Monitor</MudText>
+        </div>
+        @* Error badge *@
+        @if (_errorCount > 0)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                     Style="height:18px; padding:0 6px; font-size:10px; font-weight:600;"
+                     OnClick="@(() => { _logOpen = true; _filterLevel = LogLevel.Error; })">
+                @_errorCount error@(_errorCount == 1 ? "" : "s")
+            </MudChip>
+        }
+    </div>
 
         @* ══ Right: log console toggle ══ *@
         <div class="d-flex align-center gap-2" style="flex-shrink:0;">
             @if (!_logOpen && _lastMessage != "")
             {
-                <span style="font-size:10px; font-family:monospace; color:var(--mud-palette-text-disabled);
-                    max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    @_lastMessage
-                </span>
+                <MudText Typo="Typo.caption" HtmlTag="span" Style="font-family:monospace; color:var(--mud-palette-text-disabled); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px;">@_lastMessage</MudText>
             }
             <MudIconButton Icon="@(_logOpen ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.Terminal)"
                            Size="Size.Small" Style="width:22px; height:22px; padding:2px;"
@@ -63,11 +63,13 @@
         </div>
     </div>
 
-    @* ══ Log console drawer ══ *@
-    <MudDrawer @bind-Open="@_logOpen" Anchor="Anchor.Right" Variant="DrawerVariant.Persistent"
-               ClipMode="DrawerClipMode.Always" Elevation="4" Width="@($"{_panelWidth}px")"
-               Style="background:rgba(18,17,30,0.92); backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6); border-left:1px solid rgba(255,255,255,.08); box-shadow:-8px 0 32px rgba(0,0,0,.45);">
-        <div style="display:flex; flex-direction:column; height:100%; position:relative; padding-bottom:28px;">
+    @* ══ Log console panel (fixed overlay, never shifts content) ══ *@
+    @if (_logOpen)
+    {
+    <div style="position:fixed; top:0; right:0; bottom:28px; width:@(_panelWidth)px; z-index:1350;
+        background:rgba(18,17,30,0.92); backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6);
+        border-left:1px solid rgba(255,255,255,.08); box-shadow:-8px 0 32px rgba(0,0,0,.45);">
+        <div style="display:flex; flex-direction:column; height:100%; position:relative;">
 
             @* Resize handle (left edge) *@
             <div style="position:absolute; top:0; left:0; bottom:0; width:5px; cursor:ew-resize; z-index:10;"
@@ -83,13 +85,13 @@
                 @* Level filter chips *@
                 @foreach (var item in _filterOptions)
                 {
-                    <span
-                        style="cursor:pointer; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; line-height:18px;
-                        background:@(_filterLevel == item.Level ? GetLevelBg(item.Level) : "rgba(255,255,255,.05)");
-                        color:@(_filterLevel == item.Level ? GetLevelFg(item.Level) : "var(--mud-palette-text-secondary)");"
-                        @onclick="@(() => _filterLevel = (_filterLevel == item.Level ? null : (LogLevel?)item.Level))">
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@GetLevelMudColor(item.Level)"
+                             Variant="@(_filterLevel == item.Level ? Variant.Filled : Variant.Text)"
+                             Style="height:18px; padding:0 7px; font-size:10px; font-weight:600; min-width:0;"
+                             OnClick="@(() => _filterLevel = (_filterLevel == item.Level ? null : (LogLevel?)item.Level))">
                         @item.Label
-                    </span>
+                    </MudChip>
                 }
                 <MudDivider Vertical="true" FlexItem="true" Style="margin:4px 4px;" />
                 <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
@@ -122,7 +124,8 @@
                 }
             </div>
         </div>
-    </MudDrawer>
+    </div>
+    }
 
 @code {
     private bool _logOpen;
@@ -137,23 +140,26 @@
     private int _panelWidth = 560;
     private const int MinPanelWidth = 320;
     private const int MaxPanelWidth = 1400;
-    private IJSObjectReference? _resizeModule;
-    private DotNetObjectReference<FooterBar>? _selfRef;
+    private bool _isResizing;
+    private double _resizeStartX;
+    private int _resizeStartWidth;
 
-    private async Task StartResize(MouseEventArgs e)
+    private void StartResize(MouseEventArgs e)
     {
-        _selfRef ??= DotNetObjectReference.Create(this);
-        _resizeModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>(
-            "import", "/js/kast-console-resize.js");
-        await _resizeModule.InvokeVoidAsync(
-            "start", _selfRef, _panelWidth, MinPanelWidth, MaxPanelWidth, e.ClientX);
+        _isResizing = true;
+        _resizeStartX = e.ClientX;
+        _resizeStartWidth = _panelWidth;
     }
 
-    [JSInvokable]
-    public Task SetPanelWidth(int width)
+    private void OnResizeMove(MouseEventArgs e)
     {
-        _panelWidth = Math.Clamp(width, MinPanelWidth, MaxPanelWidth);
-        return InvokeAsync(StateHasChanged);
+        if (!_isResizing) return;
+        _panelWidth = Math.Clamp((int)(_resizeStartWidth + (_resizeStartX - e.ClientX)), MinPanelWidth, MaxPanelWidth);
+    }
+
+    private void StopResize(MouseEventArgs e)
+    {
+        _isResizing = false;
     }
 
     private static readonly (string Label, LogLevel Level)[] _filterOptions =
@@ -231,12 +237,12 @@
         _ => "var(--mud-palette-text-secondary)"
     };
 
-    private static string GetLevelBg(LogLevel? l) => l switch
+    private static Color GetLevelMudColor(LogLevel? l) => l switch
     {
-        LogLevel.Warning => "rgba(255,181,69,.2)",
-        LogLevel.Error or LogLevel.Critical => "rgba(255,63,95,.2)",
-        LogLevel.Information => "rgba(79,195,247,.2)",
-        _ => "rgba(255,255,255,.1)"
+        LogLevel.Information => Color.Info,
+        LogLevel.Warning => Color.Warning,
+        LogLevel.Error or LogLevel.Critical => Color.Error,
+        _ => Color.Default
     };
 
     private static string ShortCategory(string cat) =>
@@ -249,17 +255,11 @@
         _ => "#ff3f5f"
     };
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
         _disposed = true;
         MonitoringState.OnDataChanged -= HandleMonitoringChanged;
         LogStore.OnNewEntry -= OnNewLog;
         SteamService.AuthStateChanged -= OnServiceChanged;
-
-        if (_resizeModule is not null)
-        {
-            try { await _resizeModule.DisposeAsync(); } catch { /* ignore */ }
-        }
-        _selfRef?.Dispose();
     }
 }

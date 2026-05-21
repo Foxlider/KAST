@@ -1,8 +1,8 @@
-using Microsoft.JSInterop;
+using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 
 namespace KAST.UI.Services;
 
-public class ThemeService(IJSRuntime? js) : IDisposable
+public class ThemeService(ProtectedLocalStorage storage) : IDisposable
 {
     private const string StorageKey = "kast_accent_color";
     private CancellationTokenSource? _cts;
@@ -14,25 +14,18 @@ public class ThemeService(IJSRuntime? js) : IDisposable
 
     public async Task InitializeAsync()
     {
-        if (js is null)
-        {
-            // still start auto behavior based on server time
-            StartAprilFoolsIfNeeded();
-            return;
-        }
-
         try
         {
-            var stored = await js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            if (!string.IsNullOrEmpty(stored))
+            var result = await storage.GetAsync<string>(StorageKey);
+            if (result.Success && !string.IsNullOrEmpty(result.Value))
             {
-                AccentColor = stored;
+                AccentColor = result.Value;
                 _userOverride = true;
                 OnChange?.Invoke();
             }
         }
         catch
-        { /* ignore (server render or localStorage unavailable) */ }
+        { /* ignore during pre-render or when storage is unavailable */ }
 
         StartAprilFoolsIfNeeded();
     }
@@ -44,10 +37,9 @@ public class ThemeService(IJSRuntime? js) : IDisposable
         _userOverride = true;
         try
         {
-            if (js is not null)
-                await js.InvokeVoidAsync("localStorage.setItem", StorageKey, color);
+            await storage.SetAsync(StorageKey, color);
         }
-        catch { /* ignore */}
+        catch { /* ignore */ }
         OnChange?.Invoke();
     }
 

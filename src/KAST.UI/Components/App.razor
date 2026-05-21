@@ -130,34 +130,7 @@
 </head>
 
 <body>
-    <div id="kast-splash" aria-hidden="true">
-      <div class="ks-forge">
-        <!-- Sparks: lower arm tip -->
-        <div class="ks-spark" style="left:124px;top:112px;--x:14px;--d:1.1s;--t:.00s;--c:#ffaa44"></div>
-        <div class="ks-spark" style="left:137px;top:104px;--x:10px;--d:1.4s;--t:.28s;--s:5px;--c:#ffcc44"></div>
-        <div class="ks-spark" style="left:130px;top:124px;--x:17px;--d:1.0s;--t:.55s;--s:3px;--c:#ff8800"></div>
-        <div class="ks-spark" style="left:116px;top:116px;--x:-8px;--d:1.3s;--t:.82s;--c:#ff6600"></div>
-        <div class="ks-spark" style="left:143px;top:111px;--x:20px;--d:1.5s;--t:.16s;--s:3px;--c:#ffaa44"></div>
-        <!-- Sparks: upper arm tip -->
-        <div class="ks-spark" style="left:128px;top:28px;--x:11px;--d:1.2s;--t:.44s;--s:3px;--c:#ffe080"></div>
-        <div class="ks-spark" style="left:138px;top:20px;--x:-6px;--d:1.0s;--t:.72s;--s:4px;--c:#ffcc44"></div>
-
-        <div class="ks-word">
-          <div class="ks-k-wrap">
-            <img class="ks-k-base" src="favicon.svg" alt="" draggable="false" />
-            <img class="ks-k-fill" src="favicon.svg" alt="" draggable="false" />
-          </div>
-          <div class="ks-ast">AST</div>
-        </div>
-      </div>
-
-      <div class="ks-tagline">Keelah's Arma Server Tool</div>
-      <div class="ks-dots">
-        <div class="ks-dot"></div>
-        <div class="ks-dot"></div>
-        <div class="ks-dot"></div>
-      </div>
-    </div>
+    <SplashScreen @rendermode="InteractiveServer" />
 
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
@@ -170,58 +143,6 @@
                 if (el) el.scrollTop = el.scrollHeight;
             }
         };
-
-        // ── Dismiss loading splash once Blazor circuit is ready ──
-        (function () {
-            function removeSplash() {
-                var s = document.getElementById('kast-splash');
-                if (s && s.parentNode) s.parentNode.removeChild(s);
-            }
-
-            // In Docker, Blazor's enhanced navigation morphs the full <body> against
-            // the fresh server HTML, which always contains the visible #kast-splash div.
-            // The IIFE has already run and won't run again, so the re-inserted splash
-            // would never be dismissed. Guard with a sessionStorage flag (per-tab, survives
-            // within-tab reloads but clears when the tab is closed).
-            if (sessionStorage.getItem('kastBooted')) {
-                removeSplash();
-                return;
-            }
-
-            var splashStartedAt = performance.now();
-            var minDurationMs = 1000;
-
-            function hideSplash() {
-                var s = document.getElementById('kast-splash');
-                if (!s || s.classList.contains('ks-out')) return;
-                s.classList.add('ks-out');
-                setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 620);
-            }
-
-            function finishSequence() {
-                var s = document.getElementById('kast-splash');
-                if (!s || s.classList.contains('ks-out')) return;
-                s.classList.add('ks-ready');
-                setTimeout(hideSplash, 620);
-            }
-
-            document.addEventListener('blazor:afterstart', function onReady() {
-                document.removeEventListener('blazor:afterstart', onReady);
-                sessionStorage.setItem('kastBooted', '1');
-                var elapsed = performance.now() - splashStartedAt;
-                var wait = Math.max(0, minDurationMs - elapsed);
-                setTimeout(finishSequence, wait);
-            });
-
-            // Belt-and-suspenders: remove any splash the enhanced-nav DOM morph re-inserts
-            // after Blazor is already running (fires after every enhanced navigation update).
-            document.addEventListener('blazor:after-update-dom', function () {
-                if (sessionStorage.getItem('kastBooted')) removeSplash();
-            });
-
-            // safety fallback if startup event never arrives
-            setTimeout(finishSequence, 4000);
-        })();
 
         window._kastChartInstances = {};
 

@@ -1,0 +1,47 @@
+/* ── Mod drag items — ensure the full MudBlazor wrapper is grabbable ── */
+::deep .mud-drop-item {
+    cursor: grab;
+    margin-bottom: 2px;
+}
+
+::deep .mud-drop-item:active {
+    cursor: grabbing;
+}
+
+/* ── Mod column container ── */
+.mod-col {
+    flex: 1;
+    min-width: 0;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Drop zone fill ── */
+::deep .mod-dropzone {
+    flex: 1;
+    min-height: 300px;
+}
+
+/* ── Individual mod row ── */
+.mod-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    user-select: none;
+}
+
+.mod-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.mod-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
