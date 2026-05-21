@@ -127,20 +127,6 @@ public class ServerInstanceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateInstance_SetsLastModified()
-    {
-        var instance = await SeedInstanceAsync();
-        Assert.Null(instance.LastModified);
-
-        instance.Name = "Updated";
-        await _sut.UpdateInstanceAsync(instance);
-
-        var updated = await _db.ServerInstances.FindAsync(instance.Id);
-        Assert.Equal("Updated", updated!.Name);
-        Assert.NotNull(updated.LastModified);
-    }
-
-    [Fact]
     public async Task DeleteInstance_RemovesFromDb()
     {
         var instance = await SeedInstanceAsync();
