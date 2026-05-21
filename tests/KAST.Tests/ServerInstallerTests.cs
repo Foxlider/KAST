@@ -54,7 +54,9 @@ public class ServerInstallerTests
             ServerInstanceId = 1
         });
 
-        Assert.Equal(3, steps.Count); // base + 2 dlcs
+        // On Windows an extra DirectX step is appended by PlanSteps.
+        int expectedCount = 3 + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 1 : 0);
+        Assert.Equal(expectedCount, steps.Count); // base + 2 dlcs (+ DirectX on Windows)
         Assert.Equal("Arma 3 Dedicated Server", steps[0].Name);
         Assert.Contains(steps, s => s.Name == "Contact");
         Assert.Contains(steps, s => s.Name == "Global Mobilization");
@@ -167,7 +169,10 @@ public class ServerInstallerTests
 
         await sut.InstallAsync(request, state, CancellationToken.None);
 
-        Assert.All(state.Steps, s => Assert.Equal(ContentStepStatus.Completed, s.Status));
+        // On Windows the DirectX step may be skipped (already installed) rather than completed.
+        Assert.All(state.Steps, s => Assert.True(
+            s.Status is ContentStepStatus.Completed or ContentStepStatus.Skipped,
+            $"Step '{s.Name}' ended with unexpected status {s.Status}"));
         await steam.Received(3).DownloadAppAsync(
             ServerInstaller.Arma3ServerAppId,
             "/tmp/server",
