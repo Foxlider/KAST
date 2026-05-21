@@ -1,0 +1,215 @@
+@using KAST.Core.Events
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject KAST.UI.Services.ServerConsoleStore ConsoleStore
+
+<MudGrid Class="mt-3" Spacing="3">
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
+                <MudText Typo="Typo.h5">@_monitorCpu.ToString("F1")%</MudText>
+                <MudProgressLinear Value="@_monitorCpu" Color="Color.Info" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
+                <MudText Typo="Typo.h5">@FormatBytes(_monitorMemory)</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Players</MudText>
+                <MudText Typo="Typo.h5">@_monitorPlayerCount</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Uptime @GetUptime()</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex align-center justify-space-between mt-4 mb-1">
+    <MudText Typo="Typo.subtitle2">Server Console</MudText>
+    <div class="d-flex align-center gap-1">
+        <MudButtonGroup Variant="Variant.Text" Size="Size.Small" OverrideStyles="false">
+            <MudButton Color="@(_consoleFilter == ConsoleFilter.All     ? Color.Primary : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.All)">All</MudButton>
+            <MudButton Color="@(_consoleFilter == ConsoleFilter.Info    ? Color.Info    : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Info)">Info</MudButton>
+            <MudButton Color="@(_consoleFilter == ConsoleFilter.Warning ? Color.Warning : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Warning)">Warn</MudButton>
+            <MudButton Color="@(_consoleFilter == ConsoleFilter.Error   ? Color.Error   : Color.Default)" OnClick="@(() => _consoleFilter = ConsoleFilter.Error)">Error</MudButton>
+        </MudButtonGroup>
+        <MudDivider Vertical="true" FlexItem="true" Class="mx-1" />
+        <MudTooltip Text='@(_followConsole ? "Auto-scroll on \u2014 click to disable" : "Auto-scroll off \u2014 click to enable")'>
+            <MudIconButton Icon="@(_followConsole ? Icons.Material.Filled.LockOpen : Icons.Material.Outlined.VerticalAlignBottom)"
+                           Color="@(_followConsole ? Color.Primary : Color.Default)"
+                           Size="Size.Small"
+                           OnClick="@(() => { _followConsole = !_followConsole; if (_followConsole) _scrollConsole = true; })" />
+        </MudTooltip>
+        <MudTooltip Text='@($"Clear {(_consoleFilter == ConsoleFilter.All ? "all" : _consoleFilter.ToString().ToLower())} entries")'>
+            <MudIconButton Icon="@Icons.Material.Outlined.DeleteSweep"
+                           Size="Size.Small"
+                           OnClick="ClearConsole" />
+        </MudTooltip>
+    </div>
+</div>
+<div @ref="_consoleRef" class="kast-console"
+     style="background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px; border-radius:4px;">
+    @foreach (var entry in FilteredConsoleLines)
+    {
+        <div style="@GetEntryStyle(entry.Type)">
+            <span style="color:var(--mud-palette-text-secondary);">@entry.Timestamp.ToString("HH:mm:ss")</span>
+            <span> @entry.Line</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ServerInstance Instance { get; set; } = default!;
+    [Parameter] public EventCallback OnStatusChanged { get; set; }
+
+    private enum ConsoleFilter { All, Info, Warning, Error }
+    private record ConsoleEntry(DateTime Timestamp, string Line, ConsoleFilter Type);
+
+    private HubConnection? _hubConnection;
+    private readonly List<ConsoleEntry> _consoleLines = new();
+    private ElementReference _consoleRef;
+    private bool _followConsole = true;
+    private bool _scrollConsole;
+    private ConsoleFilter _consoleFilter = ConsoleFilter.All;
+    private double _monitorCpu;
+    private long _monitorMemory;
+    private int _monitorPlayerCount;
+    private bool _initialized;
+
+    private IReadOnlyList<ConsoleEntry> FilteredConsoleLines =>
+        _consoleFilter == ConsoleFilter.All
+            ? _consoleLines.ToList()
+            : _consoleLines.Where(e => e.Type == _consoleFilter).ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized && Instance.Id > 0)
+        {
+            _initialized = true;
+            foreach (var entry in ConsoleStore.GetHistory(Instance.Id))
+                _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
+            await InitializeSignalR();
+        }
+
+        if (_scrollConsole)
+        {
+            _scrollConsole = false;
+            try { await JS.InvokeVoidAsync("KAST.scrollToBottom", _consoleRef); } catch { }
+        }
+    }
+
+    private async Task InitializeSignalR()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
+        {
+            if (entry.ServerInstanceId != Instance.Id) return;
+            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
+            while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
+            if (_followConsole) _scrollConsole = true;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
+        {
+            if (evt.ServerInstanceId != Instance.Id) return;
+            if (Enum.TryParse<ServerInstanceStatus>(evt.NewStatus, out var status))
+            {
+                Instance.Status = status;
+                if (status is ServerInstanceStatus.Stopped or ServerInstanceStatus.Crashed)
+                {
+                    Instance.ProcessId = null;
+                    Instance.StartedAt = null;
+                    _monitorCpu = 0;
+                    _monitorMemory = 0;
+                    _monitorPlayerCount = 0;
+                }
+                await OnStatusChanged.InvokeAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hubConnection.On<InstanceMetricsUpdatedEvent>("InstanceMetricsUpdated", async evt =>
+        {
+            if (evt.ServerInstanceId != Instance.Id) return;
+            _monitorCpu = evt.CpuPercent;
+            _monitorMemory = evt.MemoryBytes;
+            _monitorPlayerCount = evt.PlayerCount;
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+        await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
+    }
+
+    private void ClearConsole()
+    {
+        if (_consoleFilter == ConsoleFilter.All)
+        {
+            _consoleLines.Clear();
+            ConsoleStore.Clear(Instance.Id);
+        }
+        else
+        {
+            _consoleLines.RemoveAll(e => e.Type == _consoleFilter);
+        }
+        StateHasChanged();
+    }
+
+    private string GetUptime()
+    {
+        if (Instance.StartedAt is null) return "--";
+        var e = DateTime.UtcNow - Instance.StartedAt.Value;
+        if (e.TotalDays >= 1) return $"{e.Days}d {e.Hours}h";
+        if (e.TotalHours >= 1) return $"{e.Hours}h {e.Minutes}m";
+        return $"{e.Minutes}m {e.Seconds}s";
+    }
+
+    private static ConsoleFilter ClassifyLine(string line)
+    {
+        if (line.Contains("error",     StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("exception", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("fatal",     StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("critical",  StringComparison.OrdinalIgnoreCase))
+            return ConsoleFilter.Error;
+        if (line.Contains("warning", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("warn",    StringComparison.OrdinalIgnoreCase))
+            return ConsoleFilter.Warning;
+        return ConsoleFilter.Info;
+    }
+
+    private static string GetEntryStyle(ConsoleFilter type) => type switch
+    {
+        ConsoleFilter.Error   => "color:var(--mud-palette-error-text);",
+        ConsoleFilter.Warning => "color:var(--mud-palette-warning-text);",
+        _                     => ""
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+            await _hubConnection.DisposeAsync();
+    }
+}

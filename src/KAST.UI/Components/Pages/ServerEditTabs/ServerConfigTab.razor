@@ -1,0 +1,76 @@
+@* Server Config: structured fields + raw server.cfg editor *@
+
+<MudGrid Class="mt-3">
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Server Options</MudText>
+                <MudTextField Value="@Config.Hostname"
+                              ValueChanged="@((string v) => { Config.Hostname = v; _ = OnConfigChanged.InvokeAsync(); })"
+                              Label="Hostname" FullWidth="true" Class="mb-2" />
+                <MudTextField Value="@Config.Password"
+                              ValueChanged="@((string v) => { Config.Password = v; _ = OnConfigChanged.InvokeAsync(); })"
+                              Label="Server Password" FullWidth="true" Class="mb-2" />
+                <MudTextField Value="@Config.PasswordAdmin"
+                              ValueChanged="@((string v) => { Config.PasswordAdmin = v; _ = OnConfigChanged.InvokeAsync(); })"
+                              Label="Admin Password" FullWidth="true" Class="mb-2" />
+                <MudNumericField T="int" Value="@Config.MaxPlayers"
+                                 ValueChanged="@((int v) => { Config.MaxPlayers = v; _ = OnConfigChanged.InvokeAsync(); })"
+                                 Label="Max Players" Min="1" Max="128" />
+            </MudCardContent>
+        </MudCard>
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Joining Rules</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.BattlEye" Label="BattlEye" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.KickDuplicate" Label="Kick Duplicates" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.Loopback" Label="LAN Mode" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.Upnp" Label="UPnP" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6" sm="4">
+                        <MudSelect Value="@Config.VerifySignatures.ToString()"
+                                   ValueChanged="@((string v) => { Config.VerifySignatures = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="Verify Signatures" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Deprecated (v1+v2)</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Activated (v2)</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                        <MudSelect Value="@Config.AllowedFilePatching.ToString()"
+                                   ValueChanged="@((string v) => { Config.AllowedFilePatching = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="File Patching" FullWidth="true">
+                            <MudSelectItem Value="@("0")">No Clients</MudSelectItem>
+                            <MudSelectItem Value="@("1")">HC Only</MudSelectItem>
+                            <MudSelectItem Value="@("2")">All Clients</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Timeouts &amp; Kick</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxPing" ValueChanged="@((int v) => { Config.MaxPing = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Ping" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxDesync" ValueChanged="@((int v) => { Config.MaxDesync = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Desync" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxPacketLoss" ValueChanged="@((int v) => { Config.MaxPacketLoss = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Packet Loss" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.DisconnectTimeout" ValueChanged="@((int v) => { Config.DisconnectTimeout = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Disconnect Timeout" Min="5" Max="90" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudTextField Value="@RawContent"
+                      ValueChanged="@((string v) => OnRawContentChanged.InvokeAsync(v))"
+                      Label="Raw server.cfg" FullWidth="true"
+                      Lines="35" Style="font-family:monospace; font-size:12px;" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public ServerConfigData Config { get; set; } = default!;
+    [Parameter] public string RawContent { get; set; } = "";
+    [Parameter] public EventCallback OnConfigChanged { get; set; }
+    [Parameter] public EventCallback<string> OnRawContentChanged { get; set; }
+}

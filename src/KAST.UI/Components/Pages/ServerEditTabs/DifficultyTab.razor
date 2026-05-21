@@ -1,0 +1,46 @@
+@* Difficulty: AI/gameplay settings + raw Arma3Profile editor *@
+
+<MudGrid Class="mt-3">
+    <MudItem xs="12" md="6">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudSelect Value="@Profile.AiLevelPreset.ToString()"
+                           ValueChanged="@((string v) => { Profile.AiLevelPreset = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                           Label="AI Preset" FullWidth="true">
+                    <MudSelectItem Value="@("0")">Low</MudSelectItem>
+                    <MudSelectItem Value="@("1")">Normal</MudSelectItem>
+                    <MudSelectItem Value="@("2")">High</MudSelectItem>
+                    <MudSelectItem Value="@("3")">Custom</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect Value="@Profile.ThirdPersonView.ToString()"
+                           ValueChanged="@((string v) => { Profile.ThirdPersonView = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                           Label="3rd Person View" FullWidth="true">
+                    <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                    <MudSelectItem Value="@("1")">Enabled</MudSelectItem>
+                    <MudSelectItem Value="@("2")">Vehicles Only</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.WeaponCrosshair != 0)" ValueChanged="@((bool v) => { Profile.WeaponCrosshair = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Weapon Crosshair" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.VisionAid != 0)" ValueChanged="@((bool v) => { Profile.VisionAid = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Vision Aid" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.AutoReport != 0)" ValueChanged="@((bool v) => { Profile.AutoReport = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Auto Report" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.ScoreTable != 0)" ValueChanged="@((bool v) => { Profile.ScoreTable = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Score Table" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.DeathMessages != 0)" ValueChanged="@((bool v) => { Profile.DeathMessages = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Death Messages" Color="Color.Primary" /></MudItem>
+            <MudItem xs="6"><MudSwitch Value="@(Profile.VonID != 0)" ValueChanged="@((bool v) => { Profile.VonID = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="VoN ID" Color="Color.Primary" /></MudItem>
+        </MudGrid>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudTextField Value="@RawContent"
+                      ValueChanged="@((string v) => OnRawContentChanged.InvokeAsync(v))"
+                      Label="Raw Arma3Profile" FullWidth="true"
+                      Lines="35" Style="font-family:monospace; font-size:12px;" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public Arma3ProfileData Profile { get; set; } = default!;
+    [Parameter] public string RawContent { get; set; } = "";
+    [Parameter] public EventCallback OnProfileChanged { get; set; }
+    [Parameter] public EventCallback<string> OnRawContentChanged { get; set; }
+}
