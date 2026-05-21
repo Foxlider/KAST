@@ -58,24 +58,39 @@ public class ServerInstanceService(
     public async Task<ServerInstance> UpdateInstanceAsync(ServerInstance instance, CancellationToken ct = default)
     {
         instance.LastModified = DateTime.UtcNow;
-        
-        // Check if the entity is already tracked
-        var existingEntry = db.ChangeTracker.Entries<ServerInstance>()
-            .FirstOrDefault(e => e.Entity.Id == instance.Id);
-        
-        if (existingEntry != null)
-        {
-            // Entity is already tracked, update its values directly
-            existingEntry.CurrentValues.SetValues(instance);
-            existingEntry.State = EntityState.Modified;
-        }
-        else
-        {
-            // Entity is not tracked, use Update as normal
-            db.ServerInstances.Update(instance);
-        }
-        
-        await db.SaveChangesAsync(ct);
+
+        // Use ExecuteUpdateAsync to update only scalar properties via a direct SQL UPDATE.
+        // This avoids EF walking the navigation graph (Mods, HeadlessClients) which would
+        // conflict with ServerInstanceMod entities already tracked by earlier mod operations
+        // (AddModToInstanceAsync / UpdateModFlagsAsync / RemoveModFromInstanceAsync).
+        await db.ServerInstances
+            .Where(s => s.Id == instance.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Name,                instance.Name)
+                .SetProperty(x => x.InstallPath,         instance.InstallPath)
+                .SetProperty(x => x.Port,                instance.Port)
+                .SetProperty(x => x.SteamQueryPort,      instance.SteamQueryPort)
+                .SetProperty(x => x.RestartPolicy,       instance.RestartPolicy)
+                .SetProperty(x => x.MaxRestartAttempts,  instance.MaxRestartAttempts)
+                .SetProperty(x => x.AutoStartTime,       instance.AutoStartTime)
+                .SetProperty(x => x.AutoStopTime,        instance.AutoStopTime)
+                .SetProperty(x => x.ScheduleEnabled,     instance.ScheduleEnabled)
+                .SetProperty(x => x.ServerCfgContent,    instance.ServerCfgContent)
+                .SetProperty(x => x.BasicCfgContent,     instance.BasicCfgContent)
+                .SetProperty(x => x.ArmaProfileContent,  instance.ArmaProfileContent)
+                .SetProperty(x => x.AdditionalParameters,instance.AdditionalParameters)
+                .SetProperty(x => x.ContactDlc,          instance.ContactDlc)
+                .SetProperty(x => x.GmDlc,               instance.GmDlc)
+                .SetProperty(x => x.PfDlc,               instance.PfDlc)
+                .SetProperty(x => x.CslaDlc,             instance.CslaDlc)
+                .SetProperty(x => x.WsDlc,               instance.WsDlc)
+                .SetProperty(x => x.SpeDlc,              instance.SpeDlc)
+                .SetProperty(x => x.RfDlc,               instance.RfDlc)
+                .SetProperty(x => x.EfDlc,               instance.EfDlc)
+                .SetProperty(x => x.HeadlessClientCount, instance.HeadlessClientCount)
+                .SetProperty(x => x.LastModified,        instance.LastModified),
+            ct);
+
         return instance;
     }
 
