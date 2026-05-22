@@ -1,8 +1,10 @@
-> ---
-> # Keelah Arma Server Tool (KAST)
-> ---
 
-#### Badges
+# Keelah Arma Server Tool (KAST)
+
+---
+
+## Badges
+
 ***GitHub***  
 [![GitHub issues](https://img.shields.io/github/issues/Foxlider/KAST.svg?logo=github&style=flat-square)](https://github.com/Foxlider/KAST/issues)
 ![GitHub](https://img.shields.io/github/license/Foxlider/KAST.svg?style=flat-square)
@@ -21,21 +23,20 @@
 
 [![Discord](https://img.shields.io/discord/366955806777671681?label=Discord&logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/2BUuZa3)
 
-
-#### **INTRO**
+## **INTRO**
 
 After developing FASTER for a few years, I decided to restart the whole project to make a new Architecture from a clean slate.
 This new Architecture should allow contributors to better participate in the project development.
- 
+
 Big up to all the devs, testers and users. Also, to BI for giving us an awesome game to break.
 
-##### **PREREQUISITES**
+## **PREREQUISITES**
 
 - Steam account with valid copy of Arma 3.
 - Basic understanding of Arma 3 dedicated servers.
 
 
-##### **_FEATURES_**
+## **FEATURES**
 
 - Steam Workshop Integration
   - Install and update Arma 3 Server (Stable, Dev, DLCs, Legacy)
@@ -61,11 +62,70 @@ Big up to all the devs, testers and users. Also, to BI for giving us an awesome 
   - Include additional folders to search
 
 
-##### **_ISSUES and FEEDBACK_**
+## **ISSUES and FEEDBACK**
 
 As always, best place to report issues is on the [GitHub Repo](https://github.com/Foxlider/KAST/issues). As for general discussion I'll keep an eye on the BI forum thread but I'll be more active on [Discord](https://discord.gg/2BUuZa3).
 
-
-##### **_DOCUMENTATION_**
+## **DOCUMENTATION**
   
 A complete Documentation is available on the [GitHub Wiki](https://github.com/Foxlider/KAST/wiki)
+
+## **INSTALLATION**
+
+KAST is distributed as a self-contained single-file executable — no .NET installation required on the host.
+
+### **Stable releases**
+
+Download the latest release for your platform from the [Releases page](https://github.com/Foxlider/KAST/releases/latest):
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `kast-linux-x64-v*.tar.gz` |
+| Linux arm64 | `kast-linux-arm64-v*.tar.gz` |
+| Windows x64 | `kast-win-x64-v*.zip` |
+| Docker | `ghcr.io/foxlider/kast:latest` |
+
+Extract and run the `KAST.UI` executable. On Linux you may need to `chmod +x KAST.UI` first.
+
+### **Nightly builds**
+
+Automated builds from the `develop` branch are published as a rolling pre-release at  
+[`releases/tag/nightly`](https://github.com/Foxlider/KAST/releases/tag/nightly).
+
+The nightly tag always points to the latest development commit. Download URLs are stable:
+
+| Platform | File |
+| --- | --- |
+| Linux x64 | `kast-linux-x64-nightly.tar.gz` |
+| Linux arm64 | `kast-linux-arm64-nightly.tar.gz` |
+| Windows x64 | `kast-win-x64-nightly.zip` |
+| Docker | `ghcr.io/foxlider/kast:nightly` |
+
+> Nightly builds may be unstable. Use tagged releases for production.
+
+### **Docker (Compose)**
+
+```yaml
+services:
+  kast:
+    image: ghcr.io/foxlider/kast:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - kast-data:/app/data
+volumes:
+  kast-data:
+```
+
+## **VERSIONING**
+
+KAST uses [MinVer](https://github.com/adamralph/minver) to derive the version from git tags at build time.
+
+| Scenario | Version format |
+| --- | --- |
+| Tagged release `v1.2.3` | `1.2.3` |
+| Nightly (develop) | `1.2.3-nightly.20260522.abc1234` |
+| Local dev build | `1.2.3-alpha.0.5` |
+
+To create a release, push a tag matching `v*` (e.g. `git tag v1.2.3 && git push --tags`).  
+The CI pipeline will run tests, build native binaries for all platforms, push the Docker image, and publish a GitHub Release with all assets attached.
