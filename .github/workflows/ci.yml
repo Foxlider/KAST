@@ -145,3 +145,140 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.owner }}/kast:nightly-${{ steps.version.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Nightly native binaries (develop only) ─────────────────────────────────
+  nightly-packages:
+    name: Nightly Package (${{ matrix.rid }})
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/develop'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            archive: tar
+          - rid: linux-arm64
+            archive: tar
+          - rid: win-x64
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute nightly version
+        id: version
+        run: |
+          DATE=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v[0-9]*" 2>/dev/null || echo "v0.0.0")
+          BASE_VER="${LAST_TAG#v}"
+          echo "version=${BASE_VER}-nightly.${DATE}.${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "date=$DATE"       >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - run: dotnet restore
+
+      - name: Publish
+        run: |
+          dotnet publish src/KAST.UI/KAST.UI.csproj \
+            --configuration Release \
+            --runtime      ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:MinVerVersionOverride=${{ steps.version.outputs.version }} \
+            --output publish/${{ matrix.rid }}
+
+      - name: Package → tar.gz
+        if: matrix.archive == 'tar'
+        run: |
+          cd publish/${{ matrix.rid }}
+          tar -czf ../../kast-${{ matrix.rid }}-nightly.tar.gz .
+
+      - name: Package → zip
+        if: matrix.archive == 'zip'
+        run: |
+          cd publish/${{ matrix.rid }}
+          zip -r ../../kast-${{ matrix.rid }}-nightly.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.rid }}
+          path: kast-${{ matrix.rid }}-nightly.*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Rolling nightly GitHub pre-release ────────────────────────────────────
+  nightly-release:
+    name: Nightly Release
+    runs-on: ubuntu-latest
+    needs: nightly-packages
+    if: github.ref == 'refs/heads/develop'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute nightly version
+        id: version
+        run: |
+          DATE=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v[0-9]*" 2>/dev/null || echo "v0.0.0")
+          BASE_VER="${LAST_TAG#v}"
+          echo "version=${BASE_VER}-nightly.${DATE}.${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+
+      - name: Download nightly artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*
+          merge-multiple: true
+
+      - name: Delete previous nightly release + tag
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          git push origin :refs/tags/nightly            || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create nightly pre-release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name:    nightly
+          name:        "Nightly – ${{ steps.version.outputs.version }}"
+          prerelease:  true
+          make_latest: false
+          body: |
+            🌙 **Automated nightly build** from the `develop` branch.
+
+            | | |
+            |---|---|
+            | **Version** | `${{ steps.version.outputs.version }}` |
+            | **Commit** | [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
+            | **Date** | `${{ steps.version.outputs.date }}` |
+
+            > ⚠️ Nightly builds are automatically generated from the latest development code and may be unstable.
+            > Use [tagged releases](../../releases/latest) for production deployments.
+
+            ### Downloads
+            | Platform | File |
+            |---|---|
+            | Linux x64 | `kast-linux-x64-nightly.tar.gz` |
+            | Linux arm64 | `kast-linux-arm64-nightly.tar.gz` |
+            | Windows x64 | `kast-win-x64-nightly.zip` |
+            | Docker | `ghcr.io/${{ github.repository_owner }}/kast:nightly` |
+          files: |
+            kast-linux-x64-nightly.tar.gz
+            kast-linux-arm64-nightly.tar.gz
+            kast-win-x64-nightly.zip
