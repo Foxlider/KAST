@@ -67,8 +67,8 @@
     @if (_logOpen)
     {
     <div style="position:fixed; top:0; right:0; bottom:28px; width:@(_panelWidth)px; z-index:1350;
-        background:rgba(18,17,30,0.92); backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6);
-        border-left:1px solid rgba(255,255,255,.08); box-shadow:-8px 0 32px rgba(0,0,0,.45);">
+        backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6);
+        border-left:1px solid var(--mud-palette-divider); box-shadow:-8px 0 32px rgba(0,0,0,.35);">
         <div style="display:flex; flex-direction:column; height:100%; position:relative;">
 
             @* Resize handle (left edge) *@
@@ -77,7 +77,7 @@
 
             @* Toolbar *@
             <div class="d-flex align-center gap-1 px-2"
-                 style="height:32px; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.07);">
+                 style="height:32px; flex-shrink:0; border-bottom:1px solid var(--mud-palette-divider);">
                 <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Style="opacity:.6; font-size:14px;" />
                 <MudText Typo="Typo.caption" Style="font-weight:600; font-size:11px; letter-spacing:.05em;">LOG CONSOLE
                 </MudText>
@@ -111,13 +111,13 @@
                 }
                 @foreach (var entry in entries)
                 {
-                    <div style="display:flex; gap:8px; border-bottom:1px solid rgba(255,255,255,.02);">
+                    <div style="display:flex; gap:8px; border-bottom:1px solid var(--mud-palette-lines-default);">
                         <span
-                        style="color:rgba(255,255,255,.25); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                        style="color:var(--mud-palette-text-disabled); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
                         <span
                         style="flex-shrink:0; min-width:30px; color:@GetLevelFg(entry.Level);">@GetLevelTag(entry.Level)</span>
                         <span
-                        style="color:rgba(255,255,255,.35); flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                        style="color:var(--mud-palette-text-secondary); opacity:.65; flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                         title="@entry.Category">@ShortCategory(entry.Category)</span>
                         <span style="color:var(--mud-palette-text-primary); word-break:break-word;">@entry.Message</span>
                     </div>
@@ -229,12 +229,12 @@
 
     private static string GetLevelFg(LogLevel? l) => l switch
     {
-        LogLevel.Trace => "rgba(255,255,255,.25)",
-        LogLevel.Debug => "rgba(255,255,255,.4)",
-        LogLevel.Information => "#4fc3f7",
-        LogLevel.Warning => "#ffb545",
-        LogLevel.Error or LogLevel.Critical => "#ff3f5f",
-        _ => "var(--mud-palette-text-secondary)"
+        LogLevel.Trace       => "var(--mud-palette-text-disabled)",
+        LogLevel.Debug       => "var(--mud-palette-text-secondary)",
+        LogLevel.Information => "var(--mud-palette-info)",
+        LogLevel.Warning     => "var(--mud-palette-warning)",
+        LogLevel.Error or LogLevel.Critical => "var(--mud-palette-error)",
+        _                    => "var(--mud-palette-text-secondary)",
     };
 
     private static Color GetLevelMudColor(LogLevel? l) => l switch
