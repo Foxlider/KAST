@@ -4,11 +4,16 @@ namespace KAST.UI.Services;
 
 public class ThemeService(ProtectedLocalStorage storage) : IDisposable
 {
-    private const string StorageKey = "kast_accent_color";
+    private const string AccentKey  = "kast_accent_color";
+    private const string DarkModeKey = "kast_dark_mode";
     private CancellationTokenSource? _cts;
-    private bool _userOverride;
+    private bool _userAccentOverride;
 
-    public string AccentColor { get; private set; } = "#ff6b35"; // default orange
+    /// <summary>Hex accent color applied as Secondary palette entry.</summary>
+    public string AccentColor { get; private set; } = "#FF7043"; // Deep Orange 400
+
+    /// <summary>Whether the dark theme is active.</summary>
+    public bool IsDarkMode { get; private set; } = true;
 
     public event Action? OnChange;
 
@@ -16,30 +21,36 @@ public class ThemeService(ProtectedLocalStorage storage) : IDisposable
     {
         try
         {
-            var result = await storage.GetAsync<string>(StorageKey);
-            if (result.Success && !string.IsNullOrEmpty(result.Value))
+            var accentResult = await storage.GetAsync<string>(AccentKey);
+            if (accentResult.Success && !string.IsNullOrEmpty(accentResult.Value))
             {
-                AccentColor = result.Value;
-                _userOverride = true;
-                OnChange?.Invoke();
+                AccentColor = accentResult.Value;
+                _userAccentOverride = true;
             }
+
+            var darkResult = await storage.GetAsync<bool>(DarkModeKey);
+            if (darkResult.Success)
+                IsDarkMode = darkResult.Value;
         }
-        catch
-        { /* ignore during pre-render or when storage is unavailable */ }
+        catch { /* ignore during pre-render or when storage is unavailable */ }
 
         StartAprilFoolsIfNeeded();
+        OnChange?.Invoke();
     }
 
     public async Task SetAccentAsync(string color)
     {
         if (string.IsNullOrWhiteSpace(color)) return;
         AccentColor = color;
-        _userOverride = true;
-        try
-        {
-            await storage.SetAsync(StorageKey, color);
-        }
-        catch { /* ignore */ }
+        _userAccentOverride = true;
+        try { await storage.SetAsync(AccentKey, color); } catch { }
+        OnChange?.Invoke();
+    }
+
+    public async Task SetDarkModeAsync(bool isDark)
+    {
+        IsDarkMode = isDark;
+        try { await storage.SetAsync(DarkModeKey, isDark); } catch { }
         OnChange?.Invoke();
     }
 
@@ -48,7 +59,7 @@ public class ThemeService(ProtectedLocalStorage storage) : IDisposable
         // treat April 1st in local time; use DateTime.Now
         var localNow = DateTime.Now;
         if (localNow is not { Month: 4, Day: 1 }) return;
-        
+
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
         _ = AprilFoolsLoopAsync(_cts.Token);
@@ -56,11 +67,17 @@ public class ThemeService(ProtectedLocalStorage storage) : IDisposable
 
     private async Task AprilFoolsLoopAsync(CancellationToken ct)
     {
-        var palette = new[] { "#ff6b35", "#ff8a50", "#ffd166", "#4cc9f0", "#4cc9b0", "#e76f51", "#06d6a0" };
+        // Cycle through Material Design 400 hues on April Fools' Day
+        var palette = new[]
+        {
+            "#FF7043", "#FFA726", "#FFCA28", "#66BB6A",
+            "#26C6DA", "#42A5F5", "#5C6BC0", "#AB47BC",
+            "#EC407A", "#EF5350",
+        };
         var idx = 0;
         try
         {
-            while (!ct.IsCancellationRequested && !_userOverride)
+            while (!ct.IsCancellationRequested && !_userAccentOverride)
             {
                 AccentColor = palette[idx % palette.Length];
                 OnChange?.Invoke();

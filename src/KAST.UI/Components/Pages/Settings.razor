@@ -80,11 +80,39 @@
 
                 <MudDivider Class="my-4" />
 
-                <MudText Typo="Typo.subtitle1" Class="mb-2">Appearance</MudText>
-                <MudStack>
-                    <MudColorPicker @bind-Value="_accentMud" ShowAlpha="false" ShowModeSwitch="false" Label="Accent Color" PickerVariant="PickerVariant.Dialog" Palette="_officialPalette" />
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Appearance</MudText>
+
+                @* ── Dark / Light mode ── *@
+                <MudText Typo="Typo.body2" Class="mb-1">Theme</MudText>
+                <div class="d-flex align-center gap-3 mb-4 flex-wrap">
+                    <MudIcon Icon="@(_isDarkMode ? Icons.Material.Filled.DarkMode : Icons.Material.Filled.WbSunny)" />
+                    <MudSwitch @bind-Value="_isDarkMode" Label="@(_isDarkMode ? "Dark" : "Light")" Color="Color.Primary" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="SaveDarkMode">Apply</MudButton>
+                </div>
+
+                @* ── Accent colour swatches ── *@
+                <MudText Typo="Typo.body2" Class="mb-2">Accent Color</MudText>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach (var opt in _accentOptions)
+                    {
+                        var selected = IsAccentSelected(opt.Value);
+                        <MudTooltip Text="@opt.Label" Placement="Placement.Top">
+                            <div @onclick="@(() => SelectAccent(opt.Value))"
+                                 style="@SwatchStyle(opt.Value, selected)" />
+                        </MudTooltip>
+                    }
+                </div>
+
+                @* ── Custom colour picker ── *@
+                <div class="d-flex align-center gap-3 flex-wrap">
+                    <MudColorPicker @bind-Value="_accentMud" ShowAlpha="false" ShowModeSwitch="false"
+                                    Label="Custom color" PickerVariant="PickerVariant.Dialog"
+                                    Style="max-width:220px;" />
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAccent">Apply Accent</MudButton>
-                </MudStack>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.SettingsBackupRestore"
+                               OnClick="ResetToDefaults">Reset Defaults</MudButton>
+                </div>
             </MudCardContent>
         </MudCard>
     </MudTabPanel>
@@ -287,6 +315,7 @@
     private IReadOnlyList<BenchmarkResult>? _benchmarkResults;
 
     private int _activePanelIndex = 0;
+    private bool _isDarkMode;
 
     protected override async Task OnInitializedAsync()
     {
@@ -294,7 +323,8 @@
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
-        _accentMud = ThemeService.AccentColor;
+        _accentMud  = ThemeService.AccentColor;
+        _isDarkMode = ThemeService.IsDarkMode;
 
         // Check if we should navigate to Steam tab (tab=steam in query string)
         var uri = new Uri(Navigation.Uri);
@@ -475,24 +505,68 @@
 
     private BenchmarkResult GetBestBenchmark() => _benchmarkResults!.OrderByDescending(r => r.MbPerSecond).First();
 
-    private MudColor _accentMud = "#ff6b35";
+    private MudColor _accentMud = "#FF7043";
 
-    private readonly IEnumerable<MudColor> _officialPalette = new List<MudColor>
+    // Named Material Design 400/600 accent options
+    private static readonly (string Value, string Label)[] _accentOptions =
+    [
+        ("#FF7043", "Deep Orange 400"),
+        ("#FB8C00", "Orange 600"),
+        ("#FFA726", "Amber 400 / Orange 400"),
+        ("#FFCA28", "Amber 400"),
+        ("#D4E157", "Lime 400"),
+        ("#66BB6A", "Green 400"),
+        ("#26A69A", "Teal 400"),
+        ("#26C6DA", "Cyan 400"),
+        ("#29B6F6", "Light Blue 400"),
+        ("#42A5F5", "Blue 400"),
+        ("#5C6BC0", "Indigo 400"),
+        ("#7E57C2", "Deep Purple 400"),
+        ("#AB47BC", "Purple 400"),
+        ("#EC407A", "Pink 400"),
+        ("#EF5350", "Red 400"),
+        ("#78909C", "Blue Grey 400"),
+    ];
+
+    private void SelectAccent(string color)
     {
-        "#594AE2", // Primary (MudBlazor default)
-        "#FF4081", // Secondary
-        "#1EC8A5", // Tertiary
-        "#2196F3", // Info
-        "#00C853", // Success
-        "#FF9800", // Warning
-        "#F44336", // Error
-        "#ff6b35", // KAST default orange
-    };
+        _accentMud = color;
+    }
+
+    private bool IsAccentSelected(string color)
+    {
+        var current = $"#{_accentMud.R:X2}{_accentMud.G:X2}{_accentMud.B:X2}";
+        return string.Equals(current, color, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string SwatchStyle(string color, bool selected) =>
+        $"width:28px;height:28px;border-radius:50%;background:{color};cursor:pointer;" +
+        $"border:3px solid {(selected ? "var(--mud-palette-text-primary)" : "transparent")};" +
+        $"box-shadow:{(selected ? $"0 0 0 2px {color}" : "none")};" +
+        "transition:transform 120ms;";
+
+    private async Task SaveDarkMode()
+    {
+        await ThemeService.SetDarkModeAsync(_isDarkMode);
+        Snackbar.Add($"Switched to {(_isDarkMode ? "dark" : "light")} mode", Severity.Success);
+    }
 
     private async Task SaveAccent()
     {
-        await ThemeService.SetAccentAsync(_accentMud.ToString());
+        var hex = $"#{_accentMud.R:X2}{_accentMud.G:X2}{_accentMud.B:X2}";
+        await ThemeService.SetAccentAsync(hex);
         Snackbar.Add("Accent color updated", Severity.Success);
+    }
+
+    private async Task ResetToDefaults()
+    {
+        const string defaultAccent = "#FF7043"; // Deep Orange 400
+        const bool   defaultDark   = true;
+        _accentMud  = defaultAccent;
+        _isDarkMode = defaultDark;
+        await ThemeService.SetAccentAsync(defaultAccent);
+        await ThemeService.SetDarkModeAsync(defaultDark);
+        Snackbar.Add("Theme reset to defaults", Severity.Success);
     }
 
     private async Task CreateApiKey()
