@@ -4,8 +4,10 @@ WORKDIR /src
 # Version injected by CI (e.g. 0.2.1 or 0.2.1-nightly.20260520.abc1234)
 ARG APP_VERSION=0.0.0-local
 
-# Copy solution and project files
+# Copy solution, central package management, and project files
 COPY KAST.slnx .
+COPY Directory.Build.props .
+COPY Directory.Packages.props .
 COPY src/KAST.Core/KAST.Core.csproj src/KAST.Core/
 COPY src/KAST.Infrastructure/KAST.Infrastructure.csproj src/KAST.Infrastructure/
 COPY src/KAST.UI/KAST.UI.csproj src/KAST.UI/
