@@ -8,15 +8,13 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
 
-permissions:
-  contents: write   # create GitHub Releases + push CHANGELOG
-  packages: write   # push to GHCR
-
 jobs:
   # ── 1. Gate: run tests before publishing anything ──────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +35,8 @@ jobs:
     name: Publish (${{ matrix.rid }})
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +102,9 @@ jobs:
     name: Docker
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -144,6 +147,8 @@ jobs:
     name: GitHub Release
     needs: [publish, docker]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
