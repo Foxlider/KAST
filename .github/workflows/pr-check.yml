@@ -16,12 +16,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -54,7 +54,7 @@ jobs:
         run: cat ./coverage/report/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload test results & coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-coverage-pr-${{ github.event.pull_request.number }}
@@ -97,7 +97,7 @@ jobs:
   #     name: Conventional Commits — All commits
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v4
+  #       - uses: actions/checkout@v6
   #         with:
   #           fetch-depth: 0
   #       - uses: actions/setup-node@v4
@@ -140,7 +140,7 @@ jobs:
 #     name: Conventional Commits — All commits
 #     runs-on: ubuntu-latest
 #     steps:
-#       - uses: actions/checkout@v4
+#       - uses: actions/checkout@v6
 #         with:
 #           fetch-depth: 0
 #       - uses: actions/setup-node@v4
