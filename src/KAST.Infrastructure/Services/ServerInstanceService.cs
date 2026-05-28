@@ -155,7 +155,7 @@ public class ServerInstanceService(
             return;
 
         // 1) Per-instance config/profile directory: {InstallPath}/KAST/{id}
-        var configDir = Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString());
+        var configDir = GetInstanceConfigDirectory(instance);
         TryDeleteDirectory(configDir, recursive: true);
 
         // 1b) On Linux, clean up the profile symlink we created in the system profiles dir.
@@ -164,7 +164,7 @@ public class ServerInstanceService(
 
         // 2) Mod symlinks created for this instance's mods (don't touch the mod
         //    source itself — that's shared and owned by ModService).
-        var modsDir = Path.Combine(instance.InstallPath, "mods");
+        var modsDir = GetInstanceModsDirectory(instance);
         if (Directory.Exists(modsDir))
         {
             foreach (var modLink in instance.Mods)
@@ -476,7 +476,7 @@ public class ServerInstanceService(
         activity?.SetTag("instance.name",        instance.Name);
         activity?.SetTag("instance.mods_total",  instance.Mods.Count);
 
-        var modsDir = Path.Combine(instance.InstallPath, "mods");
+        var modsDir = GetInstanceModsDirectory(instance);
         Directory.CreateDirectory(modsDir);
 
         int linkedCount = 0;
@@ -505,11 +505,19 @@ public class ServerInstanceService(
 
     private static string GetServerExecutable(ServerInstance instance)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return Path.Combine(instance.InstallPath, "arma3server_x64.exe");
+        var installPath = Path.GetFullPath(instance.InstallPath);
 
-        return Path.Combine(instance.InstallPath, "arma3server_x64");
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return Path.Combine(installPath, "arma3server_x64.exe");
+
+        return Path.Combine(installPath, "arma3server_x64");
     }
+
+    private static string GetInstanceConfigDirectory(ServerInstance instance)
+        => Path.GetFullPath(Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString()));
+
+    private static string GetInstanceModsDirectory(ServerInstance instance)
+        => Path.GetFullPath(Path.Combine(instance.InstallPath, "mods"));
 
     public void WriteConfigFiles(ServerInstance instance)
     {
@@ -517,7 +525,7 @@ public class ServerInstanceService(
             Directory.CreateDirectory(instance.InstallPath);
 
         // Per-instance config directory
-        var configDir = Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString());
+        var configDir = GetInstanceConfigDirectory(instance);
         Directory.CreateDirectory(configDir);
 
         if (instance.ServerCfgContent != null)
@@ -554,7 +562,7 @@ public class ServerInstanceService(
 
     private static string BuildLaunchArguments(ServerInstance instance)
     {
-        var configDir = Path.Combine(instance.InstallPath, "KAST");
+        var configDir = GetInstanceConfigDirectory(instance);
         var profileName = $"server_{instance.Id}";
 
         var args = new List<string>
@@ -638,7 +646,7 @@ public class ServerInstanceService(
         return instance.Mods
             .Where(m => m.IsClientSide)
             .OrderBy(m => m.LoadOrder)
-            .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"))
+            .Select(m => Path.Combine(GetInstanceModsDirectory(instance), $"@{SanitizeModName(m.SteamMod.Name)}"))
             .ToList();
     }
 
@@ -647,7 +655,7 @@ public class ServerInstanceService(
         var serverMods = instance.Mods
             .Where(m => m.IsServerSide)
             .OrderBy(m => m.LoadOrder)
-            .Select(m => Path.Combine(instance.InstallPath, "mods", $"@{SanitizeModName(m.SteamMod.Name)}"));
+            .Select(m => Path.Combine(GetInstanceModsDirectory(instance), $"@{SanitizeModName(m.SteamMod.Name)}"));
 
         return string.Join(";", serverMods);
     }
