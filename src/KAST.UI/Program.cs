@@ -16,10 +16,11 @@ using OpenTelemetry.Trace;
 using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
+var contentRoot = builder.Environment.ContentRootPath;
 var outputSanitizer = new OutputSanitizer(
-    new OutputSanitizer.VirtualPathRoot(AppContext.BaseDirectory, "KAST"),
-    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(builder.Configuration["Kast:ModsDirectory"] ?? "./mods"), "mods"),
-    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(builder.Configuration["Kast:ServersDirectory"] ?? "./servers"), "server"));
+    new OutputSanitizer.VirtualPathRoot(contentRoot, "KAST"),
+    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(contentRoot, builder.Configuration["Kast:ModsDirectory"] ?? "./mods"), "mods"),
+    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(contentRoot, builder.Configuration["Kast:ServersDirectory"] ?? "./servers"), "server"));
 builder.Services.AddSingleton<IOutputSanitizer>(outputSanitizer);
 builder.Host.UseWindowsService(options =>
 {
@@ -204,6 +205,6 @@ _ = Task.Run(async () =>
 
 app.Run();
 
-static string ResolveConfiguredPath(string path) =>
-    Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path));
+static string ResolveConfiguredPath(string contentRoot, string path) =>
+    Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(contentRoot, path));
 

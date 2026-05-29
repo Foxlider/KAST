@@ -75,6 +75,17 @@ public class OutputSanitizerTests
     }
 
     [Fact]
+    public void ToDisplayPath_ConfiguredKastDataModsRootMapsToModsVirtualPath()
+    {
+        var sanitizer = new OutputSanitizer(new OutputSanitizer.VirtualPathRoot("G:/KAST/src/KAST.UI/.KAST_DATA/mods", "mods"));
+
+        var displayPath = sanitizer.ToDisplayPath("G:\\KAST\\src\\KAST.UI\\.KAST_DATA\\mods\\463939057");
+
+        Assert.Equal("mods/463939057", displayPath);
+        AssertNoAbsoluteRoot(displayPath);
+    }
+
+    [Fact]
     public void ToDisplayPath_UnknownAbsolutePathOnlyShowsSafeFileName()
     {
         var sanitizer = new OutputSanitizer("C:/apps/KAST/.KAST_DATA/mods");
