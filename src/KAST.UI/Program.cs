@@ -43,6 +43,7 @@ builder.Services.AddMudServices(config =>
 });
 builder.Services.AddScoped<KAST.UI.Services.ThemeService>();
 builder.Services.AddScoped<KastInternalUrlProvider>();
+builder.Services.AddSingleton<ModDownloadManager>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 

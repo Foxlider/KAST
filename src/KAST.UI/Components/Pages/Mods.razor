@@ -6,6 +6,7 @@
 @inject IModService ModService
 @inject IAppEventBroadcaster Broadcaster
 @inject ISnackbar Snackbar
+@inject ModDownloadManager DownloadManager
 @implements IAsyncDisposable
 
 <PageTitle>KAST -- Mods</PageTitle>
@@ -54,7 +55,7 @@
         <MudButton Variant="Variant.Filled" Color="Color.Warning"
                    StartIcon="@Icons.Material.Filled.CloudDownload"
                    OnClick="UpdateAllOutdated"
-                   Disabled="_isUpdatingAll || _isCheckingUpdates || _taskProgress.Count > 0">
+                   Disabled="_isUpdatingAll || _isCheckingUpdates || DownloadManager.ActiveCount > 0">
             @if (_isCheckingUpdates)
             {
                 @("Checking…")
@@ -656,8 +657,6 @@ else
 
     private readonly Dictionary<int, double> _taskProgress = new(); // progress for active downloads
     private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
-    private readonly Dictionary<int, CancellationTokenSource> _downloadCts = new();
-    private CancellationTokenSource? _bulkUpdateCts;
     private readonly HashSet<int> _checkingMods = new();
 
     private string _workshopIdInput = "";
@@ -684,9 +683,6 @@ else
     {
         Broadcaster.OnModDownloadProgress -= HandleDownloadProgress;
         Broadcaster.OnModStatusChanged    -= HandleStatusChanged;
-        foreach (var cts in _downloadCts.Values) cts.Cancel();
-        _bulkUpdateCts?.Cancel();
-        _bulkUpdateCts?.Dispose();
         await Task.CompletedTask;
     }
 
@@ -724,6 +720,14 @@ else
                                            m.Status is ModStatus.NotInstalled or
                                                        ModStatus.UpdateAvailable or
                                                        ModStatus.Error);
+
+        foreach (var modId in _mods
+            .Where(m => m.Status is ModStatus.Downloading or ModStatus.Updating)
+            .Select(m => m.Id))
+        {
+            if (!_taskIds.Contains(modId))
+                _taskIds.Insert(0, modId);
+        }
     }
 
     private double GetModProgress(int modId) =>
@@ -886,45 +890,32 @@ else
         Snackbar.Add("Mod imported successfully", Severity.Success);
     }
 
-    private async Task DownloadMod(SteamMod mod, CancellationToken parentCt = default)
+    private Task DownloadMod(SteamMod mod)
     {
-        var cts = parentCt.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(parentCt)
-            : new CancellationTokenSource();
-        _downloadCts[mod.Id] = cts;
-        try
+        if (QueueModDownload(mod))
         {
-            var isUpdate = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error;
-            mod.Status = isUpdate ? ModStatus.Updating : ModStatus.Downloading;
-            _taskProgress[mod.Id] = 0;
-            if (!_taskIds.Contains(mod.Id))
-                _taskIds.Insert(0, mod.Id);
+            Snackbar.Add($"{mod.Name}: download queued", Severity.Info);
             StateHasChanged();
+        }
+        else
+        {
+            Snackbar.Add($"{mod.Name}: download already active", Severity.Info);
+        }
 
-            if (isUpdate) await ModService.UpdateModFilesAsync(mod.Id, progress: null, cts.Token);
-            else          await ModService.DownloadModAsync(mod.Id,     progress: null, cts.Token);
+        return Task.CompletedTask;
+    }
 
-            _taskProgress.Remove(mod.Id);
-            await RefreshMods();
-            Snackbar.Add($"Downloaded {mod.Name}", Severity.Success);
-        }
-        catch (OperationCanceledException)
-        {
-            _taskProgress.Remove(mod.Id);
-            Snackbar.Add($"{mod.Name}: cancelled", Severity.Info);
-            await RefreshMods();
-        }
-        catch (Exception ex)
-        {
-            _taskProgress.Remove(mod.Id);
-            Snackbar.Add($"Download failed: {ex.Message}", Severity.Error);
-            await RefreshMods();
-        }
-        finally
-        {
-            _downloadCts.Remove(mod.Id);
-            cts.Dispose();
-        }
+    private bool QueueModDownload(SteamMod mod)
+    {
+        var isUpdate = mod.Status is ModStatus.UpdateAvailable or ModStatus.Installed or ModStatus.Error;
+        if (!DownloadManager.StartDownload(mod.Id, isUpdate))
+            return false;
+
+        mod.Status = isUpdate ? ModStatus.Updating : ModStatus.Downloading;
+        _taskProgress[mod.Id] = 0;
+        if (!_taskIds.Contains(mod.Id))
+            _taskIds.Insert(0, mod.Id);
+        return true;
     }
 
     private async Task DownloadModFromDialog()
@@ -976,7 +967,7 @@ else
             _isCheckingUpdates = false;
             StateHasChanged();
 
-            // Phase 2: fire individual downloads — each gets its own CTS linked to the bulk CTS
+            // Phase 2: fire individual downloads. They continue after page navigation.
             var pendingMods = _mods
                 .Where(m => m.Source == ModSource.SteamWorkshop &&
                             m.Status is ModStatus.NotInstalled or ModStatus.UpdateAvailable or ModStatus.Error)
@@ -986,11 +977,15 @@ else
                 Snackbar.Add("All mods are already up to date", Severity.Success);
                 return;
             }
-            _bulkUpdateCts?.Dispose();
-            _bulkUpdateCts = new CancellationTokenSource();
+            var queued = 0;
             foreach (var mod in pendingMods)
-                _ = DownloadMod(mod, _bulkUpdateCts.Token);
-            Snackbar.Add($"Updating {pendingMods.Count} mod(s) in parallel…", Severity.Info);
+            {
+                if (QueueModDownload(mod))
+                    queued++;
+            }
+
+            StateHasChanged();
+            Snackbar.Add($"Updating {queued} mod(s) in parallel…", Severity.Info);
         }
         catch (Exception ex) { Snackbar.Add($"Update failed: {ex.Message}", Severity.Error); }
         finally
@@ -1004,15 +999,14 @@ else
     private static bool CanDownloadOrUpdate(SteamMod mod) => mod.Source == ModSource.SteamWorkshop;
     private void CancelModDownload(int modId)
     {
-        if (_downloadCts.TryGetValue(modId, out var cts))
-            cts.Cancel();
-        // For mods started via bulk update, use Cancel All
+        if (DownloadManager.Cancel(modId))
+            Snackbar.Add("Download cancellation requested", Severity.Info);
     }
 
     private void CancelAllDownloads()
     {
-        foreach (var cts in _downloadCts.Values) cts.Cancel();
-        _bulkUpdateCts?.Cancel();
+        DownloadManager.CancelAll();
+        Snackbar.Add("Download cancellations requested", Severity.Info);
     }
 
     private async Task CheckSingleModUpdate(SteamMod mod)
