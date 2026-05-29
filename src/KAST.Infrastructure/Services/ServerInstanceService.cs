@@ -7,6 +7,7 @@ using KAST.Core.Models;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
@@ -15,7 +16,8 @@ public class ServerInstanceService(
     KastDbContext db,
     IProcessManagerService processManager,
     IAppEventBroadcaster broadcaster,
-    ILogger<ServerInstanceService> logger) : IServerInstanceService
+    ILogger<ServerInstanceService> logger,
+    IHostEnvironment? hostEnvironment = null) : IServerInstanceService
 {
     public async Task<IReadOnlyList<ServerInstance>> GetAllInstancesAsync(CancellationToken ct = default)
         => await db.ServerInstances
@@ -193,7 +195,7 @@ public class ServerInstanceService(
         // 3) Full install path — only when no other instance is using it.
         if (wipeInstallPath)
         {
-            TryDeleteDirectory(instance.InstallPath, recursive: true);
+            TryDeleteDirectory(GetInstanceInstallDirectory(instance), recursive: true);
             logger.LogInformation(
                 "Wiped install directory {Path} for instance {Id}",
                 instance.InstallPath, instance.Id);
@@ -503,9 +505,9 @@ public class ServerInstanceService(
         activity?.SetTag("instance.mods_linked", linkedCount);
     }
 
-    private static string GetServerExecutable(ServerInstance instance)
+    private string GetServerExecutable(ServerInstance instance)
     {
-        var installPath = Path.GetFullPath(instance.InstallPath);
+        var installPath = GetInstanceInstallDirectory(instance);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return Path.Combine(installPath, "arma3server_x64.exe");
@@ -513,16 +515,24 @@ public class ServerInstanceService(
         return Path.Combine(installPath, "arma3server_x64");
     }
 
-    private static string GetInstanceConfigDirectory(ServerInstance instance)
-        => Path.GetFullPath(Path.Combine(instance.InstallPath, "KAST", instance.Id.ToString()));
+    private string GetInstanceInstallDirectory(ServerInstance instance)
+    {
+        var installPath = Environment.ExpandEnvironmentVariables(instance.InstallPath);
+        return Path.IsPathFullyQualified(installPath)
+            ? Path.GetFullPath(installPath)
+            : Path.GetFullPath(installPath, hostEnvironment?.ContentRootPath ?? AppContext.BaseDirectory);
+    }
 
-    private static string GetInstanceModsDirectory(ServerInstance instance)
-        => Path.GetFullPath(Path.Combine(instance.InstallPath, "mods"));
+    private string GetInstanceConfigDirectory(ServerInstance instance)
+        => Path.Combine(GetInstanceInstallDirectory(instance), "KAST", instance.Id.ToString());
+
+    private string GetInstanceModsDirectory(ServerInstance instance)
+        => Path.Combine(GetInstanceInstallDirectory(instance), "mods");
 
     public void WriteConfigFiles(ServerInstance instance)
     {
         if (!string.IsNullOrEmpty(instance.InstallPath))
-            Directory.CreateDirectory(instance.InstallPath);
+            Directory.CreateDirectory(GetInstanceInstallDirectory(instance));
 
         // Per-instance config directory
         var configDir = GetInstanceConfigDirectory(instance);
@@ -560,7 +570,7 @@ public class ServerInstanceService(
         return $"{executable} {args}";
     }
 
-    private static string BuildLaunchArguments(ServerInstance instance)
+    private string BuildLaunchArguments(ServerInstance instance)
     {
         var configDir = GetInstanceConfigDirectory(instance);
         var profileName = $"server_{instance.Id}";
@@ -613,7 +623,7 @@ public class ServerInstanceService(
             args.Add($"-cpuCount={cfg.CpuCount}");
     }
 
-    private static void AddModArgs(ServerInstance instance, List<string> args)
+    private void AddModArgs(ServerInstance instance, List<string> args)
     {
         var dlcMods = GetDlcModsList(instance);
         var clientMods = GetClientModsList(instance);
@@ -641,7 +651,7 @@ public class ServerInstanceService(
         return dlcMods;
     }
 
-    private static List<string> GetClientModsList(ServerInstance instance)
+    private List<string> GetClientModsList(ServerInstance instance)
     {
         return instance.Mods
             .Where(m => m.IsClientSide)
@@ -650,7 +660,7 @@ public class ServerInstanceService(
             .ToList();
     }
 
-    private static string GetServerModsList(ServerInstance instance)
+    private string GetServerModsList(ServerInstance instance)
     {
         var serverMods = instance.Mods
             .Where(m => m.IsServerSide)

@@ -209,6 +209,7 @@ public class ServerInstanceServiceTests : IDisposable
             InstallPath = relativeInstallPath,
             Port = 2302,
             ServerCfgContent = "BattlEye = 0;",
+            ArmaProfileContent = "class DifficultyPresets {};",
             BasicCfgContent = """
                               // KAST Basic Server Configuration
 
@@ -231,7 +232,7 @@ public class ServerInstanceServiceTests : IDisposable
 
         var commandLine = _sut.GetCommandLine(instance);
 
-        var fullInstallPath = Path.GetFullPath(relativeInstallPath);
+        var fullInstallPath = Path.GetFullPath(relativeInstallPath, AppContext.BaseDirectory);
         var configDir = Path.Combine(fullInstallPath, "KAST", instance.Id.ToString());
         var executableName = OperatingSystem.IsWindows()
             ? "arma3server_x64.exe"
