@@ -457,10 +457,10 @@ public partial class ServerConfigService : IServerConfigService
             SetArrayValue(ast, "motd", data.Motd.Split('\n').ToList());
         if (data.Admins != null)
             SetArrayValue(ast, "admins", data.Admins.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
-        
+
         var kickSlowVal = data.KickClientOnSlowNetwork ? "1" : "0";
         SetArrayValue(ast, "kickClientsOnSlowNetwork", [kickSlowVal, kickSlowVal, kickSlowVal, kickSlowVal]);
-        
+
         if (!string.IsNullOrEmpty(data.HeadlessClients))
             SetArrayValue(ast, "headlessClients", data.HeadlessClients.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
         if (!string.IsNullOrEmpty(data.LocalClient))

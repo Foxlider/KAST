@@ -23,37 +23,37 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
     {
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.steam.mod_download", ActivityKind.Internal);
-        activity?.SetTag("workshop.id",  request.WorkshopId);
-        activity?.SetTag("destination",  request.DestinationPath);
+        activity?.SetTag("workshop.id", request.WorkshopId);
+        activity?.SetTag("destination", request.DestinationPath);
 
         try
         {
-        state.BeginStep(0);
-        state.AddLog($"Downloading Workshop item {request.WorkshopId} → {request.DestinationPath}");
+            state.BeginStep(0);
+            state.AddLog($"Downloading Workshop item {request.WorkshopId} → {request.DestinationPath}");
 
-        if (!steam.IsConnected)
-        {
-            state.AddLog("Connecting to Steam (anonymous)...");
-            await steam.LoginAnonymousAsync(ct);
-        }
-        if (!steam.IsConnected)
-            throw new InvalidOperationException("Failed to connect to Steam.");
+            if (!steam.IsConnected)
+            {
+                state.AddLog("Connecting to Steam (anonymous)...");
+                await steam.LoginAnonymousAsync(ct);
+            }
+            if (!steam.IsConnected)
+                throw new InvalidOperationException("Failed to connect to Steam.");
 
-        var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
-        var installedManifestId = await steam.DownloadWorkshopItemAsync(request.WorkshopId, request.DestinationPath, progress, ct);
-        state.InstalledManifestId = installedManifestId;
+            var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
+            var installedManifestId = await steam.DownloadWorkshopItemAsync(request.WorkshopId, request.DestinationPath, progress, ct);
+            state.InstalledManifestId = installedManifestId;
 
-        state.CompleteStep(0);
-        state.AddLog("Download complete.");
+            state.CompleteStep(0);
+            state.AddLog("Download complete.");
 
-        state.BeginStep(1);
-        state.AddLog("Calculating size on disk...");
+            state.BeginStep(1);
+            state.AddLog("Calculating size on disk...");
 
-        long size = fs.GetDirectorySize(request.DestinationPath);
-        state.AddLog($"Size: {size / (1024.0 * 1024.0):F1} MiB");
-        activity?.SetTag("mod.size_bytes", size);
+            long size = fs.GetDirectorySize(request.DestinationPath);
+            state.AddLog($"Size: {size / (1024.0 * 1024.0):F1} MiB");
+            activity?.SetTag("mod.size_bytes", size);
 
-        state.CompleteStep(1);
+            state.CompleteStep(1);
         }
         catch (Exception ex)
         {

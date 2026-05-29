@@ -68,29 +68,29 @@ public class ServerInstanceService(
         await db.ServerInstances
             .Where(s => s.Id == instance.Id)
             .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.Name,                instance.Name)
-                .SetProperty(x => x.InstallPath,         instance.InstallPath)
-                .SetProperty(x => x.Port,                instance.Port)
-                .SetProperty(x => x.SteamQueryPort,      instance.SteamQueryPort)
-                .SetProperty(x => x.RestartPolicy,       instance.RestartPolicy)
-                .SetProperty(x => x.MaxRestartAttempts,  instance.MaxRestartAttempts)
-                .SetProperty(x => x.AutoStartTime,       instance.AutoStartTime)
-                .SetProperty(x => x.AutoStopTime,        instance.AutoStopTime)
-                .SetProperty(x => x.ScheduleEnabled,     instance.ScheduleEnabled)
-                .SetProperty(x => x.ServerCfgContent,    instance.ServerCfgContent)
-                .SetProperty(x => x.BasicCfgContent,     instance.BasicCfgContent)
-                .SetProperty(x => x.ArmaProfileContent,  instance.ArmaProfileContent)
-                .SetProperty(x => x.AdditionalParameters,instance.AdditionalParameters)
-                .SetProperty(x => x.ContactDlc,          instance.ContactDlc)
-                .SetProperty(x => x.GmDlc,               instance.GmDlc)
-                .SetProperty(x => x.PfDlc,               instance.PfDlc)
-                .SetProperty(x => x.CslaDlc,             instance.CslaDlc)
-                .SetProperty(x => x.WsDlc,               instance.WsDlc)
-                .SetProperty(x => x.SpeDlc,              instance.SpeDlc)
-                .SetProperty(x => x.RfDlc,               instance.RfDlc)
-                .SetProperty(x => x.EfDlc,               instance.EfDlc)
+                .SetProperty(x => x.Name, instance.Name)
+                .SetProperty(x => x.InstallPath, instance.InstallPath)
+                .SetProperty(x => x.Port, instance.Port)
+                .SetProperty(x => x.SteamQueryPort, instance.SteamQueryPort)
+                .SetProperty(x => x.RestartPolicy, instance.RestartPolicy)
+                .SetProperty(x => x.MaxRestartAttempts, instance.MaxRestartAttempts)
+                .SetProperty(x => x.AutoStartTime, instance.AutoStartTime)
+                .SetProperty(x => x.AutoStopTime, instance.AutoStopTime)
+                .SetProperty(x => x.ScheduleEnabled, instance.ScheduleEnabled)
+                .SetProperty(x => x.ServerCfgContent, instance.ServerCfgContent)
+                .SetProperty(x => x.BasicCfgContent, instance.BasicCfgContent)
+                .SetProperty(x => x.ArmaProfileContent, instance.ArmaProfileContent)
+                .SetProperty(x => x.AdditionalParameters, instance.AdditionalParameters)
+                .SetProperty(x => x.ContactDlc, instance.ContactDlc)
+                .SetProperty(x => x.GmDlc, instance.GmDlc)
+                .SetProperty(x => x.PfDlc, instance.PfDlc)
+                .SetProperty(x => x.CslaDlc, instance.CslaDlc)
+                .SetProperty(x => x.WsDlc, instance.WsDlc)
+                .SetProperty(x => x.SpeDlc, instance.SpeDlc)
+                .SetProperty(x => x.RfDlc, instance.RfDlc)
+                .SetProperty(x => x.EfDlc, instance.EfDlc)
                 .SetProperty(x => x.HeadlessClientCount, instance.HeadlessClientCount)
-                .SetProperty(x => x.LastModified,        instance.LastModified),
+                .SetProperty(x => x.LastModified, instance.LastModified),
             ct);
 
         return instance;
@@ -107,7 +107,7 @@ public class ServerInstanceService(
 
         using var activity = KastActivitySources.Instances.StartActivity(
             "kast.instance.delete", ActivityKind.Internal);
-        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.id", id);
         activity?.SetTag("instance.name", instance.Name);
 
         if (instance.Status == ServerInstanceStatus.Running)
@@ -121,7 +121,7 @@ public class ServerInstanceService(
                 .AnyAsync(s => s.Id != id && s.InstallPath == installPath, ct);
 
         activity?.SetTag("instance.install_path", installPath ?? "");
-        activity?.SetTag("instance.path_shared",  isInstallPathShared);
+        activity?.SetTag("instance.path_shared", isInstallPathShared);
 
         db.ServerInstances.Remove(instance);
         await db.SaveChangesAsync(ct);
@@ -137,7 +137,7 @@ public class ServerInstanceService(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = ex.GetType().Name,
+                ["exception.type"] = ex.GetType().Name,
                 ["exception.message"] = ex.Message
             }));
             logger.LogError(ex,
@@ -237,7 +237,7 @@ public class ServerInstanceService(
 
         using var activity = KastActivitySources.Instances.StartActivity(
             "kast.instance.start", ActivityKind.Internal);
-        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.id", id);
         activity?.SetTag("instance.name", instance.Name);
         activity?.SetTag("instance.port", instance.Port);
 
@@ -317,7 +317,7 @@ public class ServerInstanceService(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = ex.GetType().Name,
+                ["exception.type"] = ex.GetType().Name,
                 ["exception.message"] = ex.Message
             }));
             // If the process never got a PID the server never actually ran — reset to Stopped
@@ -345,7 +345,7 @@ public class ServerInstanceService(
 
         using var activity = KastActivitySources.Instances.StartActivity(
             "kast.instance.stop", ActivityKind.Internal);
-        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.id", id);
         activity?.SetTag("instance.name", instance.Name);
         if (instance.ProcessId.HasValue)
             activity?.SetTag("instance.pid", instance.ProcessId.Value);
@@ -382,7 +382,7 @@ public class ServerInstanceService(
 
         using var activity = KastActivitySources.Instances.StartActivity(
             "kast.instance.restart", ActivityKind.Internal);
-        activity?.SetTag("instance.id",   id);
+        activity?.SetTag("instance.id", id);
         activity?.SetTag("instance.name", instance.Name);
 
         instance.Status = ServerInstanceStatus.Restarting;
@@ -399,7 +399,7 @@ public class ServerInstanceService(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = ex.GetType().Name,
+                ["exception.type"] = ex.GetType().Name,
                 ["exception.message"] = ex.Message
             }));
             throw;
@@ -474,9 +474,9 @@ public class ServerInstanceService(
 
         using var activity = KastActivitySources.Instances.StartActivity(
             "kast.instance.link_mods", ActivityKind.Internal);
-        activity?.SetTag("instance.id",         instanceId);
-        activity?.SetTag("instance.name",        instance.Name);
-        activity?.SetTag("instance.mods_total",  instance.Mods.Count);
+        activity?.SetTag("instance.id", instanceId);
+        activity?.SetTag("instance.name", instance.Name);
+        activity?.SetTag("instance.mods_total", instance.Mods.Count);
 
         var modsDir = GetInstanceModsDirectory(instance);
         Directory.CreateDirectory(modsDir);

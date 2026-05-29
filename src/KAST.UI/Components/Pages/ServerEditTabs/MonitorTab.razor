@@ -120,73 +120,73 @@
 
     private async Task InitializeSignalR()
     {
-        _hubConnection = new HubConnectionBuilder()
-            .WithUrl(InternalUrls.GetMonitoringHubUri())
-            .WithAutomaticReconnect()
-            .Build();
-
-        _hubConnection.Reconnecting += _ =>
-        {
-            _monitoringConnected = false;
-            _monitoringError = "Monitoring connection interrupted.";
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hubConnection.Reconnected += _ =>
-        {
-            _monitoringConnected = true;
-            _monitoringError = null;
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hubConnection.Closed += error =>
-        {
-            _monitoringConnected = false;
-            _monitoringError = "Monitoring connection closed.";
-            if (error is not null)
-                Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
-        {
-            if (entry.ServerInstanceId != Instance.Id) return;
-            _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
-            while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
-            if (_followConsole) _scrollConsole = true;
-            InvokeAsync(StateHasChanged);
-        });
-
-        _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
-        {
-            if (evt.ServerInstanceId != Instance.Id) return;
-            if (Enum.TryParse<ServerInstanceStatus>(evt.NewStatus, out var status))
-            {
-                Instance.Status = status;
-                if (status is ServerInstanceStatus.Stopped or ServerInstanceStatus.Crashed)
-                {
-                    Instance.ProcessId = null;
-                    Instance.StartedAt = null;
-                    _monitorCpu = 0;
-                    _monitorMemory = 0;
-                    _monitorPlayerCount = 0;
-                }
-                await OnStatusChanged.InvokeAsync();
-                await InvokeAsync(StateHasChanged);
-            }
-        });
-
-        _hubConnection.On<InstanceMetricsUpdatedEvent>("InstanceMetricsUpdated", async evt =>
-        {
-            if (evt.ServerInstanceId != Instance.Id) return;
-            _monitorCpu = evt.CpuPercent;
-            _monitorMemory = evt.MemoryBytes;
-            _monitorPlayerCount = evt.PlayerCount;
-            await InvokeAsync(StateHasChanged);
-        });
-
         try
         {
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(InternalUrls.GetMonitoringHubUri())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.Reconnecting += _ =>
+            {
+                _monitoringConnected = false;
+                _monitoringError = "Monitoring connection interrupted.";
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hubConnection.Reconnected += _ =>
+            {
+                _monitoringConnected = true;
+                _monitoringError = null;
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hubConnection.Closed += error =>
+            {
+                _monitoringConnected = false;
+                _monitoringError = "Monitoring connection closed.";
+                if (error is not null)
+                    Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
+            {
+                if (entry.ServerInstanceId != Instance.Id) return;
+                _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
+                while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
+                if (_followConsole) _scrollConsole = true;
+                InvokeAsync(StateHasChanged);
+            });
+
+            _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
+            {
+                if (evt.ServerInstanceId != Instance.Id) return;
+                if (Enum.TryParse<ServerInstanceStatus>(evt.NewStatus, out var status))
+                {
+                    Instance.Status = status;
+                    if (status is ServerInstanceStatus.Stopped or ServerInstanceStatus.Crashed)
+                    {
+                        Instance.ProcessId = null;
+                        Instance.StartedAt = null;
+                        _monitorCpu = 0;
+                        _monitorMemory = 0;
+                        _monitorPlayerCount = 0;
+                    }
+                    await OnStatusChanged.InvokeAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+            });
+
+            _hubConnection.On<InstanceMetricsUpdatedEvent>("InstanceMetricsUpdated", async evt =>
+            {
+                if (evt.ServerInstanceId != Instance.Id) return;
+                _monitorCpu = evt.CpuPercent;
+                _monitorMemory = evt.MemoryBytes;
+                _monitorPlayerCount = evt.PlayerCount;
+                await InvokeAsync(StateHasChanged);
+            });
+
             await _hubConnection.StartAsync();
             _monitoringConnected = true;
             _monitoringError = null;
@@ -197,6 +197,11 @@
             _monitoringConnected = false;
             _monitoringError = ex.Message;
             Logger.LogWarning(ex, "Failed to connect to monitoring SignalR hub.");
+            if (_hubConnection is not null)
+            {
+                await _hubConnection.DisposeAsync();
+                _hubConnection = null;
+            }
         }
     }
 

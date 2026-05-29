@@ -132,7 +132,7 @@ internal sealed class CdnServerPool : IDisposable
 
                 using var refillActivity = KastActivitySources.Steam.StartActivity(
                     "kast.steam.cdn_pool.refill", ActivityKind.Internal);
-                refillActivity?.SetTag("cdn.cell_id",          CellId);
+                refillActivity?.SetTag("cdn.cell_id", CellId);
                 refillActivity?.SetTag("cdn.pool_size_before", _available.Count);
 
                 try
@@ -172,8 +172,8 @@ internal sealed class CdnServerPool : IDisposable
                     _logger.LogInformation("CDN pool refilled with {Count} servers (cell {Cell}, best: {Host})",
                         sorted.Count, CellId, sorted.FirstOrDefault()?.Host ?? "none");
 
-                    refillActivity?.SetTag("cdn.servers_added",  sorted.Count);
-                    refillActivity?.SetTag("cdn.best_server",    sorted.FirstOrDefault()?.Host ?? "none");
+                    refillActivity?.SetTag("cdn.servers_added", sorted.Count);
+                    refillActivity?.SetTag("cdn.best_server", sorted.FirstOrDefault()?.Host ?? "none");
                     refillActivity?.SetTag("cdn.pool_size_after", _available.Count);
                 }
                 catch (Exception refillEx) when (refillEx is not OperationCanceledException)
@@ -181,7 +181,7 @@ internal sealed class CdnServerPool : IDisposable
                     refillActivity?.SetStatus(ActivityStatusCode.Error, refillEx.Message);
                     refillActivity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
                     {
-                        ["exception.type"]    = refillEx.GetType().Name,
+                        ["exception.type"] = refillEx.GetType().Name,
                         ["exception.message"] = refillEx.Message
                     }));
                     throw;

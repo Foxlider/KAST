@@ -43,39 +43,39 @@
         await RefreshAsync();
         Nav.LocationChanged += OnLocationChanged;
 
-        _hub = new HubConnectionBuilder()
-            .WithUrl(InternalUrls.GetMonitoringHubUri())
-            .WithAutomaticReconnect()
-            .Build();
-
-        _hub.Reconnecting += _ =>
-        {
-            _monitoringUnavailable = true;
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hub.Reconnected += _ =>
-        {
-            _monitoringUnavailable = false;
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hub.Closed += error =>
-        {
-            _monitoringUnavailable = true;
-            if (error is not null)
-                Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
-            return InvokeAsync(StateHasChanged);
-        };
-
-        _hub.On<ServerStatusChangedEvent>("ServerStatusChanged", async _ =>
-        {
-            await RefreshAsync();
-            await InvokeAsync(StateHasChanged);
-        });
-
         try
         {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(InternalUrls.GetMonitoringHubUri())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.Reconnecting += _ =>
+            {
+                _monitoringUnavailable = true;
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hub.Reconnected += _ =>
+            {
+                _monitoringUnavailable = false;
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hub.Closed += error =>
+            {
+                _monitoringUnavailable = true;
+                if (error is not null)
+                    Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
+                return InvokeAsync(StateHasChanged);
+            };
+
+            _hub.On<ServerStatusChangedEvent>("ServerStatusChanged", async _ =>
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            });
+
             await _hub.StartAsync();
             _monitoringUnavailable = false;
         }
@@ -83,6 +83,11 @@
         {
             _monitoringUnavailable = true;
             Logger.LogWarning(ex, "Failed to connect to monitoring SignalR hub.");
+            if (_hub is not null)
+            {
+                await _hub.DisposeAsync();
+                _hub = null;
+            }
         }
     }
 

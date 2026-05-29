@@ -4,7 +4,7 @@ namespace KAST.UI.Services;
 
 public class ThemeService(ProtectedLocalStorage storage) : IDisposable
 {
-    private const string AccentKey  = "kast_accent_color";
+    private const string AccentKey = "kast_accent_color";
     private const string DarkModeKey = "kast_dark_mode";
     private CancellationTokenSource? _cts;
     private bool _userAccentOverride;

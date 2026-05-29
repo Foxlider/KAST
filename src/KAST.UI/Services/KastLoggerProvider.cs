@@ -16,7 +16,7 @@ internal sealed class KastLogger(KastLogStore store, string category) : ILogger
 {
     public bool IsEnabled(LogLevel logLevel)
     {
-        return logLevel >= LogLevel.Warning 
+        return logLevel >= LogLevel.Warning
             || category.StartsWith("KAST.", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -29,11 +29,11 @@ internal sealed class KastLogger(KastLogStore store, string category) : ILogger
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        if (!IsEnabled(logLevel)) 
+        if (!IsEnabled(logLevel))
             return;
 
         var message = formatter(state, exception);
-        if (exception != null) 
+        if (exception != null)
             message += $"\n{exception}";
 
         store.Add(new AppLogEntry(DateTime.Now, logLevel, category, message));

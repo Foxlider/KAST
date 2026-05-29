@@ -59,7 +59,7 @@ public class SteamWebApiClientTests
         var handler = new RecordingHandler((req, _) =>
         {
             seenRequest = req;
-          seenFormBody = req.Content is null ? null : req.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            seenFormBody = req.Content is null ? null : req.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")

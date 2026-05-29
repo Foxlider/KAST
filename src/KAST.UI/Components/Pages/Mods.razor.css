@@ -1,12 +1,9 @@
 /* ── Downloads fixed overlay panel ─────────────────────────────────────── */
-/* Sits above the scrollable content, below the footer (z:1200) */
 .dl-fixed-panel {
-    position: fixed;
-    bottom: 28px;
-    left: var(--mud-drawer-width-left, 0px);
-    right: 0;
+    position: relative;
     z-index: 1100;
-    padding: 0 16px;
+    margin-top: 12px;
+    padding-bottom: 4px;
 }
 
 /* Scrollable download rows inside the expansion panel body */
@@ -159,4 +156,15 @@
 
 .mod-description a:hover {
     text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+    .dl-fixed-panel {
+        margin-left: -8px;
+        margin-right: -8px;
+    }
+
+    .dl-body {
+        max-height: 42vh;
+    }
 }

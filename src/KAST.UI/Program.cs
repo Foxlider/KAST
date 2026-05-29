@@ -58,6 +58,7 @@ builder.Services.AddSingleton<ServerConsoleStore>();
 
 // ── Event broadcaster (bridges domain events → SignalR) ──────────────────────
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();
+builder.Services.AddSingleton<MonitoringSnapshotService>();
 
 // ── Monitoring state (circuit-scoped, survives page navigation) ──────────────
 builder.Services.AddScoped<MonitoringStateService>();
@@ -72,7 +73,7 @@ var telemetry = builder.Configuration.GetSection("Telemetry");
 if (telemetry.GetValue("Enabled", true))
 {
     var otlpEndpoint = telemetry["OtlpEndpoint"] ?? "http://localhost:4317";
-    var serviceName  = telemetry["ServiceName"]  ?? KastActivitySources.ServiceName;
+    var serviceName = telemetry["ServiceName"] ?? KastActivitySources.ServiceName;
 
     // Attach ILogger calls as span events so they appear inside traces in Jaeger
     builder.Logging.AddProvider(new ActivityEventLoggerProvider());

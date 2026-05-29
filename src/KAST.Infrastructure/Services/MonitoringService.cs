@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace KAST.Infrastructure.Services;
 
@@ -45,16 +46,26 @@ public class MonitoringService(IProcessManagerService processManager, Data.KastD
 
     public async Task<IReadOnlyList<InstanceMetrics>> GetAllInstanceMetricsAsync(CancellationToken ct = default)
     {
-        var instances = db.ServerInstances.Where(s => s.ProcessId != null).ToList();
-        var results = new List<InstanceMetrics>();
+        var instances = await db.ServerInstances
+            .AsNoTracking()
+            .Where(s => s.ProcessId != null)
+            .Select(s => new { s.Id, ProcessId = s.ProcessId!.Value })
+            .ToListAsync(ct);
 
-        foreach (var instance in instances)
+        var samples = await Task.WhenAll(instances.Select(async instance =>
         {
-            var m = await GetInstanceMetricsAsync(instance.Id, ct);
-            if (m != null) results.Add(m);
-        }
+            var processMetrics = await processManager.GetProcessMetricsAsync(instance.ProcessId, ct);
+            return processMetrics is null
+                ? null
+                : new InstanceMetrics
+                {
+                    ServerInstanceId = instance.Id,
+                    CpuUsagePercent = processMetrics.Value.CpuPercent,
+                    MemoryUsageBytes = processMetrics.Value.MemoryBytes
+                };
+        }));
 
-        return results;
+        return samples.Where(m => m is not null).Select(m => m!).ToList();
     }
 
     private static async Task ReadLinuxCpuAsync(HostMetrics metrics, CancellationToken ct)

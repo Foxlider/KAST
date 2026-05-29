@@ -37,11 +37,11 @@ public class ContentOrchestrator(
 
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.queued", ActivityKind.Internal);
-        activity?.SetTag("content.key",             key);
-        activity?.SetTag("content.type",            ContentType.Server.ToString());
-        activity?.SetTag("content.destination",     installPath);
-        activity?.SetTag("content.instance_id",     instanceId);
-        activity?.SetTag("content.instance_name",   instance.Name);
+        activity?.SetTag("content.key", key);
+        activity?.SetTag("content.type", ContentType.Server.ToString());
+        activity?.SetTag("content.destination", installPath);
+        activity?.SetTag("content.instance_id", instanceId);
+        activity?.SetTag("content.instance_name", instance.Name);
         activity?.SetTag("content.parallel_workers", maxParallelDownloads);
 
         if (_active.ContainsKey(key))
@@ -71,7 +71,7 @@ public class ContentOrchestrator(
         _active[key] = cts;
 
         activity?.SetTag("content.queued", true);
-        activity?.SetTag("content.steps",  steps.Count);
+        activity?.SetTag("content.steps", steps.Count);
 
         _ = Task.Run(() => RunAsync(key, request, state, cts.Token), cts.Token);
         return state;
@@ -88,10 +88,10 @@ public class ContentOrchestrator(
 
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.queued", ActivityKind.Internal);
-        activity?.SetTag("content.key",         key);
-        activity?.SetTag("content.type",        type.ToString());
-        activity?.SetTag("content.destination",  destinationPath);
-        activity?.SetTag("content.mod_id",      modId);
+        activity?.SetTag("content.key", key);
+        activity?.SetTag("content.type", type.ToString());
+        activity?.SetTag("content.destination", destinationPath);
+        activity?.SetTag("content.mod_id", modId);
         if (workshopId != 0)
             activity?.SetTag("content.workshop_id", workshopId);
         if (sourcePath is not null)
@@ -122,7 +122,7 @@ public class ContentOrchestrator(
         _active[key] = cts;
 
         activity?.SetTag("content.queued", true);
-        activity?.SetTag("content.steps",  steps.Count);
+        activity?.SetTag("content.steps", steps.Count);
 
         _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
         return state;
@@ -156,10 +156,10 @@ public class ContentOrchestrator(
 
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.install", ActivityKind.Internal);
-        activity?.SetTag("content.key",         key);
-        activity?.SetTag("content.type",        request.Type.ToString());
-        activity?.SetTag("content.destination",  request.DestinationPath);
-        activity?.SetTag("content.steps",        state.Steps.Count);
+        activity?.SetTag("content.key", key);
+        activity?.SetTag("content.type", request.Type.ToString());
+        activity?.SetTag("content.destination", request.DestinationPath);
+        activity?.SetTag("content.steps", state.Steps.Count);
         if (request.Type == ContentType.Server)
             activity?.SetTag("content.instance_id", request.ServerInstanceId);
 
@@ -195,7 +195,7 @@ public class ContentOrchestrator(
             activity?.SetStatus(ActivityStatusCode.Error, oce.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = oce.GetType().FullName ?? oce.GetType().Name,
+                ["exception.type"] = oce.GetType().FullName ?? oce.GetType().Name,
                 ["exception.message"] = oce.Message
             }));
             await HandleErrorAsync(key, request, state,
@@ -207,8 +207,8 @@ public class ContentOrchestrator(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]       = ex.GetType().FullName ?? ex.GetType().Name,
-                ["exception.message"]    = ex.Message,
+                ["exception.type"] = ex.GetType().FullName ?? ex.GetType().Name,
+                ["exception.message"] = ex.Message,
                 ["exception.stacktrace"] = ex.StackTrace ?? string.Empty
             }));
             await HandleErrorAsync(key, request, state, ex, onError);
@@ -300,8 +300,8 @@ public class ContentOrchestrator(
     {
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.server_status_update", ActivityKind.Internal);
-        activity?.SetTag("instance.id",     instanceId);
-        activity?.SetTag("server.status",   status.ToString());
+        activity?.SetTag("instance.id", instanceId);
+        activity?.SetTag("server.status", status.ToString());
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
@@ -320,7 +320,7 @@ public class ContentOrchestrator(
     {
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.content.server_install_record", ActivityKind.Internal);
-        activity?.SetTag("instance.id",    instanceId);
+        activity?.SetTag("instance.id", instanceId);
         activity?.SetTag("instance.build", buildId);
         activity?.SetTag("instance.installed_at", installedAt.ToString("O"));
 

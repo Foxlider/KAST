@@ -67,9 +67,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
 
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.server.install", ActivityKind.Internal);
-        activity?.SetTag("instance.name",       instance.Name);
-        activity?.SetTag("instance.id",         request.ServerInstanceId);
-        activity?.SetTag("parallel_downloads",  maxPar);
+        activity?.SetTag("instance.name", instance.Name);
+        activity?.SetTag("instance.id", request.ServerInstanceId);
+        activity?.SetTag("parallel_downloads", maxPar);
 
         try
         {
@@ -89,80 +89,80 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 steam.IsAuthenticated ? $"authenticated as {steam.CurrentUsername}" : "anonymous",
                 maxPar, request.DestinationPath);
 
-        int stepIdx = 0;
+            int stepIdx = 0;
 
-        // ── Step 0: Base server (public branch) ──────────────────────────────
-        state.BeginStep(stepIdx);
-        state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading Arma 3 Dedicated Server (AppId {Arma3ServerAppId}, branch: public)...");
-        logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
-            instance.Name, state.Steps.Count, Arma3ServerAppId);
-
-        var currentStep = stepIdx;
-        var pctProgress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
-        var logProgress = new Progress<string>(state.AddLog);
-
-        await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-            pctProgress, logProgress,
-            ignorePlatformFilter: false, branch: "public",
-            maxParallelDownloads: maxPar, ct: ct);
-
-        var exe = Path.Combine(request.DestinationPath,
-            RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "arma3server_x64.exe" : "arma3server_x64");
-        fs.SetExecutable(exe);
-
-        state.CompleteStep(stepIdx);
-        state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Arma 3 Dedicated Server complete.");
-        logger.LogInformation("Server install [{Instance}]: step 1 complete — base server done", instance.Name);
-
-        // ── Steps 1..N: Creator DLC depots ───────────────────────────────────
-        foreach (var dlc in DlcTable)
-        {
-            if (!dlc.Enabled(instance)) continue;
-
-            stepIdx++;
-            string branch = dlc.Branch ?? CreatorDlcBranch;
-
-            if (dlc is { DepotId: 0, Branch: null })
-            {
-                state.SkipStep(stepIdx, "no server depot available");
-                state.AddLog($"⚠ {dlc.Name}: no server depot available — skipping.");
-                logger.LogWarning("Server install [{Instance}]: skipping {Dlc} — no server depot", instance.Name, dlc.Name);
-                continue;
-            }
-
+            // ── Step 0: Base server (public branch) ──────────────────────────────
             state.BeginStep(stepIdx);
-            int idx = stepIdx;
-            var pct = new Progress<double>(p => state.SetStepProgress(idx, p));
-            var log = new Progress<string>(state.AddLog);
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading Arma 3 Dedicated Server (AppId {Arma3ServerAppId}, branch: public)...");
+            logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
+                instance.Name, state.Steps.Count, Arma3ServerAppId);
 
-            if (dlc.Branch is not null)
-            {
-                state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (branch: {branch}, all depots)...");
-                logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (branch: {Branch})",
-                    instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, branch);
-                await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-                    pct, log, ignorePlatformFilter: false, branch: branch,
-                    maxParallelDownloads: maxPar, ct: ct);
-            }
-            else
-            {
-                state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (depot {dlc.DepotId}, branch: {branch})...");
-                logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (depot {DepotId}, branch: {Branch})",
-                    instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, dlc.DepotId, branch);
-                await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-                    pct, log, ignorePlatformFilter: true, branch: branch,
-                    depotFilter: [dlc.DepotId], maxParallelDownloads: maxPar, ct: ct);
-            }
+            var currentStep = stepIdx;
+            var pctProgress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
+            var logProgress = new Progress<string>(state.AddLog);
+
+            await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
+                pctProgress, logProgress,
+                ignorePlatformFilter: false, branch: "public",
+                maxParallelDownloads: maxPar, ct: ct);
+
+            var exe = Path.Combine(request.DestinationPath,
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "arma3server_x64.exe" : "arma3server_x64");
+            fs.SetExecutable(exe);
 
             state.CompleteStep(stepIdx);
-            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] {dlc.Name} complete.");
-            logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
-                instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
-        }
+            state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Arma 3 Dedicated Server complete.");
+            logger.LogInformation("Server install [{Instance}]: step 1 complete — base server done", instance.Name);
 
-        // ── DirectX (Windows only) ────────────────────────────────────────────────
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            await InstallDirectXAsync(request, state, stepIdx + 1, ct);
+            // ── Steps 1..N: Creator DLC depots ───────────────────────────────────
+            foreach (var dlc in DlcTable)
+            {
+                if (!dlc.Enabled(instance)) continue;
+
+                stepIdx++;
+                string branch = dlc.Branch ?? CreatorDlcBranch;
+
+                if (dlc is { DepotId: 0, Branch: null })
+                {
+                    state.SkipStep(stepIdx, "no server depot available");
+                    state.AddLog($"⚠ {dlc.Name}: no server depot available — skipping.");
+                    logger.LogWarning("Server install [{Instance}]: skipping {Dlc} — no server depot", instance.Name, dlc.Name);
+                    continue;
+                }
+
+                state.BeginStep(stepIdx);
+                int idx = stepIdx;
+                var pct = new Progress<double>(p => state.SetStepProgress(idx, p));
+                var log = new Progress<string>(state.AddLog);
+
+                if (dlc.Branch is not null)
+                {
+                    state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (branch: {branch}, all depots)...");
+                    logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (branch: {Branch})",
+                        instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, branch);
+                    await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
+                        pct, log, ignorePlatformFilter: false, branch: branch,
+                        maxParallelDownloads: maxPar, ct: ct);
+                }
+                else
+                {
+                    state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (depot {dlc.DepotId}, branch: {branch})...");
+                    logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (depot {DepotId}, branch: {Branch})",
+                        instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, dlc.DepotId, branch);
+                    await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
+                        pct, log, ignorePlatformFilter: true, branch: branch,
+                        depotFilter: [dlc.DepotId], maxParallelDownloads: maxPar, ct: ct);
+                }
+
+                state.CompleteStep(stepIdx);
+                state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] {dlc.Name} complete.");
+                logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} complete — {Dlc}",
+                    instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name);
+            }
+
+            // ── DirectX (Windows only) ────────────────────────────────────────────────
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                await InstallDirectXAsync(request, state, stepIdx + 1, ct);
         }
         catch (Exception ex)
         {
@@ -205,7 +205,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            string sys   = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            string sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
             string sys86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
             string? found = new[]
             {
@@ -237,7 +237,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
             return;
         }
 
-        var tempRedist  = Path.Combine(Path.GetTempPath(), "kast_directx_Jun2010_redist.exe");
+        var tempRedist = Path.Combine(Path.GetTempPath(), "kast_directx_Jun2010_redist.exe");
         var tempExtract = Path.Combine(Path.GetTempPath(), "kast_dxredist");
         try
         {
@@ -323,8 +323,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         }
         finally
         {
-            if (File.Exists(tempRedist))           File.Delete(tempRedist);
-            if (Directory.Exists(tempExtract))     Directory.Delete(tempExtract, recursive: true);
+            if (File.Exists(tempRedist)) File.Delete(tempRedist);
+            if (Directory.Exists(tempExtract)) Directory.Delete(tempExtract, recursive: true);
         }
     }
 
@@ -336,11 +336,11 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         // Use SpecialFolder.System (= System32 on 64-bit processes) and
         // SpecialFolder.SystemX86 (= SysWOW64) rather than constructing paths
         // from the Windows directory to correctly handle WOW64 redirection.
-        string sys   = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        string sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
         string sys86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
-        return File.Exists(Path.Combine(sys,   "D3DX9_43.dll"))
+        return File.Exists(Path.Combine(sys, "D3DX9_43.dll"))
             || File.Exists(Path.Combine(sys86, "D3DX9_43.dll"))
-            || File.Exists(Path.Combine(sys,   "XINPUT1_3.dll"));
+            || File.Exists(Path.Combine(sys, "XINPUT1_3.dll"));
     }
 
     /// <summary>

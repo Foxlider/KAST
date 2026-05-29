@@ -4,6 +4,7 @@ using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Services.Content;
+using KAST.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace KAST.UI.Api;
@@ -218,10 +219,10 @@ public static class KastApiEndpoints
             return Results.Ok();
         });
 
-        g.MapPost("/update-all", async (IModService svc, CancellationToken ct) =>
+        g.MapPost("/update-all", async (ModDownloadManager downloadManager, CancellationToken ct) =>
         {
-            _ = Task.Run(() => svc.UpdateAllOutdatedModsAsync(ct), ct);
-            return Results.Accepted();
+            var queued = await downloadManager.StartAllOutdatedAsync(ct);
+            return Results.Accepted(value: new { queued });
         });
     }
 

@@ -31,50 +31,50 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         try
         {
 
-        var formData = new Dictionary<string, string>
-        {
-            ["itemcount"] = workshopIds.Length.ToString()
-        };
-        for (int i = 0; i < workshopIds.Length; i++)
-            formData[$"publishedfileids[{i}]"] = workshopIds[i].ToString();
-
-        using var content = new FormUrlEncodedContent(formData);
-
-        logger.LogDebug("Fetching published file details for {Count} items", workshopIds.Length);
-
-        var response = await httpClient.PostAsync(
-            $"{BaseUrl}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
-            content, ct);
-        response.EnsureSuccessStatusCode();
-
-        var rawJson = await response.Content.ReadAsStringAsync(ct);
-        logger.LogDebug("Steam API raw response: {Json}", rawJson);
-
-        var json = System.Text.Json.JsonSerializer.Deserialize<SteamApiResponse>(rawJson);
-
-        if (json?.Response?.PublishedFileDetails is null)
-            return [];
-
-        var results = json.Response.PublishedFileDetails
-            .Where(d => d.Result == 1)
-            .Select(d =>
+            var formData = new Dictionary<string, string>
             {
-                var info = MapToWorkshopItemInfo(d);
-                logger.LogDebug("Mapped item {Id}: ConsumerAppId={Consumer}, CreatorAppId={Creator}, ManifestId={Manifest}",
-                    d.PublishedFileId, d.ConsumerAppId, d.CreatorAppId, d.HContentFile);
-                return info;
-            })
-            .ToList();
+                ["itemcount"] = workshopIds.Length.ToString()
+            };
+            for (int i = 0; i < workshopIds.Length; i++)
+                formData[$"publishedfileids[{i}]"] = workshopIds[i].ToString();
 
-        activity?.SetTag("workshop.results_count", results.Count);
-        return results;
+            using var content = new FormUrlEncodedContent(formData);
+
+            logger.LogDebug("Fetching published file details for {Count} items", workshopIds.Length);
+
+            var response = await httpClient.PostAsync(
+                $"{BaseUrl}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+                content, ct);
+            response.EnsureSuccessStatusCode();
+
+            var rawJson = await response.Content.ReadAsStringAsync(ct);
+            logger.LogDebug("Steam API raw response: {Json}", rawJson);
+
+            var json = System.Text.Json.JsonSerializer.Deserialize<SteamApiResponse>(rawJson);
+
+            if (json?.Response?.PublishedFileDetails is null)
+                return [];
+
+            var results = json.Response.PublishedFileDetails
+                .Where(d => d.Result == 1)
+                .Select(d =>
+                {
+                    var info = MapToWorkshopItemInfo(d);
+                    logger.LogDebug("Mapped item {Id}: ConsumerAppId={Consumer}, CreatorAppId={Creator}, ManifestId={Manifest}",
+                        d.PublishedFileId, d.ConsumerAppId, d.CreatorAppId, d.HContentFile);
+                    return info;
+                })
+                .ToList();
+
+            activity?.SetTag("workshop.results_count", results.Count);
+            return results;
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = ex.GetType().Name,
+                ["exception.type"] = ex.GetType().Name,
                 ["exception.message"] = ex.Message
             }));
             throw;
@@ -132,11 +132,11 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
 
         Activity.Current?.AddEvent(new ActivityEvent("workshop.item_mapped", tags: new ActivityTagsCollection
         {
-            ["workshop.id"]          = info.WorkshopId,
-            ["workshop.name"]        = info.Name,
+            ["workshop.id"] = info.WorkshopId,
+            ["workshop.name"] = info.Name,
             ["workshop.manifest_id"] = info.ManifestId,
-            ["workshop.app_id"]      = appId,
-            ["workshop.size_bytes"]  = info.SizeBytes
+            ["workshop.app_id"] = appId,
+            ["workshop.size_bytes"] = info.SizeBytes
         }));
 
         return info;

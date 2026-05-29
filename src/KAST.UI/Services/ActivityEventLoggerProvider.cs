@@ -34,13 +34,13 @@ file sealed class ActivityEventLogger(string categoryName) : ILogger
         var tags = new ActivityTagsCollection
         {
             ["log.severity"] = logLevel.ToString(),
-            ["log.message"]  = formatter(state, exception),
+            ["log.message"] = formatter(state, exception),
             ["log.category"] = categoryName
         };
 
         if (exception is not null)
         {
-            tags["exception.type"]    = exception.GetType().Name;
+            tags["exception.type"] = exception.GetType().Name;
             tags["exception.message"] = exception.Message;
         }
 

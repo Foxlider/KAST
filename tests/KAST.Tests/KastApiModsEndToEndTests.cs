@@ -7,11 +7,13 @@ using KAST.Core.Models;
 using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
 using KAST.UI.Api;
+using KAST.UI.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KAST.Tests;
 
@@ -177,6 +179,9 @@ public class KastApiModsEndToEndTests
             builder.Services.AddKastInfrastructure($"Data Source={dbPath}");
             builder.Services.AddSingleton<ISteamService>(new FakeSteamService());
             builder.Services.AddSingleton<IAppEventBroadcaster, NoopAppEventBroadcaster>();
+            builder.Services.AddSingleton(sp => new ModDownloadManager(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<ModDownloadManager>.Instance));
 
             var app = builder.Build();
             app.MapGroup("/api").MapKastApi();

@@ -5,9 +5,11 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.UI.Api;
+using KAST.UI.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace KAST.Tests;
@@ -238,6 +240,9 @@ public class KastApiModsEndpointsTests
         builder.Services.AddSingleton(settingsService ?? BuildDefaultSettingsService());
         builder.Services.AddSingleton(fileSystemService ?? Substitute.For<IFileSystemService>());
         builder.Services.AddSingleton(broadcaster ?? BuildDefaultBroadcaster());
+        builder.Services.AddSingleton(sp => new ModDownloadManager(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ModDownloadManager>.Instance));
 
         var app = builder.Build();
         app.MapGroup("/api").MapKastApi();

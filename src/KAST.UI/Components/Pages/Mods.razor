@@ -234,7 +234,7 @@ else
                         <MudTooltip Text="Delete" Arrow="true">
                             <MudIconButton Icon="@Icons.Material.Outlined.Delete"
                                            Size="Size.Small" Color="Color.Error"
-                                           OnClick="@(() => DeleteMod(context.Item))" />
+                                           OnClick="@(() => ShowDeleteModDialog(context.Item))" />
                         </MudTooltip>
                     </div>
                 </CellTemplate>
@@ -630,14 +630,42 @@ else
     </DialogActions>
 </MudDialog>
 
+@* ── Delete Confirmation Dialog ── *@
+<MudDialog @bind-Visible="_showDeleteDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Mod</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_modPendingDelete is not null)
+        {
+            <MudText Typo="Typo.body1" Class="mb-2">
+                Delete <strong>@_modPendingDelete.Name</strong> from KAST?
+            </MudText>
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                This also removes the mod files from disk when KAST has a local path for it.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDeleteMod">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Outlined.Delete"
+                   OnClick="ConfirmDeleteMod">
+            Delete
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     // ── State ────────────────────────────────────────────────────────────────
     private IReadOnlyList<SteamMod> _mods = [];
     private SteamMod? _selectedMod;
+    private SteamMod? _modPendingDelete;
     private bool _showDetailDialog;
     private bool _showAddDialog;
     private bool _showImportDialog;
     private bool _showPresetImportDialog;
+    private bool _showDeleteDialog;
     private bool _showDownloadsDrawer;
     private bool _isCheckingUpdates;
     private bool _isUpdatingAll;
@@ -733,7 +761,7 @@ else
     private double GetModProgress(int modId) =>
         _taskProgress.TryGetValue(modId, out var p) ? p : 0;
 
-    private static string GridHeight => "calc(100vh - 232px)"; // task panel always present
+    private static string GridHeight => "60vh";
 
     // ── Actions ──────────────────────────────────────────────────────────────
     private void ShowModDetails(SteamMod mod)
@@ -925,6 +953,27 @@ else
         _showDetailDialog = false;
         _selectedMod = null;
         await DownloadMod(mod);
+    }
+
+    private void ShowDeleteModDialog(SteamMod mod)
+    {
+        _modPendingDelete = mod;
+        _showDeleteDialog = true;
+    }
+
+    private void CancelDeleteMod()
+    {
+        _showDeleteDialog = false;
+        _modPendingDelete = null;
+    }
+
+    private async Task ConfirmDeleteMod()
+    {
+        if (_modPendingDelete is null) return;
+        var mod = _modPendingDelete;
+        _showDeleteDialog = false;
+        _modPendingDelete = null;
+        await DeleteMod(mod);
     }
 
     private async Task DeleteMod(SteamMod mod)

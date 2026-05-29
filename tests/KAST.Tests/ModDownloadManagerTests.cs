@@ -1,4 +1,6 @@
+using KAST.Core.Enums;
 using KAST.Core.Interfaces;
+using KAST.Core.Models;
 using KAST.UI.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -101,6 +103,33 @@ public class ModDownloadManagerTests
         await modService.Received(1).UpdateModFilesAsync(5, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task StartAllOutdatedAsync_QueuesEachDownloadInSeparateScope()
+    {
+        var state = new ScopedModServiceState
+        {
+            Mods =
+            [
+                new SteamMod { Id = 1, WorkshopId = 101, Name = "New", Source = ModSource.SteamWorkshop, Status = ModStatus.NotInstalled },
+                new SteamMod { Id = 2, WorkshopId = 102, Name = "Old", Source = ModSource.SteamWorkshop, Status = ModStatus.UpdateAvailable },
+                new SteamMod { Id = 3, WorkshopId = 103, Name = "Local", Source = ModSource.LocalFolder, Status = ModStatus.Error }
+            ]
+        };
+        var services = new ServiceCollection();
+        services.AddSingleton(state);
+        services.AddScoped<IModService, ScopedModService>();
+        var provider = services.BuildServiceProvider();
+        var manager = new ModDownloadManager(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ModDownloadManager>.Instance);
+
+        var queued = await manager.StartAllOutdatedAsync();
+
+        Assert.Equal(2, queued);
+        await WaitForAsync(() => state.OperationCount == 2);
+        Assert.Equal(2, state.OperationScopeCount);
+    }
+
     private static ModDownloadManager CreateManager(IModService modService)
     {
         var services = new ServiceCollection();
@@ -118,5 +147,74 @@ public class ModDownloadManagerTests
         {
             await Task.Delay(10, timeout.Token);
         }
+    }
+
+    private sealed class ScopedModServiceState
+    {
+        private readonly object _lock = new();
+
+        public IReadOnlyList<SteamMod> Mods { get; init; } = [];
+        private HashSet<Guid> DownloadScopeIds { get; } = [];
+        private HashSet<Guid> UpdateScopeIds { get; } = [];
+
+        public int OperationCount
+        {
+            get
+            {
+                lock (_lock)
+                    return DownloadScopeIds.Count + UpdateScopeIds.Count;
+            }
+        }
+
+        public int OperationScopeCount
+        {
+            get
+            {
+                lock (_lock)
+                    return DownloadScopeIds.Concat(UpdateScopeIds).Distinct().Count();
+            }
+        }
+
+        public void RecordDownload(Guid scopeId)
+        {
+            lock (_lock)
+                DownloadScopeIds.Add(scopeId);
+        }
+
+        public void RecordUpdate(Guid scopeId)
+        {
+            lock (_lock)
+                UpdateScopeIds.Add(scopeId);
+        }
+    }
+
+    private sealed class ScopedModService(ScopedModServiceState state) : IModService
+    {
+        private readonly Guid _scopeId = Guid.NewGuid();
+
+        public Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
+            => Task.FromResult(state.Mods);
+
+        public Task DownloadModAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
+        {
+            state.RecordDownload(_scopeId);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateModFilesAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
+        {
+            state.RecordUpdate(_scopeId);
+            return Task.CompletedTask;
+        }
+
+        public Task<SteamMod?> GetModByIdAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<SteamMod?> GetModByWorkshopIdAsync(long workshopId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<SteamMod> AddWorkshopModAsync(long workshopId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<SteamMod> ImportLocalModAsync(string path, string name, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task DeleteModAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<SteamMod> UpdateModAsync(SteamMod mod, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task CheckForUpdatesAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task CheckModForUpdateAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task UpdateAllOutdatedModsAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

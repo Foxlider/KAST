@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 
 namespace KAST.UI.Services;
@@ -12,6 +13,26 @@ public sealed class ModDownloadManager(
     public int ActiveCount => _downloads.Count;
 
     public bool IsActive(int modId) => _downloads.ContainsKey(modId);
+
+    public async Task<int> StartAllOutdatedAsync(CancellationToken ct = default)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var modService = scope.ServiceProvider.GetRequiredService<IModService>();
+        var mods = await modService.GetAllModsAsync(ct);
+
+        var queued = 0;
+        foreach (var mod in mods.Where(m =>
+                     m.Source == ModSource.SteamWorkshop &&
+                     m.Status is ModStatus.NotInstalled or ModStatus.UpdateAvailable or ModStatus.Error))
+        {
+            ct.ThrowIfCancellationRequested();
+            var isUpdate = mod.Status is not ModStatus.NotInstalled;
+            if (StartDownload(mod.Id, isUpdate))
+                queued++;
+        }
+
+        return queued;
+    }
 
     public bool StartDownload(int modId, bool isUpdate)
     {

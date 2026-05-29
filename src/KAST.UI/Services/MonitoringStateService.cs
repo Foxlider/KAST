@@ -1,7 +1,5 @@
 using KAST.Core.Enums;
-using KAST.Core.Interfaces;
 using KAST.Core.Models;
-using KAST.Infrastructure.Data;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace KAST.UI.Services;
@@ -36,21 +34,13 @@ public sealed class MonitoringStateService : IAsyncDisposable
     // ── Notification ─────────────────────────────────────────────────────────
     public event Action? OnDataChanged;
 
-    private readonly IMonitoringService _monitoring;
-    private readonly IServerInstanceService _serverInstances;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly HealthCheckService _healthChecks;
-    private CancellationTokenSource? _cts;
-    private Task? _refreshTask;
+    private readonly MonitoringSnapshotService _snapshots;
     private bool _started;
     private bool _disposed;
 
-    public MonitoringStateService(IMonitoringService monitoring, IServerInstanceService serverInstances, IServiceScopeFactory scopeFactory, HealthCheckService healthChecks)
+    public MonitoringStateService(MonitoringSnapshotService snapshots)
     {
-        _monitoring = monitoring;
-        _serverInstances = serverInstances;
-        _scopeFactory = scopeFactory;
-        _healthChecks = healthChecks;
+        _snapshots = snapshots;
     }
 
     /// <summary>Starts the polling loop if not already running.</summary>
@@ -58,63 +48,28 @@ public sealed class MonitoringStateService : IAsyncDisposable
     {
         if (_started || _disposed) return;
         _started = true;
-        _cts = new CancellationTokenSource();
-        _refreshTask = RunLoopAsync(_cts.Token);
-    }
-
-    private async Task RunLoopAsync(CancellationToken ct)
-    {
-        await FetchAndPushAsync(ct);
+        _snapshots.Changed += HandleSnapshotChanged;
+        ApplySnapshot(_snapshots.Current);
         OnDataChanged?.Invoke();
-
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                if (_disposed) break;
-                await FetchAndPushAsync(ct);
-                OnDataChanged?.Invoke();
-            }
-        }
-        catch (OperationCanceledException) { /* ignore */ }
-        catch (ObjectDisposedException) { /* ignore */ }
     }
 
-    private async Task FetchAndPushAsync(CancellationToken ct)
+    private void HandleSnapshotChanged()
     {
-        if (_disposed || ct.IsCancellationRequested) return;
+        if (_disposed) return;
+        ApplySnapshot(_snapshots.Current);
+        OnDataChanged?.Invoke();
+    }
 
-        // Overall health check (drives API indicator)
-        try
-        {
-            var health = await _healthChecks.CheckHealthAsync(ct);
-            ApiStatus = health.Status;
-        }
-        catch { ApiStatus = HealthStatus.Unhealthy; }
+    private void ApplySnapshot(MonitoringSnapshot snapshot)
+    {
+        if (_disposed) return;
 
-        // DB connectivity check
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
-            IsDbOk = await db.Database.CanConnectAsync(ct);
-        }
-        catch { IsDbOk = false; }
-
-        // Metrics fetch
-        try
-        {
-            HostMetrics = await _monitoring.GetHostMetricsAsync(ct);
-            var all = await _serverInstances.GetAllInstancesAsync(ct);
-            Instances = all.Where(s => s.Status != ServerInstanceStatus.Stopped).ToList();
-            var allMetrics = await _monitoring.GetAllInstanceMetricsAsync(ct);
-            InstanceMetrics = allMetrics.ToDictionary(m => m.ServerInstanceId);
-            IsMonitoringOk = true;
-        }
-        catch (OperationCanceledException) { return; }
-        catch (ObjectDisposedException) { return; }
-        catch { IsMonitoringOk = false; return; }
+        HostMetrics = snapshot.HostMetrics;
+        Instances = snapshot.Instances;
+        InstanceMetrics = snapshot.InstanceMetrics.ToDictionary(m => m.ServerInstanceId);
+        IsMonitoringOk = snapshot.IsMonitoringOk;
+        IsDbOk = snapshot.IsDbOk;
+        ApiStatus = snapshot.ApiStatus;
 
         // Append to history
         var label = DateTime.Now.ToString("HH:mm:ss");
@@ -136,13 +91,11 @@ public sealed class MonitoringStateService : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _disposed = true;
-        if (_cts is not null)
-            await _cts.CancelAsync();
-        if (_refreshTask is not null)
-            try { await _refreshTask; } catch { /* ignore */ }
-        _cts?.Dispose();
+        if (_started)
+            _snapshots.Changed -= HandleSnapshotChanged;
+        return ValueTask.CompletedTask;
     }
 }

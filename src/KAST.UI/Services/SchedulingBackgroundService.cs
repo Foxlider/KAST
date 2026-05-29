@@ -66,11 +66,11 @@ public class SchedulingBackgroundService(
             if (string.IsNullOrEmpty(instance.AutoStopTime)
                 || !IsTimeMatch(currentTime, instance.AutoStopTime)
                 || instance.Status != ServerInstanceStatus.Running) continue;
-            
+
             logger.LogInformation(
                 "Schedule: stopping server {Name} (scheduled at {Time})",
                 instance.Name, instance.AutoStopTime);
-            try { await serverService.StopInstanceAsync(instance.Id, ct);}
+            try { await serverService.StopInstanceAsync(instance.Id, ct); }
             catch (Exception ex)
             { logger.LogError(ex, "Schedule: failed to stop server {Name}", instance.Name); }
         }

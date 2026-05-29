@@ -32,8 +32,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             var existing = await GetModByWorkshopIdAsync(workshopId, ct);
             if (existing != null)
             {
-                activity?.SetTag("mod.id",       existing.Id);
-                activity?.SetTag("mod.name",     existing.Name);
+                activity?.SetTag("mod.id", existing.Id);
+                activity?.SetTag("mod.name", existing.Name);
                 activity?.SetTag("mod.existing", true);
                 return existing;
             }
@@ -58,8 +58,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             db.Mods.Add(mod);
             await db.SaveChangesAsync(ct);
 
-            activity?.SetTag("mod.id",       mod.Id);
-            activity?.SetTag("mod.name",     mod.Name);
+            activity?.SetTag("mod.id", mod.Id);
+            activity?.SetTag("mod.name", mod.Name);
             activity?.SetTag("mod.existing", false);
             return mod;
         }
@@ -68,7 +68,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]    = ex.GetType().Name,
+                ["exception.type"] = ex.GetType().Name,
                 ["exception.message"] = ex.Message
             }));
             throw;
@@ -110,7 +110,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         var mod = await db.Mods.FindAsync([id], ct);
         if (mod != null)
         {
-            activity?.SetTag("mod.name",       mod.Name);
+            activity?.SetTag("mod.name", mod.Name);
             activity?.SetTag("mod.local_path", mod.LocalPath ?? "");
 
             // Delete mod files from disk
@@ -126,8 +126,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                     logger.LogWarning(ex, "Failed to delete mod files at {Path}", mod.LocalPath);
                     activity?.AddEvent(new ActivityEvent("files.delete_failed", tags: new ActivityTagsCollection
                     {
-                        ["path"]              = mod.LocalPath,
-                        ["exception.type"]    = ex.GetType().Name,
+                        ["path"] = mod.LocalPath,
+                        ["exception.type"] = ex.GetType().Name,
                         ["exception.message"] = ex.Message
                     }));
                 }
@@ -153,9 +153,9 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         using var activity = KastActivitySources.Mods.StartActivity(
             "kast.mod.download", ActivityKind.Internal);
-        activity?.SetTag("mod.id",          id);
+        activity?.SetTag("mod.id", id);
         activity?.SetTag("mod.workshop_id", mod.WorkshopId);
-        activity?.SetTag("mod.name",        mod.Name);
+        activity?.SetTag("mod.name", mod.Name);
 
         mod.Status = ModStatus.Downloading;
         await db.SaveChangesAsync(CancellationToken.None);
@@ -211,9 +211,9 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         using var activity = KastActivitySources.Mods.StartActivity(
             "kast.mod.update", ActivityKind.Internal);
-        activity?.SetTag("mod.id",          id);
+        activity?.SetTag("mod.id", id);
         activity?.SetTag("mod.workshop_id", mod.WorkshopId);
-        activity?.SetTag("mod.name",        mod.Name);
+        activity?.SetTag("mod.name", mod.Name);
 
         mod.Status = ModStatus.Updating;
         await db.SaveChangesAsync(CancellationToken.None);
@@ -336,13 +336,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         activity?.SetTag("mods.to_update", mods.Count);
 
-        var settings = await settingsService.GetSettingsAsync(ct);
-        int parallelism = Math.Max(1, settings.ParallelDownloads);
-        var semaphore = new SemaphoreSlim(parallelism);
-
-        var tasks = mods.Select(async mod =>
+        foreach (var mod in mods)
         {
-            await semaphore.WaitAsync(ct);
             try
             {
                 // NotInstalled mods need a fresh download; others need an update
@@ -359,13 +354,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             {
                 logger.LogError(ex, "Bulk update failed for mod {Id} ({Name})", mod.Id, mod.Name);
             }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
+        }
 
-        await Task.WhenAll(tasks);
         activity?.SetTag("mods.updated", mods.Count);
     }
 

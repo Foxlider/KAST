@@ -1,11 +1,11 @@
+using System.Net.Http;
+using System.Runtime.InteropServices;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Services.Content;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using System.Net.Http;
-using System.Runtime.InteropServices;
 
 namespace KAST.Tests;
 
