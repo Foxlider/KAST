@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using KAST.Core.Interfaces;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
@@ -29,6 +30,7 @@ internal sealed class CdnServerPool : IDisposable
     private readonly SteamClient _steamClient;
     private readonly SteamContent _steamContent;
     private readonly ILogger _logger;
+    private readonly IOutputSanitizer _sanitizer;
     private readonly CancellationTokenSource _cts;
 
     // Proven-good servers from the current session — consumed first (LIFO)
@@ -52,11 +54,13 @@ internal sealed class CdnServerPool : IDisposable
         SteamClient steamClient,
         SteamContent steamContent,
         ILogger logger,
+        IOutputSanitizer sanitizer,
         CancellationToken parentCt = default)
     {
         _steamClient = steamClient;
         _steamContent = steamContent;
         _logger = logger;
+        _sanitizer = sanitizer;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(parentCt);
         _monitorTask = Task.Run(MonitorAsync);
     }
@@ -178,11 +182,12 @@ internal sealed class CdnServerPool : IDisposable
                 }
                 catch (Exception refillEx) when (refillEx is not OperationCanceledException)
                 {
-                    refillActivity?.SetStatus(ActivityStatusCode.Error, refillEx.Message);
+                    var safeMessage = _sanitizer.Sanitize(refillEx.Message);
+                    refillActivity?.SetStatus(ActivityStatusCode.Error, safeMessage);
                     refillActivity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
                     {
                         ["exception.type"]    = refillEx.GetType().Name,
-                        ["exception.message"] = refillEx.Message
+                        ["exception.message"] = safeMessage
                     }));
                     throw;
                 }

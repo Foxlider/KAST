@@ -4,6 +4,7 @@
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject ISettingsService SettingsService
+@inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 
@@ -48,8 +49,7 @@
                     ServerConfig="_serverConfig"
                     IsNew="_isNew"
                     OnNameChanged="OnNameChanged"
-                    OnServerConfigChanged="OnServerConfigChanged"
-                    GetCommandLinePreview="GetCommandLinePreview" />
+                    OnServerConfigChanged="OnServerConfigChanged" />
     </MudTabPanel>
 
     @* ════════════ SERVER CONFIG ════════════ *@
@@ -201,7 +201,7 @@
             _activeTab = 6; // Monitor tab
             StateHasChanged();
         }
-        catch (Exception ex) { Snackbar.Add($"Failed to launch: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Failed to launch: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
     }
 
     private async Task StopServer()
@@ -213,15 +213,7 @@
             _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
             Snackbar.Add("Server stopped", Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error); }
-    }
-
-    private string GetCommandLinePreview()
-    {
-        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
-        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
-        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
-        return ServerService.GetCommandLine(_instance);
+        catch (Exception ex) { Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
     }
 
     private static Color GetStatusColor(ServerInstanceStatus status) => status switch

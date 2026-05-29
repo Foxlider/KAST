@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IModService ModService
 @inject IAppEventBroadcaster Broadcaster
+@inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @implements IAsyncDisposable
 
@@ -475,8 +476,8 @@ else
                             @if (!string.IsNullOrWhiteSpace(_selectedMod.LocalPath))
                             {
                                 <tr>
-                                    <td style="opacity:.7;vertical-align:top;">Path</td>
-                                    <td><code style="font-size:11px; word-break:break-all;">@_selectedMod.LocalPath</code></td>
+                                    <td style="opacity:.7;">Files</td>
+                                    <td><code style="font-size:11px;">@OutputSanitizer.ToDisplayPath(_selectedMod.LocalPath)</code></td>
                                 </tr>
                             }
                         </tbody>
@@ -801,7 +802,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to parse preset file: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Failed to parse preset file: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
         }
     }
 
@@ -873,17 +874,21 @@ else
             await RefreshMods();
             Snackbar.Add("Mod added successfully", Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
     }
 
     private async Task ImportLocalMod()
     {
         if (string.IsNullOrWhiteSpace(_localModName) || string.IsNullOrWhiteSpace(_localModPath)) return;
-        await ModService.ImportLocalModAsync(_localModPath, _localModName);
-        _showImportDialog = false;
-        _localModName = ""; _localModPath = "";
-        await RefreshMods();
-        Snackbar.Add("Mod imported successfully", Severity.Success);
+        try
+        {
+            await ModService.ImportLocalModAsync(_localModPath, _localModName);
+            _showImportDialog = false;
+            _localModName = ""; _localModPath = "";
+            await RefreshMods();
+            Snackbar.Add("Mod imported successfully", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Import failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
     }
 
     private async Task DownloadMod(SteamMod mod, CancellationToken parentCt = default)
@@ -917,7 +922,7 @@ else
         catch (Exception ex)
         {
             _taskProgress.Remove(mod.Id);
-            Snackbar.Add($"Download failed: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Download failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
             await RefreshMods();
         }
         finally
@@ -958,7 +963,7 @@ else
                     : "All mods are up to date",
                 _outdatedCount > 0 ? Severity.Warning : Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"Check failed: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Check failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { _isCheckingUpdates = false; }
     }
 
@@ -992,7 +997,7 @@ else
                 _ = DownloadMod(mod, _bulkUpdateCts.Token);
             Snackbar.Add($"Updating {pendingMods.Count} mod(s) in parallel…", Severity.Info);
         }
-        catch (Exception ex) { Snackbar.Add($"Update failed: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally
         {
             _isUpdatingAll = false;
@@ -1029,7 +1034,7 @@ else
                 isOutdated ? $"{mod.Name}: update available" : $"{mod.Name}: up to date",
                 isOutdated ? Severity.Warning : Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"Check failed: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Check failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { _checkingMods.Remove(mod.Id); }
     }
 
