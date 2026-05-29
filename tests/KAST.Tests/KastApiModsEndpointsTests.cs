@@ -5,6 +5,7 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.UI.Api;
+using KAST.Infrastructure.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -238,6 +239,7 @@ public class KastApiModsEndpointsTests
         builder.Services.AddSingleton(settingsService ?? BuildDefaultSettingsService());
         builder.Services.AddSingleton(fileSystemService ?? Substitute.For<IFileSystemService>());
         builder.Services.AddSingleton(broadcaster ?? BuildDefaultBroadcaster());
+        builder.Services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
 
         var app = builder.Build();
         app.MapGroup("/api").MapKastApi();
