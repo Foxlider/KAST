@@ -1,5 +1,6 @@
 @page "/servers"
 @inject IServerInstanceService ServerService
+@inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 
@@ -89,20 +90,20 @@ else
     private async Task StartInstance(int id)
     {
         try { await ServerService.StartInstanceAsync(id); Nav.NavigateTo($"/servers/{id}"); }
-        catch (Exception ex) { Snackbar.Add($"Failed to start: {ex.Message}", Severity.Error); await RefreshInstances(); }
+        catch (Exception ex) { Snackbar.Add($"Failed to start: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); await RefreshInstances(); }
     }
 
     private async Task StopInstance(int id)
     {
         try { await ServerService.StopInstanceAsync(id); Snackbar.Add("Server stopped", Severity.Success); }
-        catch (Exception ex) { Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { await RefreshInstances(); }
     }
 
     private async Task RestartInstance(int id)
     {
         try { await ServerService.RestartInstanceAsync(id); Snackbar.Add("Server restarted", Severity.Success); }
-        catch (Exception ex) { Snackbar.Add($"Failed to restart: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Failed to restart: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { await RefreshInstances(); }
     }
 
