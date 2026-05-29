@@ -15,6 +15,10 @@ using OpenTelemetry.Trace;
 using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "KAST Panel";
+});
 
 // ── In-memory log capture (UI console) ──────────────────────────────────────
 var kastLogStore = new KastLogStore();
@@ -193,4 +197,3 @@ _ = Task.Run(async () =>
 });
 
 app.Run();
-
