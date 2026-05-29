@@ -13,6 +13,20 @@
                   Variant="Variant.Outlined"
                   Style="max-width:260px;" />
     <MudSpacer />
+    <MudButton StartIcon="@Icons.Material.Filled.RemoveCircleOutline"
+               Color="Color.Default" Variant="Variant.Outlined"
+               Size="Size.Small"
+               Disabled="@(!Instance.Mods.Any())"
+               OnClick="UnloadAllMods">
+        Unload All
+    </MudButton>
+    <MudButton StartIcon="@Icons.Material.Filled.DoneAll"
+               Color="Color.Info" Variant="Variant.Outlined"
+               Size="Size.Small"
+               Disabled="@(!UnassignedMods.Any())"
+               OnClick="LoadAllAvailableMods">
+        Load All
+    </MudButton>
     <MudButton StartIcon="@Icons.Material.Filled.PlaylistAdd"
                Color="Color.Secondary" Variant="Variant.Outlined"
                Size="Size.Small"
@@ -135,18 +149,18 @@
                 <MudCheckBox T="bool?" Value="@GetPresetSelectAllState()"
                              ValueChanged="@ToggleSelectAllPresetMods"
                              Dense="true" />
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Select all new</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Select all preset mods</MudText>
             </div>
 
             <div style="max-height:260px; overflow-y:auto;">
                 @foreach (var (wid, dname) in _parsedPresetMods)
                 {
+                    bool alreadyClient = Instance.Mods.Any(m => m.IsClientSide && m.SteamMod?.WorkshopId == wid);
                     bool alreadyIn = Instance.Mods.Any(m => m.SteamMod?.WorkshopId == wid);
-                    <div class="d-flex align-center gap-1 py-1" style="@(alreadyIn ? "opacity:.55;" : "")">
+                    <div class="d-flex align-center gap-1 py-1" style="@(alreadyClient ? "opacity:.75;" : "")">
                         <MudCheckBox T="bool"
                                      Value="@(_presetSelectedIds.Contains(wid))"
                                      ValueChanged="@((v) => TogglePresetMod(wid, v))"
-                                     Disabled="@alreadyIn"
                                      Dense="true" />
                         <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small"
                                  Style="opacity:.4; flex-shrink:0;" />
@@ -155,7 +169,7 @@
                         @if (alreadyIn)
                         {
                             <MudChip T="string" Size="Size.Small" Color="Color.Info"
-                                     Variant="Variant.Text">in instance</MudChip>
+                                     Variant="Variant.Text">loaded</MudChip>
                         }
                     </div>
                 }
@@ -175,9 +189,9 @@
     <DialogActions>
         <MudButton OnClick="ClosePresetImportDialog" Disabled="@_isImportingPreset">Cancel</MudButton>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                   Disabled="@(_presetSelectedIds.Count == 0 || _isImportingPreset)"
+                   Disabled="@(_parsedPresetMods.Count == 0 || _isImportingPreset)"
                    OnClick="ImportPresetToClient">
-            Add @_presetSelectedIds.Count mod(s)
+            Replace Clientside
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -324,6 +338,24 @@
         ReindexMods();
     }
 
+    private async Task UnloadAllMods()
+    {
+        foreach (var modId in Instance.Mods.Select(m => m.SteamModId).ToList())
+            await RemoveMod(modId);
+
+        BuildDragItems();
+        StateHasChanged();
+    }
+
+    private async Task LoadAllAvailableMods()
+    {
+        foreach (var mod in UnassignedMods.OrderBy(m => m.Name).ToList())
+            await AddMod(mod.Id, "client");
+
+        BuildDragItems();
+        StateHasChanged();
+    }
+
     private void ReindexMods()
     {
         int wi = 0; foreach (var m in Instance.Mods.Where(m => !m.IsClientSide && !m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = wi++;
@@ -376,9 +408,7 @@
             _parsedPresetMods.Add((wid, displayName));
         }
 
-        _presetSelectedIds = [.. _parsedPresetMods
-            .Where(p => !Instance.Mods.Any(m => m.SteamMod?.WorkshopId == p.WorkshopId))
-            .Select(p => p.WorkshopId)];
+        _presetSelectedIds = [.. _parsedPresetMods.Select(p => p.WorkshopId)];
 
         StateHasChanged();
     }
@@ -391,69 +421,123 @@
 
     private bool? GetPresetSelectAllState()
     {
-        var newIds = _parsedPresetMods
-            .Where(p => !Instance.Mods.Any(m => m.SteamMod?.WorkshopId == p.WorkshopId))
-            .Select(p => p.WorkshopId)
-            .ToList();
-        if (newIds.Count == 0) return false;
-        int selected = newIds.Count(id => _presetSelectedIds.Contains(id));
+        var presetIds = _parsedPresetMods.Select(p => p.WorkshopId).ToList();
+        if (presetIds.Count == 0) return false;
+        int selected = presetIds.Count(id => _presetSelectedIds.Contains(id));
         if (selected == 0) return false;
-        return selected == newIds.Count ? true : null;
+        return selected == presetIds.Count ? true : null;
     }
 
     private void ToggleSelectAllPresetMods(bool? value)
     {
-        var newIds = _parsedPresetMods
-            .Where(p => !Instance.Mods.Any(m => m.SteamMod?.WorkshopId == p.WorkshopId))
-            .Select(p => p.WorkshopId);
+        var presetIds = _parsedPresetMods.Select(p => p.WorkshopId);
         if (value == true)
-            foreach (var id in newIds) _presetSelectedIds.Add(id);
+            foreach (var id in presetIds) _presetSelectedIds.Add(id);
         else
-            foreach (var id in newIds) _presetSelectedIds.Remove(id);
+            foreach (var id in presetIds) _presetSelectedIds.Remove(id);
     }
 
     private async Task ImportPresetToClient()
     {
         _isImportingPreset = true;
-        _presetImportTotal = _presetSelectedIds.Count;
+        var selectedPresetMods = _parsedPresetMods
+            .Where(p => _presetSelectedIds.Contains(p.WorkshopId))
+            .GroupBy(p => p.WorkshopId)
+            .Select(g => g.First())
+            .ToList();
+        var selectedWorkshopIds = selectedPresetMods
+            .Select(p => p.WorkshopId)
+            .ToHashSet();
+        var clientsToUnload = Instance.Mods
+            .Where(m => m.IsClientSide && (m.SteamMod == null || !selectedWorkshopIds.Contains(m.SteamMod.WorkshopId)))
+            .ToList();
+
+        _presetImportTotal = selectedPresetMods.Count + clientsToUnload.Count;
         _presetImportDone = 0;
         StateHasChanged();
 
-        var existingWorkshopIds = Instance.Mods
-            .Where(m => m.SteamMod != null)
-            .Select(m => m.SteamMod!.WorkshopId)
-            .ToHashSet();
+        var desiredClientMods = new List<SteamMod>();
 
-        foreach (var (workshopId, _) in _parsedPresetMods.Where(p => _presetSelectedIds.Contains(p.WorkshopId)))
+        foreach (var (workshopId, _) in selectedPresetMods)
         {
             try
             {
-                var mod = await ModService.AddWorkshopModAsync(workshopId);
+                var existingMod = Instance.Mods
+                    .FirstOrDefault(m => m.SteamMod?.WorkshopId == workshopId)
+                    ?.SteamMod;
+                var mod = existingMod ?? await ModService.AddWorkshopModAsync(workshopId);
 
                 if (!_availableMods.Any(m => m.Id == mod.Id))
                     _availableMods.Add(mod);
 
-                if (!existingWorkshopIds.Contains(workshopId))
-                {
-                    if (!IsNew)
-                        await ServerService.AddModToInstanceAsync(Instance.Id, mod.Id,
-                            isClientSide: true, isServerSide: false);
-
-                    Instance.Mods.Add(new ServerInstanceMod
-                    {
-                        SteamModId   = mod.Id,
-                        SteamMod     = mod,
-                        IsClientSide = true,
-                        IsServerSide = false,
-                        LoadOrder    = Instance.Mods.Count
-                    });
-                    existingWorkshopIds.Add(workshopId);
-                }
+                desiredClientMods.Add(mod);
             }
             catch { /* skip mods that fail to resolve */ }
 
             _presetImportDone++;
             StateHasChanged();
+        }
+
+        foreach (var clientMod in clientsToUnload)
+        {
+            if (clientMod.IsServerSide)
+            {
+                clientMod.IsClientSide = false;
+                if (!IsNew)
+                    await ServerService.UpdateModFlagsAsync(
+                        Instance.Id,
+                        clientMod.SteamModId,
+                        isClientSide: false,
+                        isServerSide: true);
+            }
+            else
+            {
+                await RemoveMod(clientMod.SteamModId);
+            }
+
+            _presetImportDone++;
+            StateHasChanged();
+        }
+
+        for (var index = 0; index < desiredClientMods.Count; index++)
+        {
+            var mod = desiredClientMods[index];
+            var existingLink = Instance.Mods.FirstOrDefault(m => m.SteamModId == mod.Id);
+            if (existingLink == null)
+            {
+                if (!IsNew)
+                    await ServerService.AddModToInstanceAsync(
+                        Instance.Id,
+                        mod.Id,
+                        index,
+                        isClientSide: true,
+                        isServerSide: false);
+
+                Instance.Mods.Add(new ServerInstanceMod
+                {
+                    SteamModId   = mod.Id,
+                    SteamMod     = mod,
+                    IsClientSide = true,
+                    IsServerSide = false,
+                    LoadOrder    = index
+                });
+            }
+            else
+            {
+                existingLink.IsClientSide = true;
+                existingLink.IsServerSide = false;
+                existingLink.LoadOrder = index;
+
+                if (!IsNew)
+                {
+                    await ServerService.UpdateModFlagsAsync(
+                        Instance.Id,
+                        mod.Id,
+                        isClientSide: true,
+                        isServerSide: false);
+                    await ServerService.UpdateModLoadOrderAsync(Instance.Id, mod.Id, index);
+                }
+            }
         }
 
         ReindexMods();
