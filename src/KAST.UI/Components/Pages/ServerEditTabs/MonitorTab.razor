@@ -2,8 +2,16 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 @inject IJSRuntime JS
-@inject NavigationManager Nav
 @inject KAST.UI.Services.ServerConsoleStore ConsoleStore
+@inject KastInternalUrlProvider InternalUrls
+@inject ILogger<MonitorTab> Logger
+
+@if (!_monitoringConnected && _monitoringError is not null)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+        Monitoring unavailable. Console and metrics updates are disconnected.
+    </MudAlert>
+}
 
 <MudGrid Class="mt-3" Spacing="3">
     <MudItem xs="12" sm="4">
@@ -85,6 +93,8 @@
     private long _monitorMemory;
     private int _monitorPlayerCount;
     private bool _initialized;
+    private bool _monitoringConnected;
+    private string? _monitoringError;
 
     private IReadOnlyList<ConsoleEntry> FilteredConsoleLines =>
         _consoleFilter == ConsoleFilter.All
@@ -111,9 +121,32 @@
     private async Task InitializeSignalR()
     {
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(InternalUrls.GetMonitoringHubUri())
             .WithAutomaticReconnect()
             .Build();
+
+        _hubConnection.Reconnecting += _ =>
+        {
+            _monitoringConnected = false;
+            _monitoringError = "Monitoring connection interrupted.";
+            return InvokeAsync(StateHasChanged);
+        };
+
+        _hubConnection.Reconnected += _ =>
+        {
+            _monitoringConnected = true;
+            _monitoringError = null;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        _hubConnection.Closed += error =>
+        {
+            _monitoringConnected = false;
+            _monitoringError = "Monitoring connection closed.";
+            if (error is not null)
+                Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
+            return InvokeAsync(StateHasChanged);
+        };
 
         _hubConnection.On<LogEntryEvent>("LogEntry", entry =>
         {
@@ -152,8 +185,19 @@
             await InvokeAsync(StateHasChanged);
         });
 
-        await _hubConnection.StartAsync();
-        await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
+        try
+        {
+            await _hubConnection.StartAsync();
+            _monitoringConnected = true;
+            _monitoringError = null;
+            await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
+        }
+        catch (Exception ex)
+        {
+            _monitoringConnected = false;
+            _monitoringError = ex.Message;
+            Logger.LogWarning(ex, "Failed to connect to monitoring SignalR hub.");
+        }
     }
 
     private void ClearConsole()

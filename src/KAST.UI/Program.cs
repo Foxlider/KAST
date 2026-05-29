@@ -42,6 +42,7 @@ builder.Services.AddMudServices(config =>
     config.SnackbarConfiguration.ShowTransitionDuration = 150;
 });
 builder.Services.AddScoped<KAST.UI.Services.ThemeService>();
+builder.Services.AddScoped<KastInternalUrlProvider>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 

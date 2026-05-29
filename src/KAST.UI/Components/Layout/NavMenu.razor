@@ -2,6 +2,8 @@
 @using KAST.Core.Events
 @inject IServerInstanceService ServerService
 @inject NavigationManager Nav
+@inject KastInternalUrlProvider InternalUrls
+@inject ILogger<NavMenu> Logger
 @implements IAsyncDisposable
 
 <MudNavMenu>
@@ -21,7 +23,12 @@
         </div>
     }
     <MudNavLink Href="mods" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Extension">Mods</MudNavLink>
-    <MudNavLink Href="monitoring" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart">Monitoring</MudNavLink>
+    <MudNavLink Href="monitoring" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart"
+                IconColor="@(_monitoringUnavailable ? Color.Warning : Color.Default)">Monitoring</MudNavLink>
+    @if (_monitoringUnavailable)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Warning" Class="px-4">Monitoring unavailable</MudText>
+    }
     <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
     <MudNavLink Href="about" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Info">About</MudNavLink>
 </MudNavMenu>
@@ -29,6 +36,7 @@
 @code {
     private IReadOnlyList<ServerInstance> _servers = [];
     private HubConnection? _hub;
+    private bool _monitoringUnavailable;
 
     protected override async Task OnInitializedAsync()
     {
@@ -36,9 +44,29 @@
         Nav.LocationChanged += OnLocationChanged;
 
         _hub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(InternalUrls.GetMonitoringHubUri())
             .WithAutomaticReconnect()
             .Build();
+
+        _hub.Reconnecting += _ =>
+        {
+            _monitoringUnavailable = true;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        _hub.Reconnected += _ =>
+        {
+            _monitoringUnavailable = false;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        _hub.Closed += error =>
+        {
+            _monitoringUnavailable = true;
+            if (error is not null)
+                Logger.LogWarning(error, "Monitoring SignalR hub connection closed.");
+            return InvokeAsync(StateHasChanged);
+        };
 
         _hub.On<ServerStatusChangedEvent>("ServerStatusChanged", async _ =>
         {
@@ -46,7 +74,16 @@
             await InvokeAsync(StateHasChanged);
         });
 
-        await _hub.StartAsync();
+        try
+        {
+            await _hub.StartAsync();
+            _monitoringUnavailable = false;
+        }
+        catch (Exception ex)
+        {
+            _monitoringUnavailable = true;
+            Logger.LogWarning(ex, "Failed to connect to monitoring SignalR hub.");
+        }
     }
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -81,4 +118,3 @@
         _                                => Icons.Material.Outlined.StopCircle
     };
 }
-
