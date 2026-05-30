@@ -58,6 +58,7 @@ public record ContentInstallRequest
 public class ContentInstallState
 {
     private ImmutableArray<string> _log = [];
+    private readonly Dictionary<string, DownloadFileProgress> _fileProgress = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
     public required string Key { get; init; }
@@ -68,6 +69,7 @@ public class ContentInstallState
     public bool IsDownloading { get; set; }
     public bool IsComplete { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? StatusMessage { get; private set; }
 
     /// <summary>For workshop mod installs: the manifest ID used during the download. Set by SteamModInstaller.</summary>
     public ulong InstalledManifestId { get; set; }
@@ -79,6 +81,18 @@ public class ContentInstallState
     public IReadOnlyList<string> Log
     {
         get { lock (_lock) return _log; }
+    }
+
+    public IReadOnlyList<DownloadFileProgress> FileProgress
+    {
+        get
+        {
+            lock (_lock)
+                return _fileProgress.Values
+                    .OrderBy(f => f.IsComplete)
+                    .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+        }
     }
 
     public double OverallProgress
@@ -99,6 +113,18 @@ public class ContentInstallState
     }
 
     public void NotifyChanged() => Changed?.Invoke();
+
+    public void SetStatusMessage(string? message)
+    {
+        StatusMessage = string.IsNullOrWhiteSpace(message) ? null : message;
+        Changed?.Invoke();
+    }
+
+    public void SetFileProgress(DownloadFileProgress progress)
+    {
+        lock (_lock) _fileProgress[progress.FileName] = progress;
+        Changed?.Invoke();
+    }
 
     public void BeginStep(int index)
     {
@@ -159,6 +185,8 @@ public class ContentInstallState
         IsDownloading = false;
         IsComplete = false;
         ErrorMessage = null;
+        StatusMessage = null;
+        lock (_lock) _fileProgress.Clear();
         foreach (var s in Steps)
         {
             s.Status = ContentStepStatus.Pending;

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using KAST.Core.Interfaces;
+using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
@@ -639,7 +640,11 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task<ulong> DownloadWorkshopItemAsync(
         long workshopId, string destinationPath,
-        IProgress<double>? progress = null, int maxParallelDownloads = 4, CancellationToken ct = default)
+        IProgress<double>? progress = null,
+        IProgress<DownloadFileProgress>? fileProgress = null,
+        IProgress<string>? statusProgress = null,
+        int maxParallelDownloads = 4,
+        CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -655,6 +660,7 @@ public class SteamClientService : ISteamService, IDisposable
         {
             _logger.LogInformation("Starting CDN download of workshop item {Id}", workshopId);
             progress?.Report(0);
+            statusProgress?.Report("Fetching Workshop details");
 
             // 1. Get workshop item details via Unified Messages for the manifest ID
             var publishedFileService = _steamUnifiedMessages.CreateService<PublishedFile>();
@@ -684,10 +690,12 @@ public class SteamClientService : ISteamService, IDisposable
             workshopActivity?.SetTag("workshop.app_id", appId);
 
             // 2. Get CDN server pool + depot decryption key
+            statusProgress?.Report("Preparing Steam CDN");
             var pool = await EnsureCdnPoolAsync(ct);
             var depotKey = await GetDepotKeyAsync(depotId, appId);
 
             // 3-5. Get manifest request code + download manifest (automatic CDN fallback)
+            statusProgress?.Report("Checking against Steam manifest");
             var manifestRequestCode = await _steamContent.GetManifestRequestCode(depotId, appId, manifestId);
             var manifest = await DownloadManifestWithFallbackAsync(
                 depotId, manifestId, manifestRequestCode, depotKey, pool, workshopActivity, ct);
@@ -707,16 +715,31 @@ public class SteamClientService : ISteamService, IDisposable
             // 6. Download all file chunks via CDN.Client (parallel workers, per-file spans)
             long totalSize = files.Sum(f => (long)f.TotalSize);
             Directory.CreateDirectory(destinationPath);
+            statusProgress?.Report("Preparing file list");
+            foreach (var file in files)
+            {
+                var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+                fileProgress?.Report(new DownloadFileProgress(
+                    relativePath,
+                    BytesDownloaded: 0,
+                    TotalBytes: (long)file.TotalSize,
+                    ProgressPercent: file.TotalSize == 0 ? 100 : 0,
+                    BytesPerSecond: 0,
+                    IsComplete: file.TotalSize == 0));
+            }
 
+            statusProgress?.Report("Downloading files");
             var (bytesTransferred, _, dlElapsed, skippedFiles) = await DownloadFilesInParallelAsync(
                 files, depotId, depotKey, pool, destinationPath,
                 parentSpanContext: workshopActivity?.Context ?? Activity.Current?.Context ?? default,
                 progressBase: 0, progressTotal: totalSize,
-                progress, logProgress: null,
+                progress, fileProgress, logProgress: null,
                 logPrefix: $"Workshop {workshopId}",
                 maxParallelWorkers: Math.Clamp(maxParallelDownloads, 1, 64), ct);
 
+            statusProgress?.Report("Checking downloaded files");
             var verifiedFiles = ValidateManifestFiles(destinationPath, files, skippedFiles);
+            statusProgress?.Report("Pruning stale files");
             var prunedFiles = PruneFilesOutsideManifest(destinationPath, files);
 
             var totalMbDownloaded = bytesTransferred / 1_048_576.0;
@@ -732,6 +755,7 @@ public class SteamClientService : ISteamService, IDisposable
             _logger.LogInformation("Workshop item {Id} download complete → {Path}  ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
                 workshopId, destinationPath, totalMbDownloaded, dlElapsed.TotalSeconds, avgMbps);
             progress?.Report(100);
+            statusProgress?.Report("Download complete");
             return manifestId;
         }
         catch (Exception ex)
@@ -955,7 +979,7 @@ public class SteamClientService : ISteamService, IDisposable
                     toDownload, depotId, depotKey, pool, destinationPath,
                     parentSpanContext: dlActivity?.Context ?? Activity.Current?.Context ?? default,
                     progressBase: totalDownloaded, progressTotal: totalSize,
-                    progress, logProgress,
+                    progress, null, logProgress,
                     logPrefix: $"Depot {depotId}",
                     maxParallelWorkers: maxParallelDownloads, ct);
 
@@ -1115,6 +1139,7 @@ public class SteamClientService : ISteamService, IDisposable
             ActivityContext parentSpanContext,
             long progressBase, long progressTotal,
             IProgress<double>? progress,
+            IProgress<DownloadFileProgress>? fileProgress,
             IProgress<string>? logProgress,
             string logPrefix,
             int maxParallelWorkers,
@@ -1171,12 +1196,24 @@ public class SteamClientService : ISteamService, IDisposable
                         $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
                     var downloadAttempt = 0;
                     var shouldMoveDownloadedFile = true;
+                    long fileBytesDownloaded = 0;
+                    var fileSw = System.Diagnostics.Stopwatch.StartNew();
                     const int maxHashRetries = 2;
                     while (true)
                     {
                         downloadAttempt++;
                         try
                         {
+                            fileBytesDownloaded = 0;
+                            fileSw.Restart();
+                            fileProgress?.Report(new DownloadFileProgress(
+                                relativePath,
+                                BytesDownloaded: 0,
+                                TotalBytes: (long)file.TotalSize,
+                                ProgressPercent: file.TotalSize == 0 ? 100 : 0,
+                                BytesPerSecond: 0,
+                                IsComplete: file.TotalSize == 0));
+
                             await using (var fs = new FileStream(
                                              tempPath,
                                              FileMode.CreateNew,
@@ -1197,6 +1234,20 @@ public class SteamClientService : ISteamService, IDisposable
                                     await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
 
                                     var newBytes = Interlocked.Add(ref bytesDownloaded, written);
+                                    fileBytesDownloaded += written;
+                                    var fileProgressPercent = file.TotalSize > 0
+                                        ? (double)fileBytesDownloaded / file.TotalSize * 100.0
+                                        : 100.0;
+                                    var fileSpeed = fileSw.Elapsed.TotalSeconds > 0
+                                        ? fileBytesDownloaded / fileSw.Elapsed.TotalSeconds
+                                        : 0;
+                                    fileProgress?.Report(new DownloadFileProgress(
+                                        relativePath,
+                                        fileBytesDownloaded,
+                                        (long)file.TotalSize,
+                                        Math.Clamp(fileProgressPercent, 0, 100),
+                                        fileSpeed));
+
                                     if (progressTotal > 0)
                                         progress?.Report((double)(progressBase + newBytes) / progressTotal * 100.0);
                                 }
@@ -1221,6 +1272,15 @@ public class SteamClientService : ISteamService, IDisposable
                                 logPrefix, relativePath);
                             TryDeleteTempFile(tempPath);
                             skippedFiles.Add(relativePath);
+                            fileProgress?.Report(new DownloadFileProgress(
+                                relativePath,
+                                fileBytesDownloaded,
+                                (long)file.TotalSize,
+                                0,
+                                0,
+                                IsComplete: true,
+                                IsSkipped: true,
+                                Status: "Skipped"));
                             shouldMoveDownloadedFile = false;
                             break; // skip this file, continue with remaining files
                         }
@@ -1232,7 +1292,27 @@ public class SteamClientService : ISteamService, IDisposable
                     }
 
                     if (shouldMoveDownloadedFile)
+                    {
+                        fileProgress?.Report(new DownloadFileProgress(
+                            relativePath,
+                            fileBytesDownloaded,
+                            (long)file.TotalSize,
+                            100,
+                            0,
+                            Status: "Moving..."));
                         File.Move(tempPath, filePath, overwrite: true);
+                        var fileSpeed = fileSw.Elapsed.TotalSeconds > 0
+                            ? fileBytesDownloaded / fileSw.Elapsed.TotalSeconds
+                            : 0;
+                        fileProgress?.Report(new DownloadFileProgress(
+                            relativePath,
+                            (long)file.TotalSize,
+                            (long)file.TotalSize,
+                            100,
+                            fileSpeed,
+                            IsComplete: true,
+                            Status: "Complete"));
+                    }
 
                     var done = Interlocked.Increment(ref filesDone);
                     _logger.LogDebug("{Prefix}: [{Done}/{Total}] {File}", logPrefix, done, files.Count, relativePath);

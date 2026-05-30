@@ -360,36 +360,57 @@ else
                     <div class="d-flex flex-column gap-2">
                         @foreach (var mod in activeDownloads)
                         {
-                            var pct = _taskProgress.GetValueOrDefault(mod.Id, 0);
+                            var pct = GetModProgress(mod.Id);
                             var speed = _downloadSpeed.GetValueOrDefault(mod.Id, 0);
-                            var remaining = mod.ExpectedSizeBytes > 0 && pct > 0
-                                ? mod.ExpectedSizeBytes * (100 - pct) / 100 : (long)0;
-                            var eta = speed > 0 && remaining > 0
-                                ? TimeSpan.FromSeconds(remaining / speed)
-                                : (TimeSpan?)null;
-                            <div class="pa-3" style="border:1px solid var(--mud-palette-divider); border-radius:4px;">
-                                <div class="d-flex align-center gap-2 mb-2">
+                            var files = GetModFileProgress(mod.Id);
+                            var expanded = _expandedDownloadModIds.Contains(mod.Id);
+                            var status = GetModDownloadStatus(mod.Id);
+                            <div class="mod-download">
+                                <button type="button" class="mod-download-header" @onclick="@(() => ToggleDownloadExpanded(mod.Id))">
                                     @if (!string.IsNullOrEmpty(mod.ThumbnailUrl))
                                     {
-                                        <img src="@mod.ThumbnailUrl" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:3px;" />
+                                        <img src="@mod.ThumbnailUrl" alt="" class="mod-download-thumb" />
                                     }
-                                    <div style="flex:1; min-width:0;">
-                                        <MudText Typo="Typo.body2" Style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@mod.Name</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@UiHelpers.FormatBytes(mod.ExpectedSizeBytes)</MudText>
+                                    <div class="mod-download-title">
+                                        <MudText Typo="Typo.body2">@mod.Name</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@status</MudText>
                                     </div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mod-download-size">@FormatDownloadSize(mod.ExpectedSizeBytes)</MudText>
                                     <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Info">@pct.ToString("F0")%</MudChip>
-                                </div>
-                                <MudProgressLinear Value="@pct" Min="0" Max="100" Color="Color.Primary" Rounded="true" Size="Size.Small" Class="mb-1" />
-                                <div class="d-flex gap-3">
-                                    @if (speed > 0)
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@UiHelpers.FormatBytes((long)speed)/s</MudText>
-                                    }
-                                    @if (eta.HasValue)
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">~@(eta.Value.TotalMinutes >= 1 ? $"{eta.Value.TotalMinutes:F0}m" : $"{eta.Value.TotalSeconds:F0}s") left</MudText>
-                                    }
-                                </div>
+                                    <MudIcon Icon="@(expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Size="Size.Small" />
+                                </button>
+                                @if (expanded)
+                                {
+                                    <div class="mod-download-files">
+                                        @if (files.Count == 0)
+                                        {
+                                            <div class="mod-download-file-row">
+                                                <div class="mod-download-file-name">Preparing file list...</div>
+                                                <div class="mod-download-file-progress">
+                                                    <MudProgressLinear Value="@pct" Min="0" Max="100" Color="Color.Primary" Rounded="true" Size="Size.Small" />
+                                                    <span>@pct.ToString("F0")%@(speed > 0 ? $" - {UiHelpers.FormatBytes((long)speed)}/s" : "")</span>
+                                                </div>
+                                                <div class="mod-download-file-size">@FormatDownloadSize(mod.ExpectedSizeBytes)</div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var file in files)
+                                            {
+                                                <div class="mod-download-file-row">
+                                                    <div class="mod-download-file-name" title="@file.FileName">@file.FileName</div>
+                                                    <div class="mod-download-file-progress">
+                                                        <MudProgressLinear Value="@file.ProgressPercent" Min="0" Max="100"
+                                                                           Color="@(file.IsSkipped ? Color.Warning : Color.Primary)"
+                                                                           Rounded="true" Size="Size.Small" />
+                                                        <span>@FormatFileProgress(file)</span>
+                                                    </div>
+                                                    <div class="mod-download-file-size">@FormatDownloadSize(file.TotalBytes)</div>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
                             </div>
                         }
                     </div>
@@ -750,6 +771,8 @@ else
     private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
     private readonly HashSet<int> _queuedModIds = new();
     private readonly HashSet<int> _checkingMods = new();
+    private readonly HashSet<int> _expandedDownloadModIds = new();
+    private readonly Dictionary<int, Dictionary<string, DownloadFileProgress>> _fileProgressByMod = new();
     private readonly Dictionary<string, (ContentInstallState State, Action Handler)> _progressSubscriptions = new();
 
     // Download speed tracking
@@ -805,6 +828,19 @@ else
         }
         _downloadBytesPrev[evt.ModId] = evt.BytesDownloaded;
         _downloadTsPrev[evt.ModId] = DateTime.UtcNow;
+        if (evt.Files is { Count: > 0 })
+        {
+            if (!_fileProgressByMod.TryGetValue(evt.ModId, out var files))
+            {
+                files = new Dictionary<string, DownloadFileProgress>(StringComparer.OrdinalIgnoreCase);
+                _fileProgressByMod[evt.ModId] = files;
+            }
+
+            foreach (var file in evt.Files)
+                files[file.FileName] = file;
+
+            _expandedDownloadModIds.Add(evt.ModId);
+        }
 
         _ = InvokeAsync(StateHasChanged);
     }
@@ -820,6 +856,10 @@ else
                 .Select(m => m.Id).ToHashSet();
             foreach (var id in _taskProgress.Keys.Where(k => !activeIds.Contains(k)).ToList())
                 _taskProgress.Remove(id);
+            foreach (var id in _fileProgressByMod.Keys.Where(k => !activeIds.Contains(k)).ToList())
+                _fileProgressByMod.Remove(id);
+            foreach (var id in _expandedDownloadModIds.Where(k => !activeIds.Contains(k)).ToList())
+                _expandedDownloadModIds.Remove(id);
             foreach (var id in _queuedModIds.ToList())
             {
                 if (activeIds.Contains(id) || !DownloadManager.IsActive(id))
@@ -900,6 +940,61 @@ else
         return downloadStep.Status is ContentStepStatus.Completed or ContentStepStatus.Skipped
             ? 100
             : downloadStep.Progress;
+    }
+
+    private IReadOnlyList<DownloadFileProgress> GetModFileProgress(int modId)
+    {
+        if (_fileProgressByMod.TryGetValue(modId, out var files) && files.Count > 0)
+            return files.Values
+                .OrderBy(f => f.IsComplete)
+                .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        return ContentTracker.Get(ContentProgressTracker.ModKey(modId))?.FileProgress ?? [];
+    }
+
+    private string GetModDownloadStatus(int modId)
+    {
+        var state = ContentTracker.Get(ContentProgressTracker.ModKey(modId));
+        if (!string.IsNullOrWhiteSpace(state?.StatusMessage))
+            return state.StatusMessage;
+
+        var files = GetModFileProgress(modId);
+        if (files.Count == 0)
+            return "Waiting for Steam";
+
+        return files.Any(f => !f.IsComplete)
+            ? "Downloading files"
+            : "Finalizing";
+    }
+
+    private void ToggleDownloadExpanded(int modId)
+    {
+        if (!_expandedDownloadModIds.Add(modId))
+            _expandedDownloadModIds.Remove(modId);
+    }
+
+    private static string FormatDownloadSize(long bytes)
+        => bytes > 0 ? UiHelpers.FormatBytes(bytes) : "-";
+
+    private static string FormatFileProgress(DownloadFileProgress file)
+    {
+        if (file.IsSkipped)
+            return "skipped";
+
+        if (!string.Equals(file.Status, "Downloading", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(file.Status, "Complete", StringComparison.OrdinalIgnoreCase))
+            return file.Status;
+
+        var speed = file.BytesPerSecond > 0
+            ? $" - {UiHelpers.FormatBytes((long)file.BytesPerSecond)}/s"
+            : "";
+
+        var status = string.Equals(file.Status, "Complete", StringComparison.OrdinalIgnoreCase)
+            ? " complete"
+            : "";
+
+        return $"{file.ProgressPercent:F0}%{speed}{status}";
     }
 
     private void SyncProgressSubscriptions(HashSet<int> activeModIds)

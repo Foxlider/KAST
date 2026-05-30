@@ -1,6 +1,14 @@
+using KAST.Core.Models;
+
 namespace KAST.Core.Events;
 
-public record ModDownloadProgressEvent(int ModId, long WorkshopId, double ProgressPercent, long BytesDownloaded, long TotalBytes);
+public record ModDownloadProgressEvent(
+    int ModId,
+    long WorkshopId,
+    double ProgressPercent,
+    long BytesDownloaded,
+    long TotalBytes,
+    IReadOnlyList<DownloadFileProgress>? Files = null);
 public record ModStatusChangedEvent(int ModId, string NewStatus);
 public record ServerStatusChangedEvent(int ServerInstanceId, string NewStatus);
 public record HostMetricsUpdatedEvent(double CpuPercent, double MemoryPercent);

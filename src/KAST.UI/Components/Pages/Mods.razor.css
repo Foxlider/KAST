@@ -61,6 +61,95 @@
     min-width: 0;
 }
 
+.mod-download {
+    border: 1px solid var(--mud-palette-divider);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.mod-download-header {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mod-download-header:hover {
+    background: rgba(128, 128, 128, .08);
+}
+
+.mod-download-thumb {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 3px;
+}
+
+.mod-download-title {
+    min-width: 0;
+    font-weight: 500;
+}
+
+.mod-download-title .mud-typography {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mod-download-size {
+    white-space: nowrap;
+}
+
+.mod-download-files {
+    border-top: 1px solid var(--mud-palette-divider);
+}
+
+.mod-download-file-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.5fr) minmax(72px, auto);
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--mud-palette-divider);
+}
+
+.mod-download-file-row:last-child {
+    border-bottom: 0;
+}
+
+.mod-download-file-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: .875rem;
+}
+
+.mod-download-file-progress {
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: .75rem;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
+.mod-download-file-size {
+    font-size: .75rem;
+    color: var(--mud-palette-text-secondary);
+    text-align: right;
+    white-space: nowrap;
+}
+
 /* ── Mod description BBCode renderer ─────────────────────────────────── */
 .mod-description {
     font-size: .875rem;
@@ -166,5 +255,26 @@
 
     .dl-body {
         max-height: 42vh;
+    }
+
+    .mod-download-header {
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+    }
+
+    .mod-download-size {
+        display: none;
+    }
+
+    .mod-download-file-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .mod-download-file-progress {
+        grid-template-columns: minmax(80px, 1fr) auto;
+    }
+
+    .mod-download-file-size {
+        text-align: left;
     }
 }

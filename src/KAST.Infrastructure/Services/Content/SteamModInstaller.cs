@@ -30,10 +30,12 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppE
         try
         {
             state.BeginStep(0);
+            state.SetStatusMessage("Queued for Steam");
             state.AddLog($"Downloading Workshop item {request.WorkshopId} → {request.DestinationPath}");
 
             if (!steam.IsConnected)
             {
+                state.SetStatusMessage("Connecting to Steam");
                 state.AddLog("Connecting to Steam (anonymous)...");
                 await steam.LoginAnonymousAsync(ct);
             }
@@ -56,11 +58,33 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppE
                     bytesDownloaded,
                     request.ExpectedSizeBytes));
             });
+            var fileProgress = new Progress<DownloadFileProgress>(file =>
+            {
+                state.SetFileProgress(file);
+                if (request.ModId <= 0 || broadcaster is null)
+                    return;
+
+                var overallPct = state.Steps.Count > 0 ? state.Steps[0].Progress : 0;
+                var bytesDownloaded = request.ExpectedSizeBytes > 0
+                    ? (long)(overallPct / 100.0 * request.ExpectedSizeBytes)
+                    : 0;
+
+                _ = broadcaster.BroadcastDownloadProgressAsync(new ModDownloadProgressEvent(
+                    request.ModId,
+                    request.WorkshopId,
+                    overallPct,
+                    bytesDownloaded,
+                    request.ExpectedSizeBytes,
+                    [file]));
+            });
+            var statusProgress = new Progress<string>(state.SetStatusMessage);
             state.AddLog($"Parallel workers: {Math.Max(1, request.MaxParallelDownloads)}.");
             var installedManifestId = await steam.DownloadWorkshopItemAsync(
                 request.WorkshopId,
                 request.DestinationPath,
                 progress,
+                fileProgress,
+                statusProgress,
                 request.MaxParallelDownloads,
                 ct);
             state.InstalledManifestId = installedManifestId;
@@ -69,6 +93,7 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppE
             state.AddLog("Download complete.");
 
             state.BeginStep(1);
+            state.SetStatusMessage("Calculating size on disk");
             state.AddLog("Calculating size on disk...");
 
             long size = fs.GetDirectorySize(request.DestinationPath);
@@ -76,9 +101,11 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppE
             activity?.SetTag("mod.size_bytes", size);
 
             state.CompleteStep(1);
+            state.SetStatusMessage("Installed");
         }
         catch (Exception ex)
         {
+            state.SetStatusMessage(ex is OperationCanceledException ? "Cancelled" : "Failed");
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
