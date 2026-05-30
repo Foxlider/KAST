@@ -45,8 +45,11 @@ public record ContentInstallRequest
     /// <summary>Snapshot of DLC flags so the installer can plan steps without DB access.</summary>
     public ServerInstance? Instance { get; init; }
 
-    /// <summary>Maximum parallel chunk downloads (from user settings).</summary>
+    /// <summary>Maximum parallel file workers inside one Steam install.</summary>
     public int MaxParallelDownloads { get; init; } = 4;
+
+    /// <summary>Maximum number of Steam Workshop mod installs allowed to run at the same time.</summary>
+    public int MaxParallelModDownloads { get; init; } = 1;
 }
 
 /// <summary>

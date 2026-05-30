@@ -38,7 +38,8 @@ public interface IContentOrchestrator
         Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
-        int maxParallelDownloads = 4);
+        int maxParallelDownloads = 4,
+        int maxParallelModDownloads = 1);
 
     /// <summary>Cancels the active download for the given key.</summary>
     void Cancel(string key);

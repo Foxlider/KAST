@@ -17,4 +17,5 @@ public class KastSettings
     public string ThemeMode { get; set; } = "dark"; // "dark" or "light"
     public int MetricsIntervalSeconds { get; set; } = 5;
     public int ParallelDownloads { get; set; } = 4;
+    public int ParallelModDownloads { get; set; } = 1;
 }

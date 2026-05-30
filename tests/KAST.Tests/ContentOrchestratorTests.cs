@@ -147,6 +147,41 @@ public class ContentOrchestratorTests
     }
 
     [Fact]
+    public async Task StartModInstall_ParallelModDownloads_AllowsConfiguredConcurrentMods()
+    {
+        var provider = BuildServiceProvider();
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+
+        var installers = new[]
+        {
+            new FakeInstaller(ContentType.SteamMod, async (_, state, ct) =>
+            {
+                Interlocked.Increment(ref started);
+                state.BeginStep(0);
+                await gate.Task.WaitAsync(ct);
+                state.CompleteStep(0);
+            })
+        };
+
+        var orchestrator = BuildOrchestrator(provider, installers);
+
+        var first = orchestrator.StartModInstall(31, ContentType.SteamMod, "/tmp/mod31", maxParallelModDownloads: 2);
+        var second = orchestrator.StartModInstall(32, ContentType.SteamMod, "/tmp/mod32", maxParallelModDownloads: 2);
+        var third = orchestrator.StartModInstall(33, ContentType.SteamMod, "/tmp/mod33", maxParallelModDownloads: 2);
+
+        await WaitForAsync(() => Volatile.Read(ref started) == 2);
+        Assert.Equal(2, Volatile.Read(ref started));
+        Assert.True(first.Steps[0].Status == ContentStepStatus.InProgress);
+        Assert.True(second.Steps[0].Status == ContentStepStatus.InProgress);
+        Assert.True(third.Steps[0].Status == ContentStepStatus.Pending);
+
+        gate.SetResult(true);
+        await WaitForAsync(() => first.IsComplete && second.IsComplete && third.IsComplete);
+        Assert.Equal(3, Volatile.Read(ref started));
+    }
+
+    [Fact]
     public void Cancel_WhenKeyIsNotActive_DoesNotThrow()
     {
         var provider = BuildServiceProvider();

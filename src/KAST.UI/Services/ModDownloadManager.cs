@@ -55,6 +55,7 @@ public sealed class ModDownloadManager(
         var settings = await settingsService.GetSettingsAsync(ct);
         var destinationPath = ResolveDestinationPath(mod, settings.ModsDirectory, isUpdate);
         var maxParallelDownloads = Math.Clamp(settings.ParallelDownloads, 1, 64);
+        var maxParallelModDownloads = Math.Clamp(settings.ParallelModDownloads, 1, 16);
 
         orchestrator.StartModInstall(
             mod.Id,
@@ -65,7 +66,8 @@ public sealed class ModDownloadManager(
             onStarted: (callbackSp, _) => MarkModStartedAsync(callbackSp, modId, isUpdate),
             onComplete: (callbackSp, state) => CompleteModInstallAsync(callbackSp, modId, destinationPath, state),
             onError: (callbackSp, _, ex) => FailModInstallAsync(callbackSp, modId, ex),
-            maxParallelDownloads: maxParallelDownloads);
+            maxParallelDownloads: maxParallelDownloads,
+            maxParallelModDownloads: maxParallelModDownloads);
 
         return true;
     }

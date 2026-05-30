@@ -849,10 +849,32 @@ else
                 _taskIds.Insert(0, modId);
         }
 
-        SyncProgressSubscriptions(_mods
+        var activeModIds = _mods
             .Where(m => m.Status is ModStatus.Downloading or ModStatus.Updating)
             .Select(m => m.Id)
-            .ToHashSet());
+            .ToHashSet();
+
+        foreach (var modId in ContentTracker.GetAll()
+                     .Where(s => s.Type == ContentType.SteamMod && s.IsDownloading)
+                     .Select(s => TryParseTrackedModId(s.Key))
+                     .Where(id => id.HasValue)
+                     .Select(id => id!.Value))
+        {
+            if (!activeModIds.Contains(modId))
+                _queuedModIds.Add(modId);
+            if (!_taskIds.Contains(modId))
+                _taskIds.Insert(0, modId);
+        }
+
+        SyncProgressSubscriptions(activeModIds);
+    }
+
+    private static int? TryParseTrackedModId(string key)
+    {
+        return key.StartsWith("mod:", StringComparison.Ordinal) &&
+               int.TryParse(key["mod:".Length..], out var modId)
+            ? modId
+            : null;
     }
 
     private double GetModProgress(int modId)

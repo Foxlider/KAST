@@ -49,6 +49,7 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
             existing.ThemeMode = settings.ThemeMode;
             existing.MetricsIntervalSeconds = settings.MetricsIntervalSeconds;
             existing.ParallelDownloads = settings.ParallelDownloads;
+            existing.ParallelModDownloads = settings.ParallelModDownloads;
         }
         await db.SaveChangesAsync(ct);
     }

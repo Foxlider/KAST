@@ -24,7 +24,8 @@ public class ContentOrchestrator(
     private readonly ConcurrentDictionary<string, ActiveInstall> _active = new();
     private readonly object _steamQueueLock = new();
     private readonly Queue<SteamQueueEntry> _steamQueue = new();
-    private bool _steamQueueBusy;
+    private int _activeSteamModInstalls;
+    private bool _steamServerInstallActive;
     private readonly Dictionary<ContentType, IContentInstaller> _installers =
         installers.ToDictionary(i => i.Type);
 
@@ -104,7 +105,8 @@ public class ContentOrchestrator(
         Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
-        int maxParallelDownloads = 4)
+        int maxParallelDownloads = 4,
+        int maxParallelModDownloads = 1)
     {
         var key = ContentProgressTracker.ModKey(modId);
 
@@ -135,7 +137,8 @@ public class ContentOrchestrator(
             WorkshopId = workshopId,
             ExpectedSizeBytes = expectedSizeBytes,
             SourcePath = sourcePath,
-            MaxParallelDownloads = maxParallelDownloads
+            MaxParallelDownloads = maxParallelDownloads,
+            MaxParallelModDownloads = maxParallelModDownloads
         };
 
         var steps = installer.PlanSteps(request);
@@ -272,11 +275,14 @@ public class ContentOrchestrator(
             return;
         }
 
-        state.AddLog("Queued for Steam content slot...");
-        using var lease = await WaitForSteamContentTurnAsync(state.Key, ct);
+        var slotName = request.Type == ContentType.SteamMod
+            ? "Steam mod download slot"
+            : "Steam content slot";
+        state.AddLog($"Queued for {slotName}...");
+        using var lease = await WaitForSteamContentTurnAsync(request, state.Key, ct);
         try
         {
-            state.AddLog("Steam content slot acquired.");
+            state.AddLog($"{slotName} acquired.");
             await HandleStartedCallbackAsync(onStarted, state);
             await installer.InstallAsync(request, state, ct);
         }
@@ -285,9 +291,12 @@ public class ContentOrchestrator(
         }
     }
 
-    private async Task<IDisposable> WaitForSteamContentTurnAsync(string key, CancellationToken ct)
+    private async Task<IDisposable> WaitForSteamContentTurnAsync(ContentInstallRequest request, string key, CancellationToken ct)
     {
-        var entry = new SteamQueueEntry(key);
+        var entry = new SteamQueueEntry(
+            key,
+            request.Type,
+            Math.Clamp(request.MaxParallelModDownloads, 1, 16));
         entry.Cancellation = ct.Register(() => CancelSteamQueueEntry(entry));
 
         lock (_steamQueueLock)
@@ -317,20 +326,18 @@ public class ContentOrchestrator(
     {
         lock (_steamQueueLock)
         {
-            if (_steamQueue.Count > 0 && ReferenceEquals(_steamQueue.Peek(), entry))
-                _steamQueue.Dequeue();
+            if (entry.Type == ContentType.SteamMod)
+                _activeSteamModInstalls = Math.Max(0, _activeSteamModInstalls - 1);
+            else if (entry.Type == ContentType.Server)
+                _steamServerInstallActive = false;
 
             entry.Cancellation.Dispose();
-            _steamQueueBusy = false;
             TryStartNextSteamQueueEntryLocked();
         }
     }
 
     private void TryStartNextSteamQueueEntryLocked()
     {
-        if (_steamQueueBusy)
-            return;
-
         while (_steamQueue.Count > 0)
         {
             var next = _steamQueue.Peek();
@@ -341,11 +348,28 @@ public class ContentOrchestrator(
                 continue;
             }
 
+            if (!CanStartSteamQueueEntry(next))
+                return;
+
+            _steamQueue.Dequeue();
             next.Started = true;
-            _steamQueueBusy = true;
+            if (next.Type == ContentType.SteamMod)
+                _activeSteamModInstalls++;
+            else if (next.Type == ContentType.Server)
+                _steamServerInstallActive = true;
             next.Ready.TrySetResult();
-            return;
         }
+    }
+
+    private bool CanStartSteamQueueEntry(SteamQueueEntry entry)
+    {
+        return entry.Type switch
+        {
+            ContentType.SteamMod => !_steamServerInstallActive &&
+                                    _activeSteamModInstalls < entry.MaxParallelModDownloads,
+            ContentType.Server => !_steamServerInstallActive && _activeSteamModInstalls == 0,
+            _ => true
+        };
     }
 
     private async Task HandleServerInstallCompleteAsync(ContentInstallRequest request, ContentInstallState state)
@@ -479,9 +503,11 @@ public class ContentOrchestrator(
 
     private sealed record ActiveInstall(CancellationTokenSource Cancellation, ContentInstallState State);
 
-    private sealed class SteamQueueEntry(string key)
+    private sealed class SteamQueueEntry(string key, ContentType type, int maxParallelModDownloads)
     {
         public string Key { get; } = key;
+        public ContentType Type { get; } = type;
+        public int MaxParallelModDownloads { get; } = maxParallelModDownloads;
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationTokenRegistration Cancellation { get; set; }
         public bool Started { get; set; }

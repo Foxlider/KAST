@@ -181,6 +181,9 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<int>("ParallelDownloads")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("ParallelModDownloads")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ServersDirectory")
                         .IsRequired()
                         .HasColumnType("TEXT");

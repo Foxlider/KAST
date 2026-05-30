@@ -1855,7 +1855,7 @@ public class SteamClientService : ISteamService, IDisposable
             }
 
             var best = results.OrderByDescending(r => r.MbPerSecond).First();
-            log?.Report($"Recommended: {best.Parallelism} parallel downloads ({best.MbPerSecond:F1} MB/s)");
+            log?.Report($"Recommended: {best.Parallelism} parallel workers ({best.MbPerSecond:F1} MB/s)");
 
             benchActivity?.SetTag("benchmark.recommended_parallelism", best.Parallelism);
             benchActivity?.SetTag("benchmark.best_mbps", Math.Round(best.MbPerSecond, 2));

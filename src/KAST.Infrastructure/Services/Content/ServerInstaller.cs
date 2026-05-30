@@ -83,7 +83,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 throw new InvalidOperationException("Failed to connect to Steam.");
 
             state.AddLog(steam.IsAuthenticated ? $"Signed in as {steam.CurrentUsername}." : "Connected anonymously.");
-            state.AddLog($"Parallel downloads: {maxPar}.");
+            state.AddLog($"Parallel workers: {maxPar}.");
             logger.LogInformation("Server install [{Instance}]: steam ready, {Auth}, {Par} workers, dest={Path}",
                 instance.Name,
                 steam.IsAuthenticated ? $"authenticated as {steam.CurrentUsername}" : "anonymous",

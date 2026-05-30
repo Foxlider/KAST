@@ -23,10 +23,12 @@
             <MudCardContent>
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Downloads</MudText>
                 <div class="d-flex align-center gap-4 flex-wrap">
-                    <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel Downloads"
+                    <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel workers"
                                      Min="1" Max="64" Step="1" Style="width:160px;" />
+                    <MudNumericField @bind-Value="_parallelModDownloads" Label="Parallel mod downloads"
+                                     Min="1" Max="16" Step="1" Style="width:190px;" />
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Number of concurrent file downloads when installing server files (1–64).
+                        Workers download files inside each Steam install. Parallel mod downloads controls how many Workshop mods run at once.
                     </MudText>
                 </div>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
@@ -35,7 +37,7 @@
 
                 <MudText Typo="Typo.subtitle2" Class="mb-1">Speed Benchmark</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
-                    Downloads ~30 MB from Steam CDN at different parallelism levels to find the optimal setting for your connection.
+                    Downloads ~30 MB from Steam CDN at different worker levels to find the optimal per-install worker count.
                 </MudText>
 
                 @if (_benchmarkRunning)
@@ -59,7 +61,7 @@
                 @if (_benchmarkResults is { Count: > 0 })
                 {
                     <MudSimpleTable Style="margin-top:12px; max-width:480px;" Dense="true" Hover="true">
-                        <thead><tr><th>Threads</th><th>Speed</th><th>Time</th><th></th></tr></thead>
+                        <thead><tr><th>Workers</th><th>Speed</th><th>Time</th><th></th></tr></thead>
                         <tbody>
                             @foreach (var r in _benchmarkResults)
                             {
@@ -77,7 +79,7 @@
                     </MudSimpleTable>
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
                                OnClick="@(() => ApplyBenchmark(GetBestBenchmark().Parallelism))">
-                        Apply @GetBestBenchmark().Parallelism parallel downloads (@GetBestBenchmark().MbPerSecond.ToString("F1") MB/s)
+                        Apply @GetBestBenchmark().Parallelism parallel workers (@GetBestBenchmark().MbPerSecond.ToString("F1") MB/s)
                     </MudButton>
                 }
 
@@ -405,6 +407,7 @@
     private string _newKeyName = "";
     private string _newRawKey = "";
     private int _parallelDownloads = 4;
+    private int _parallelModDownloads = 1;
 
     private KastUser? _currentUser;
     private IReadOnlyList<KastUser> _accounts = [];
@@ -430,6 +433,7 @@
         await LoadAccountsAsync();
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
+        _parallelModDownloads = settings.ParallelModDownloads;
         _accentMud  = ThemeService.AccentColor;
         _isDarkMode = ThemeService.IsDarkMode;
 
@@ -667,6 +671,7 @@
     {
         var settings = await SettingsService.GetSettingsAsync();
         settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
+        settings.ParallelModDownloads = Math.Clamp(_parallelModDownloads, 1, 16);
         await SettingsService.UpdateSettingsAsync(settings);
         Snackbar.Add("Settings saved", Severity.Success);
     }

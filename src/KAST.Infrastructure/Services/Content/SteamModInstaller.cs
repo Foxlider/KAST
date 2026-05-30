@@ -56,7 +56,7 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppE
                     bytesDownloaded,
                     request.ExpectedSizeBytes));
             });
-            state.AddLog($"Parallel chunk downloads: {Math.Max(1, request.MaxParallelDownloads)}.");
+            state.AddLog($"Parallel workers: {Math.Max(1, request.MaxParallelDownloads)}.");
             var installedManifestId = await steam.DownloadWorkshopItemAsync(
                 request.WorkshopId,
                 request.DestinationPath,

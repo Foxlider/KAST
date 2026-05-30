@@ -44,7 +44,8 @@ public class ModDownloadManagerTests
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
-            4);
+            4,
+            2);
     }
 
     [Fact]
@@ -106,7 +107,8 @@ public class ModDownloadManagerTests
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
-            4);
+            4,
+            2);
     }
 
     [Fact]
@@ -141,7 +143,8 @@ public class ModDownloadManagerTests
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
-            4);
+            4,
+            2);
     }
 
     private static ModDownloadManager CreateManager(
@@ -152,7 +155,7 @@ public class ModDownloadManagerTests
         var services = new ServiceCollection();
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync(Arg.Any<CancellationToken>())
-            .Returns(new KastSettings { ModsDirectory = "mods", ParallelDownloads = 4 });
+            .Returns(new KastSettings { ModsDirectory = "mods", ParallelDownloads = 4, ParallelModDownloads = 2 });
 
         services.AddSingleton(modService);
         services.AddSingleton(settings);
