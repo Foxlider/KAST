@@ -1,11 +1,14 @@
 @page "/settings"
+@attribute [Authorize]
 @implements IDisposable
 @inject IApiKeyService ApiKeyService
+@inject IUserAccountService AccountService
 @inject ISettingsService SettingsService
 @inject ISteamService SteamService
 @inject ISnackbar Snackbar
 @inject ThemeService ThemeService
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
@@ -115,6 +118,99 @@
                 </div>
             </MudCardContent>
         </MudCard>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Accounts">
+        <MudGrid Class="mt-3" Spacing="3">
+            <MudItem xs="12" md="5">
+                <MudCard Elevation="1">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">My Profile</MudText>
+                        @if (_currentUser is not null)
+                        {
+                            <div class="d-flex align-center gap-3 mb-4">
+                                @if (!string.IsNullOrWhiteSpace(_currentUser.AvatarFileName))
+                                {
+                                    <MudAvatar Size="Size.Large">
+                                        <MudImage Src="@($"/account/avatars/{_currentUser.AvatarFileName}")" Alt="@_currentUser.Username" />
+                                    </MudAvatar>
+                                }
+                                else
+                                {
+                                    <MudAvatar Size="Size.Large" Color="Color.Secondary">@GetInitial(_currentUser.Username)</MudAvatar>
+                                }
+                                <div>
+                                    <MudText Typo="Typo.subtitle2">@_currentUser.Username</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Administrator</MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column gap-3">
+                                <MudTextField @bind-Value="_profileUsername" Label="Username" Variant="Variant.Outlined" />
+                                <MudTextField @bind-Value="_profilePassword" Label="New password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                                <div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
+                                    <InputFile OnChange="OnProfileAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                                </div>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile">
+                                    Save Profile
+                                </MudButton>
+                            </div>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
+            <MudItem xs="12" md="7">
+                <MudCard Elevation="1">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">Administrators</MudText>
+                        @if (_accounts.Count > 0)
+                        {
+                            <MudDataGrid T="KastUser" Items="@_accounts" Dense="true" Hover="true" Class="mb-4">
+                                <Columns>
+                                    <TemplateColumn Title="">
+                                        <CellTemplate>
+                                            @if (!string.IsNullOrWhiteSpace(context.Item.AvatarFileName))
+                                            {
+                                                <MudAvatar Size="Size.Small">
+                                                    <MudImage Src="@($"/account/avatars/{context.Item.AvatarFileName}")" Alt="@context.Item.Username" />
+                                                </MudAvatar>
+                                            }
+                                            else
+                                            {
+                                                <MudAvatar Size="Size.Small" Color="Color.Secondary">@GetInitial(context.Item.Username)</MudAvatar>
+                                            }
+                                        </CellTemplate>
+                                    </TemplateColumn>
+                                    <PropertyColumn Property="u => u.Username" Title="Username" />
+                                    <TemplateColumn Title="Created">
+                                        <CellTemplate>@context.Item.CreatedAt.ToLocalTime().ToString("g")</CellTemplate>
+                                    </TemplateColumn>
+                                    <TemplateColumn Title="Last Login">
+                                        <CellTemplate>@(context.Item.LastLoginAt?.ToLocalTime().ToString("g") ?? "Never")</CellTemplate>
+                                    </TemplateColumn>
+                                </Columns>
+                            </MudDataGrid>
+                        }
+
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.subtitle2" Class="mb-3">Create administrator</MudText>
+                        <div class="d-flex flex-column gap-3">
+                            <MudTextField @bind-Value="_newAdminUsername" Label="Username" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_newAdminPassword" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                            <div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
+                                <InputFile OnChange="OnNewAdminAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                            </div>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAdmin">
+                                Create Administrator
+                            </MudButton>
+                        </div>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
     </MudTabPanel>
 
     @* ════ Steam ════ *@
@@ -310,6 +406,16 @@
     private string _newRawKey = "";
     private int _parallelDownloads = 4;
 
+    private KastUser? _currentUser;
+    private IReadOnlyList<KastUser> _accounts = [];
+    private string _profileUsername = "";
+    private string _profilePassword = "";
+    private IBrowserFile? _profileAvatar;
+    private string _newAdminUsername = "";
+    private string _newAdminPassword = "";
+    private IBrowserFile? _newAdminAvatar;
+    private const long MaxAvatarBytes = 2 * 1024 * 1024;
+
     private bool _benchmarkRunning;
     private string? _benchmarkStatus;
     private IReadOnlyList<BenchmarkResult>? _benchmarkResults;
@@ -321,21 +427,100 @@
     {
         SteamService.AuthStateChanged += OnAuthStateChanged;
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
+        await LoadAccountsAsync();
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
         _accentMud  = ThemeService.AccentColor;
         _isDarkMode = ThemeService.IsDarkMode;
 
-        // Check if we should navigate to Steam tab (tab=steam in query string)
+        // Check if we should navigate to a specific tab.
         var uri = new Uri(Navigation.Uri);
         var queryParams = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        if (queryParams["tab"] == "steam")
+        _activePanelIndex = queryParams["tab"] switch
         {
-            _activePanelIndex = 1; // Steam tab
-        }
+            "accounts" => 1,
+            "steam" => 2,
+            "api-keys" => 3,
+            _ => _activePanelIndex
+        };
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task LoadAccountsAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.GetUserId();
+        if (userId is not null)
+        {
+            _currentUser = await AccountService.GetByIdAsync(userId.Value);
+            _profileUsername = _currentUser?.Username ?? "";
+        }
+
+        _accounts = await AccountService.GetAllUsersAsync();
+    }
+
+    private void OnProfileAvatarSelected(InputFileChangeEventArgs e)
+        => _profileAvatar = e.File;
+
+    private void OnNewAdminAvatarSelected(InputFileChangeEventArgs e)
+        => _newAdminAvatar = e.File;
+
+    private async Task SaveProfile()
+    {
+        if (_currentUser is null)
+            return;
+
+        try
+        {
+            await using var avatarStream = _profileAvatar?.OpenReadStream(MaxAvatarBytes);
+            _currentUser = await AccountService.UpdateProfileAsync(
+                _currentUser.Id,
+                _profileUsername,
+                string.IsNullOrWhiteSpace(_profilePassword) ? null : _profilePassword,
+                avatarStream,
+                _profileAvatar?.Name,
+                _profileAvatar?.Size ?? 0);
+
+            _profilePassword = "";
+            _profileAvatar = null;
+            await LoadAccountsAsync();
+            Snackbar.Add("Profile updated", Severity.Success);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CreateAdmin()
+    {
+        try
+        {
+            await using var avatarStream = _newAdminAvatar?.OpenReadStream(MaxAvatarBytes);
+            await AccountService.CreateAdminAsync(
+                _newAdminUsername,
+                _newAdminPassword,
+                avatarStream,
+                _newAdminAvatar?.Name,
+                _newAdminAvatar?.Size ?? 0);
+
+            _newAdminUsername = "";
+            _newAdminPassword = "";
+            _newAdminAvatar = null;
+            await LoadAccountsAsync();
+            Snackbar.Add("Administrator account created", Severity.Success);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static string GetInitial(string username)
+        => string.IsNullOrWhiteSpace(username)
+            ? "?"
+            : username.Trim()[0].ToString().ToUpperInvariant();
 
     private async Task StartQrLogin()
     {

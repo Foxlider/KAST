@@ -1,0 +1,1017 @@
+@using KAST.Core.Models
+@inject IMissionService MissionService
+@inject IModPresetService ModPresetService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<div class="d-flex flex-column gap-3" style="height:100%;">
+
+    @* ── Toolbar ── *@
+    <div class="d-flex align-center gap-2 mt-2 flex-wrap">
+        <MudTextField @bind-Value="_searchQuery"
+                      Placeholder="Search missions… (use #tag to filter)"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Clearable="true" Immediate="true"
+                      Margin="Margin.Dense"
+                      Variant="Variant.Outlined"
+                      Style="max-width:320px;" />
+        <MudSpacer />
+        <MudButton StartIcon="@Icons.Material.Filled.UploadFile"
+                   Color="Color.Primary" Variant="Variant.Filled"
+                   Size="Size.Small"
+                   OnClick="OpenUploadDialog">
+            Upload Mission
+        </MudButton>
+    </div>
+
+    <div class="d-flex gap-3" style="flex:1; min-height:0;">
+        @* ── Mission List (Left) ── *@
+        <div class="mud-paper mud-elevation-1 pa-3" style="flex:3; overflow-y:auto;">
+            <div class="d-flex align-center gap-2 mb-2">
+                <MudText Typo="Typo.subtitle1">Missions</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                    @_filteredMissions.Count total
+                </MudChip>
+            </div>
+
+            @* Active tag filter chips *@
+            @if (_activeFilterTags.Count > 0)
+            {
+                <div class="d-flex align-center gap-1 mb-2 flex-wrap">
+                    @foreach (var tag in _activeFilterTags)
+                    {
+                        <MudChip T="MissionTag" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                                 OnClose="() => RemoveFilterTag(tag)">
+                            #@tag.Name
+                        </MudChip>
+                    }
+                </div>
+            }
+
+            @if (_loadingMissions)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+            }
+            else if (_filteredMissions.Count == 0)
+            {
+                <div class="d-flex flex-column align-center justify-center gap-2" style="padding:60px 0;">
+                    <MudIcon Icon="@Icons.Material.Filled.FolderOff" Size="Size.Large" Color="Color.Default" />
+                    <MudText Typo="Typo.body1" Color="Color.Default">No missions yet</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">Upload a .pbo file to get started</MudText>
+                </div>
+            }
+            else
+            {
+                <MudTable Items="_filteredMissions" Hover="true" Dense="true" Elevation="0"
+                          Style="width:100%;">
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Map</MudTh>
+                        <MudTh>Size</MudTh>
+                        <MudTh>Tags</MudTh>
+                        <MudTh>Preset</MudTh>
+                        <MudTh Style="width:120px;">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" Color="Color.Secondary" />
+                                <div>
+                                    <MudText Typo="Typo.body2">@context.DisplayName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.FileName</MudText>
+                                </div>
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Map">
+                            @if (!string.IsNullOrEmpty(context.MapName))
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.MapName</MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Size">@FormatSize(context.SizeBytes)</MudTd>
+                        <MudTd DataLabel="Tags">
+                            <div class="d-flex gap-1 flex-wrap">
+                                @foreach (var assignment in context.TagAssignments)
+                                {
+                                    <MudChip T="MissionTag" Size="Size.Small" Variant="Variant.Filled"
+                                             Color="@(_activeFilterTags.Any(t => t.Id == assignment.Tag!.Id) ? Color.Primary : Color.Default)"
+                                             OnClick="() => AddFilterTag(assignment.Tag!)">
+                                        #@assignment.Tag!.Name
+                                    </MudChip>
+                                }
+                                <MudIconButton Icon="@Icons.Material.Filled.AddCircleOutline"
+                                               Size="Size.Small"
+                                               OnClick="@(() => OpenTagEditor(context))"
+                                               Color="Color.Default" />
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Preset">
+                            @if (context.ModPreset != null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">@context.ModPreset.Name</MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">None</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => OpenMissionEditDialog(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => DeleteMission(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager />
+                    </PagerContent>
+                </MudTable>
+            }
+        </div>
+    </div>
+
+    @* ── Campaigns & Sets Section ── *@
+    <MudTabs Elevation="1" Rounded="true" Class="mt-2" Style="flex:1; min-height:200px;">
+
+        @* ── Campaigns Tab ── *@
+        <MudTabPanel Text="Campaigns" BadgeData="@(_campaigns.Count > 0 ? _campaigns.Count.ToString() : null)" BadgeColor="Color.Warning">
+            <div class="d-flex align-center gap-2 mb-3 mt-2">
+                <MudText Typo="Typo.h6" Style="flex:1;">Campaigns</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">
+                    @_campaigns.Sum(c => c.CampaignMissions.Count) total missions
+                </MudChip>
+                <MudButton StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled"
+                           Size="Size.Small" OnClick="@(() => _showCampaignDialog = true)">
+                    New Campaign
+                </MudButton>
+            </div>
+
+            @if (_campaigns.Count == 0)
+            {
+                <div class="d-flex flex-column align-center gap-2" style="padding:40px 0;">
+                    <MudIcon Icon="@Icons.Material.Filled.Campaign" Size="Size.Large" Color="Color.Default" />
+                    <MudText Typo="Typo.body1" Color="Color.Default">No campaigns yet</MudText>
+                    <MudText Typo="Typo.caption">Create a campaign to organize missions sequentially with ordered playlists.</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-3">
+                    @foreach (var campaign in _campaigns)
+                    {
+                        <MudExpansionPanel>
+                            <TitleContent>
+                                <div class="d-flex align-center gap-3 w-100">
+                                    <MudIcon Icon="@Icons.Material.Filled.Campaign" Size="Size.Medium" Color="Color.Warning" />
+                                    <div style="flex:1; min-width:0;">
+                                        <MudText Typo="Typo.body1" Style="font-weight:600;">@campaign.Title</MudText>
+                                        @if (!string.IsNullOrEmpty(campaign.Description))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@campaign.Description</MudText>
+                                        }
+                                    </div>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning">
+                                        @campaign.CampaignMissions.Count
+                                    </MudChip>
+                                    <MudButton StartIcon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                               Variant="Variant.Text" Color="Color.Primary"
+                                               OnClick="@(() => OpenAddMissionToCampaignDialog(campaign))"
+                                               StopPropagation="true">
+                                        Add
+                                    </MudButton>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error" OnClick="@(() => DeleteCampaign(campaign))"
+                                                   StopPropagation="true" />
+                                </div>
+                            </TitleContent>
+                            <ChildContent>
+                                @if (campaign.CampaignMissions.Count == 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Default" Class="mb-2">No missions yet. Click "Add" to include missions in this campaign.</MudText>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-column gap-1">
+                                        @foreach (var cm in campaign.CampaignMissions.OrderBy(cm => cm.OrderIndex))
+                                        {
+                                            <div class="d-flex align-center gap-2 pa-2 mud-paper mud-elevation-0"
+                                                 style="border:1px solid var(--mud-palette-divider); border-radius:4px;">
+                                                <MudText Typo="Typo.body2" Color="Color.Primary" Style="min-width:24px; font-weight:600;">@(cm.OrderIndex + 1).</MudText>
+                                                <div style="flex:1; min-width:0;">
+                                                    <MudText Typo="Typo.body2">@cm.Mission?.DisplayName</MudText>
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@cm.Mission?.MapName · @cm.Mission?.FileName</MudText>
+                                                </div>
+                                                <MudIconButton Icon="@Icons.Material.Filled.RemoveCircleOutline"
+                                                               Size="Size.Small" Color="Color.Error"
+                                                               OnClick="@(() => RemoveMissionFromCampaign(campaign.Id, cm.MissionId))" />
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    }
+                </div>
+            }
+        </MudTabPanel>
+
+        @* ── Sets Tab ── *@
+        <MudTabPanel Text="Sets" BadgeData="@(_sets.Count > 0 ? _sets.Count.ToString() : null)" BadgeColor="Color.Info">
+            <div class="d-flex align-center gap-2 mb-3 mt-2">
+                <MudText Typo="Typo.h6" Style="flex:1;">Sets</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">
+                    @_sets.Sum(s => s.SetMissions.Count) total missions
+                </MudChip>
+                <MudButton StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled"
+                           Size="Size.Small" OnClick="@(() => _showSetDialog = true)">
+                    New Set
+                </MudButton>
+            </div>
+
+            @if (_sets.Count == 0)
+            {
+                <div class="d-flex flex-column align-center gap-2" style="padding:40px 0;">
+                    <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Large" Color="Color.Default" />
+                    <MudText Typo="Typo.body1" Color="Color.Default">No sets yet</MudText>
+                    <MudText Typo="Typo.caption">Create a set to group related missions together for quick browsing.</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-3">
+                    @foreach (var set in _sets)
+                    {
+                        <MudExpansionPanel>
+                            <TitleContent>
+                                <div class="d-flex align-center gap-3 w-100">
+                                    <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Medium" Color="Color.Info" />
+                                    <div style="flex:1; min-width:0;">
+                                        <MudText Typo="Typo.body1" Style="font-weight:600;">@set.Title</MudText>
+                                        @if (!string.IsNullOrEmpty(set.Description))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@set.Description</MudText>
+                                        }
+                                    </div>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Info">
+                                        @set.SetMissions.Count
+                                    </MudChip>
+                                    <MudButton StartIcon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                               Variant="Variant.Text" Color="Color.Primary"
+                                               OnClick="@(() => OpenAddMissionToSetDialog(set))"
+                                               StopPropagation="true">
+                                        Add
+                                    </MudButton>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error" OnClick="@(() => DeleteSet(set))"
+                                                   StopPropagation="true" />
+                                </div>
+                            </TitleContent>
+                            <ChildContent>
+                                @if (set.SetMissions.Count == 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Default" Class="mb-2">No missions yet. Click "Add" to include missions in this set.</MudText>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-column gap-1">
+                                        @foreach (var sm in set.SetMissions)
+                                        {
+                                            <div class="d-flex align-center gap-2 pa-2 mud-paper mud-elevation-0"
+                                                 style="border:1px solid var(--mud-palette-divider); border-radius:4px;">
+                                                <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" Color="Color.Secondary" />
+                                                <div style="flex:1; min-width:0;">
+                                                    <MudText Typo="Typo.body2">@sm.Mission?.DisplayName</MudText>
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@sm.Mission?.MapName · @sm.Mission?.FileName</MudText>
+                                                </div>
+                                                <MudIconButton Icon="@Icons.Material.Filled.RemoveCircleOutline"
+                                                               Size="Size.Small" Color="Color.Error"
+                                                               OnClick="@(() => RemoveMissionFromSet(set.Id, sm.MissionId))" />
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    }
+                </div>
+            }
+        </MudTabPanel>
+
+    </MudTabs>
+</div>
+
+@* ════════════ Upload Dialog ════════════ *@
+<MudDialog @bind-Visible="_showUploadDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Upload Mission Files</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudFileUpload T="IReadOnlyList<IBrowserFile>" @ref="_fileUpload" FilesChanged="@OnUploadFilesSelected" Accept=".pbo">
+            <CustomContent>
+                <MudButton StartIcon="@Icons.Material.Filled.FileUpload"
+                           Variant="Variant.Outlined"
+                           OnClick="@OpenFilePicker">
+                    Select .pbo files…
+                </MudButton>
+            </CustomContent>
+        </MudFileUpload>
+
+        @if (_uploadFiles.Count > 0)
+        {
+            <MudText Typo="Typo.body2" Class="mt-2">@_uploadFiles.Count file(s) selected</MudText>
+            <div class="mt-1" style="max-height:120px; overflow-y:auto;">
+                @foreach (var file in _uploadFiles)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@file.Name</MudText>
+                }
+            </div>
+        }
+
+        @if (_isUploading)
+        {
+            <div class="mt-2">
+                <MudProgressLinear Value="@_uploadProgress" Color="Color.Primary" Class="mb-1" />
+                <MudText Typo="Typo.caption">@_uploadStatusText</MudText>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseUploadDialog" Disabled="@_isUploading">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="ConfirmUpload" Disabled="@(_uploadFiles.Count == 0 || _isUploading)">
+            Upload @(_uploadFiles.Count > 0 ? _uploadFiles.Count.ToString() : "")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Campaign Creation Dialog ════════════ *@
+<MudDialog @bind-Visible="_showCampaignDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Create Campaign</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newCampaignTitle" Label="Title" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudTextField @bind-Value="_newCampaignDescription" Label="Description (optional)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showCampaignDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="CreateCampaign"
+                   Disabled="@(string.IsNullOrWhiteSpace(_newCampaignTitle))">
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Set Creation Dialog ════════════ *@
+<MudDialog @bind-Visible="_showSetDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Create Set</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newSetTitle" Label="Title" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudTextField @bind-Value="_newSetDescription" Label="Description (optional)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showSetDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="CreateSet"
+                   Disabled="@(string.IsNullOrWhiteSpace(_newSetTitle))">
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Mission Edit Dialog ════════════ *@
+<MudDialog @bind-Visible="_showEditDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Mission</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_editingMission != null)
+        {
+            <MudTextField @bind-Value="_editDisplayName" Label="Display Name" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_editMapName" Label="Map Name" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudSelect T="int?" Label="Linked Preset" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       @bind-Value="_editPresetId" Clearable="true">
+                @foreach (var preset in _availablePresets)
+                {
+                    <MudSelectItem T="int?" Value="@preset.Id">@preset.Name (@preset.Type)</MudSelectItem>
+                }
+            </MudSelect>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showEditDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveMissionEdit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Add Mission to Campaign Dialog ════════════ *@
+<MudDialog @bind-Visible="_showAddToCampaignDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Add Mission to Campaign</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_addToCampaignTarget != null)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Campaign: @_addToCampaignTarget.Title</MudText>
+            <MudAutocomplete T="Mission"
+                             Label="Search missions…"
+                             SearchFunc="@SearchMissionsForAdd"
+                             ValueChanged="@(async m => await AddMissionToCampaignFromPicker(_addToCampaignTarget!, m))"
+                             ToStringFunc="@(m => m is not null ? $"{m.DisplayName} ({m.MapName})" : "")"
+                             ResetValueOnEmptyText="false"
+                             Variant="Variant.Outlined" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showAddToCampaignDialog = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Add Mission to Set Dialog ════════════ *@
+<MudDialog @bind-Visible="_showAddToSetDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Add Mission to Set</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_addToSetTarget != null)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Set: @_addToSetTarget.Title</MudText>
+            <MudAutocomplete T="Mission"
+                             Label="Search missions…"
+                             SearchFunc="@SearchMissionsForAdd"
+                             ValueChanged="@(async m => await AddMissionToSetFromPicker(_addToSetTarget!, m))"
+                             ToStringFunc="@(m => m is not null ? $"{m.DisplayName} ({m.MapName})" : "")"
+                             ResetValueOnEmptyText="false"
+                             Variant="Variant.Outlined" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showAddToSetDialog = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Tag Editor Dialog ════════════ *@
+<MudDialog @bind-Visible="_showTagDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Manage Tags</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_taggingMission != null)
+        {
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                @foreach (var assignment in _taggingMission.TagAssignments)
+                {
+                    <MudChip T="MissionTag" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                             OnClose="() => RemoveTagFromMission(assignment.Tag!)">
+                        #@assignment.Tag!.Name
+                    </MudChip>
+                }
+            </div>
+            <MudAutocomplete T="MissionTag"
+                             Label="Add tag…"
+                             SearchFunc="@SearchAvailableTags"
+                             ValueChanged="@OnTagSelected"
+                             ToStringFunc="@(t => t is not null ? $"#{t.Name}" : "")"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             ResetValueOnEmptyText="false"
+                             @bind-Text="_tagSearchText" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showTagDialog = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter, EditorRequired] public ServerInstance Instance { get; set; } = default!;
+
+    private List<Mission> _missions = [];
+    private List<Mission> _filteredMissions = [];
+    private List<Campaign> _campaigns = [];
+    private List<Set> _sets = [];
+    private List<MissionTag> _allTags = [];
+    private List<MissionTag> _activeFilterTags = [];
+    private List<ModPreset> _availablePresets = [];
+    private string _searchQuery = "";
+    private bool _loadingMissions;
+
+    // Upload
+    private bool _showUploadDialog;
+    private List<IBrowserFile> _uploadFiles = [];
+    private bool _isUploading;
+    private double _uploadProgress;
+    private string _uploadStatusText = "";
+    private MudFileUpload<IReadOnlyList<IBrowserFile>>? _fileUpload;
+
+    // Campaign
+    private bool _showCampaignDialog;
+    private string _newCampaignTitle = "";
+    private string _newCampaignDescription = "";
+
+    // Set
+    private bool _showSetDialog;
+    private string _newSetTitle = "";
+    private string _newSetDescription = "";
+
+    // Add to campaign/set dialogs
+    private bool _showAddToCampaignDialog;
+    private Campaign? _addToCampaignTarget;
+    private bool _showAddToSetDialog;
+    private Set? _addToSetTarget;
+
+    // Edit
+    private bool _showEditDialog;
+    private Mission? _editingMission;
+    private string _editDisplayName = "";
+    private string _editMapName = "";
+    private int? _editPresetId;
+
+    // Tags
+    private bool _showTagDialog;
+    private Mission? _taggingMission;
+    private string _tagSearchText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAll();
+    }
+
+    private async Task RefreshAll()
+    {
+        _loadingMissions = true;
+        StateHasChanged();
+
+        try
+        {
+            _missions = (await MissionService.GetMissionsForInstanceAsync(Instance.Id)).ToList();
+            _campaigns = (await MissionService.GetCampaignsForInstanceAsync(Instance.Id)).ToList();
+            _sets = (await MissionService.GetSetsForInstanceAsync(Instance.Id)).ToList();
+            _allTags = (await MissionService.GetTagsForInstanceAsync(Instance.Id)).ToList();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load missions: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingMissions = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        var filtered = _missions.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim();
+
+            // Parse #tag searches
+            var tagMatches = System.Text.RegularExpressions.Regex.Matches(q, @"#(\S+)");
+            foreach (System.Text.RegularExpressions.Match match in tagMatches)
+            {
+                var tagName = match.Groups[1].Value;
+                var tag = _allTags.FirstOrDefault(t => t.Name.Equals(tagName, StringComparison.OrdinalIgnoreCase));
+                if (tag != null && !_activeFilterTags.Any(t => t.Id == tag.Id))
+                    _activeFilterTags.Add(tag);
+
+                q = q.Replace(match.Value, "").Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                filtered = filtered.Where(m =>
+                    m.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.FileName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.MapName.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        if (_activeFilterTags.Count > 0)
+        {
+            var tagIds = _activeFilterTags.Select(t => t.Id).ToHashSet();
+            filtered = filtered.Where(m => m.TagAssignments.Any(a => tagIds.Contains(a.MissionTagId)));
+        }
+
+        _filteredMissions = filtered.OrderByDescending(m => m.UploadedAt).ToList();
+        StateHasChanged();
+    }
+
+    private void AddFilterTag(MissionTag tag)
+    {
+        if (!_activeFilterTags.Any(t => t.Id == tag.Id))
+        {
+            _activeFilterTags.Add(tag);
+            ApplyFilter();
+        }
+    }
+
+    private void RemoveFilterTag(MissionTag tag)
+    {
+        _activeFilterTags.RemoveAll(t => t.Id == tag.Id);
+        ApplyFilter();
+    }
+
+    // ── Upload ────────────────────────────────────────────────────────────────
+
+    private void OpenUploadDialog() { _showUploadDialog = true; _uploadFiles = []; }
+
+    private async Task OpenFilePicker()
+    {
+        if (_fileUpload != null)
+            await _fileUpload.OpenFilePickerAsync();
+    }
+
+    private void CloseUploadDialog()
+    {
+        _showUploadDialog = false;
+        _uploadFiles = [];
+        _uploadProgress = 0;
+        _uploadStatusText = "";
+    }
+
+    private void OnUploadFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        _uploadFiles = files.Where(f => f.Name.EndsWith(".pbo", StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task ConfirmUpload()
+    {
+        if (_uploadFiles.Count == 0) return;
+
+        _isUploading = true;
+        _uploadProgress = 0;
+        int uploaded = 0;
+        int failed = 0;
+
+        for (int i = 0; i < _uploadFiles.Count; i++)
+        {
+            var file = _uploadFiles[i];
+            _uploadStatusText = $"Uploading {i + 1} of {_uploadFiles.Count}: {file.Name}";
+            _uploadProgress = (double)i / _uploadFiles.Count * 100;
+            StateHasChanged();
+
+            try
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
+                await MissionService.UploadMissionAsync(Instance.Id, file.Name, stream);
+                uploaded++;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                Snackbar.Add($"Failed: {file.Name} — {ex.Message}", Severity.Error);
+            }
+        }
+
+        _uploadProgress = 100;
+        _uploadStatusText = uploaded > 0
+            ? $"Uploaded {uploaded} file(s)" + (failed > 0 ? $", {failed} failed" : "")
+            : "Upload failed";
+        StateHasChanged();
+
+        if (uploaded > 0)
+        {
+            Snackbar.Add($"Uploaded {uploaded} mission(s)", Severity.Success);
+            await RefreshAll();
+        }
+
+        CloseUploadDialog();
+        _isUploading = false;
+        StateHasChanged();
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+
+    private async Task DeleteMission(Mission mission)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete mission '{mission.DisplayName}'? The .pbo file will be permanently removed.");
+        if (!confirmed) return;
+
+        try
+        {
+            await MissionService.DeleteMissionAsync(mission.Id);
+            Snackbar.Add($"Deleted {mission.DisplayName}", Severity.Success);
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Campaigns ─────────────────────────────────────────────────────────────
+
+    private async Task<IEnumerable<Mission>> SearchMissionsForAdd(string search, CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        return _missions.Where(m =>
+            string.IsNullOrEmpty(search) ||
+            m.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+            m.FileName.Contains(search, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OpenAddMissionToCampaignDialog(Campaign campaign)
+    {
+        _addToCampaignTarget = campaign;
+        _showAddToCampaignDialog = true;
+    }
+
+    private async Task AddMissionToCampaignFromPicker(Campaign campaign, Mission? mission)
+    {
+        if (mission == null) return;
+        try
+        {
+            var nextOrder = campaign.CampaignMissions.Count;
+            await MissionService.AddMissionToCampaignAsync(campaign.Id, mission.Id, nextOrder);
+            Snackbar.Add($"Added '{mission.DisplayName}' to '{campaign.Title}'", Severity.Success);
+            _showAddToCampaignDialog = false;
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveMissionFromCampaign(int campaignId, int missionId)
+    {
+        try
+        {
+            await MissionService.RemoveMissionFromCampaignAsync(campaignId, missionId);
+            Snackbar.Add("Mission removed from campaign", Severity.Success);
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CreateCampaign()
+    {
+        if (string.IsNullOrWhiteSpace(_newCampaignTitle)) return;
+
+        try
+        {
+            var campaign = new Campaign
+            {
+                ServerInstanceId = Instance.Id,
+                Title = _newCampaignTitle.Trim(),
+                Description = string.IsNullOrWhiteSpace(_newCampaignDescription) ? null : _newCampaignDescription.Trim()
+            };
+            await MissionService.CreateCampaignAsync(campaign);
+            Snackbar.Add($"Campaign '{campaign.Title}' created", Severity.Success);
+            _showCampaignDialog = false;
+            _newCampaignTitle = "";
+            _newCampaignDescription = "";
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create campaign: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteCampaign(Campaign campaign)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete campaign '{campaign.Title}'?");
+        if (!confirmed) return;
+
+        try
+        {
+            await MissionService.DeleteCampaignAsync(campaign.Id);
+            Snackbar.Add($"Campaign '{campaign.Title}' deleted", Severity.Success);
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Sets ──────────────────────────────────────────────────────────────────
+
+    private void OpenAddMissionToSetDialog(Set set)
+    {
+        _addToSetTarget = set;
+        _showAddToSetDialog = true;
+    }
+
+    private async Task AddMissionToSetFromPicker(Set set, Mission? mission)
+    {
+        if (mission == null) return;
+        try
+        {
+            await MissionService.AddMissionToSetAsync(set.Id, mission.Id);
+            Snackbar.Add($"Added '{mission.DisplayName}' to '{set.Title}'", Severity.Success);
+            _showAddToSetDialog = false;
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveMissionFromSet(int setId, int missionId)
+    {
+        try
+        {
+            await MissionService.RemoveMissionFromSetAsync(setId, missionId);
+            Snackbar.Add("Mission removed from set", Severity.Success);
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CreateSet()
+    {
+        if (string.IsNullOrWhiteSpace(_newSetTitle)) return;
+
+        try
+        {
+            var set = new Set
+            {
+                ServerInstanceId = Instance.Id,
+                Title = _newSetTitle.Trim(),
+                Description = string.IsNullOrWhiteSpace(_newSetDescription) ? null : _newSetDescription.Trim()
+            };
+            await MissionService.CreateSetAsync(set);
+            Snackbar.Add($"Set '{set.Title}' created", Severity.Success);
+            _showSetDialog = false;
+            _newSetTitle = "";
+            _newSetDescription = "";
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create set: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteSet(Set set)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete set '{set.Title}'?");
+        if (!confirmed) return;
+
+        try
+        {
+            await MissionService.DeleteSetAsync(set.Id);
+            Snackbar.Add($"Set '{set.Title}' deleted", Severity.Success);
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Edit Mission ──────────────────────────────────────────────────────────
+
+    private async Task OpenMissionEditDialog(Mission mission)
+    {
+        try
+        {
+            _availablePresets = (await ModPresetService.GetPresetsForInstanceAsync(Instance.Id)).ToList();
+        }
+        catch { _availablePresets = []; }
+
+        _editingMission = mission;
+        _editDisplayName = mission.DisplayName;
+        _editMapName = mission.MapName;
+        _editPresetId = mission.ModPresetId;
+        _showEditDialog = true;
+    }
+
+    private async Task SaveMissionEdit()
+    {
+        if (_editingMission == null) return;
+
+        try
+        {
+            _editingMission.DisplayName = _editDisplayName;
+            _editingMission.MapName = _editMapName;
+            _editingMission.ModPresetId = _editPresetId;
+            await MissionService.UpdateMissionAsync(_editingMission);
+            Snackbar.Add("Mission updated", Severity.Success);
+            _showEditDialog = false;
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Update failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Tags ──────────────────────────────────────────────────────────────────
+
+    private void OpenTagEditor(Mission mission)
+    {
+        _taggingMission = mission;
+        _showTagDialog = true;
+    }
+
+    private async Task<IEnumerable<MissionTag>> SearchAvailableTags(string search, CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        if (_taggingMission == null) return [];
+        var assignedIds = _taggingMission.TagAssignments.Select(a => a.MissionTagId).ToHashSet();
+        return _allTags.Where(t => !assignedIds.Contains(t.Id) &&
+                                   (string.IsNullOrEmpty(search) || t.Name.Contains(search, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task OnTagSelected(MissionTag? tag)
+    {
+        if (_taggingMission == null) return;
+
+        if (tag != null)
+        {
+            // Existing tag selected from dropdown
+            await AssignTagToMission(tag);
+        }
+        else if (!string.IsNullOrWhiteSpace(_tagSearchText))
+        {
+            // No match found — create the tag on-the-fly
+            var cleanName = _tagSearchText.TrimStart('#').Trim();
+            if (!string.IsNullOrWhiteSpace(cleanName))
+            {
+                try
+                {
+                    var newTag = await MissionService.CreateTagAsync(Instance.Id, cleanName);
+                    if (!_allTags.Any(t => t.Id == newTag.Id))
+                        _allTags.Add(newTag);
+                    await AssignTagToMission(newTag);
+                    _tagSearchText = "";
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to create tag: {ex.Message}", Severity.Error);
+                }
+            }
+        }
+    }
+
+    private async Task AssignTagToMission(MissionTag tag)
+    {
+        if (_taggingMission == null) return;
+        try
+        {
+            await MissionService.AssignTagAsync(_taggingMission.Id, tag.Id);
+            _taggingMission = await MissionService.GetMissionByIdAsync(_taggingMission.Id);
+            await RefreshAll();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to add tag: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveTagFromMission(MissionTag tag)
+    {
+        if (_taggingMission == null) return;
+        try
+        {
+            await MissionService.RemoveTagAsync(_taggingMission.Id, tag.Id);
+            _taggingMission = await MissionService.GetMissionByIdAsync(_taggingMission.Id);
+            await RefreshAll();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to remove tag: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+    }
+}

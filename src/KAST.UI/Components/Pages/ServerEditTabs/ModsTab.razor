@@ -1,11 +1,12 @@
-@using System.Text.RegularExpressions
 @inject IModService ModService
 @inject IServerInstanceService ServerService
+@inject IModPresetService ModPresetService
 @inject ISnackbar Snackbar
 
+@* ── Toolbar ── *@
 <div class="d-flex align-center gap-2 mt-3 mb-2 flex-wrap">
     <MudTextField @bind-Value="_modSearch"
-                  Placeholder="Filter available…"
+                  Placeholder="Filter mods…"
                   Adornment="Adornment.Start"
                   AdornmentIcon="@Icons.Material.Filled.Search"
                   Clearable="true" Immediate="true"
@@ -13,107 +14,316 @@
                   Variant="Variant.Outlined"
                   Style="max-width:260px;" />
     <MudSpacer />
+    <MudToggleGroup T="string" @bind-Value="_viewMode" Size="Size.Small" Class="mr-1">
+        <MudToggleItem Value="@("table")">
+            <MudTooltip Text="Table view">
+                <MudIcon Icon="@Icons.Material.Filled.TableRows" />
+            </MudTooltip>
+        </MudToggleItem>
+        <MudToggleItem Value="@("columns")">
+            <MudTooltip Text="Column drag-drop view">
+                <MudIcon Icon="@Icons.Material.Filled.ViewColumn" />
+            </MudTooltip>
+        </MudToggleItem>
+    </MudToggleGroup>
     <MudButton StartIcon="@Icons.Material.Filled.RemoveCircleOutline"
                Color="Color.Default" Variant="Variant.Outlined"
                Size="Size.Small"
                Disabled="@(!Instance.Mods.Any())"
-               OnClick="UnloadAllMods">
+               OnClick="@(() => _showUnloadAllDialog = true)">
         Unload All
     </MudButton>
     <MudButton StartIcon="@Icons.Material.Filled.DoneAll"
                Color="Color.Info" Variant="Variant.Outlined"
                Size="Size.Small"
                Disabled="@(!UnassignedMods.Any())"
-               OnClick="LoadAllAvailableMods">
+               OnClick="@(() => _showLoadAllDialog = true)">
         Load All
     </MudButton>
     <MudButton StartIcon="@Icons.Material.Filled.PlaylistAdd"
                Color="Color.Secondary" Variant="Variant.Outlined"
                Size="Size.Small"
                OnClick="@(() => _showPresetImportDialog = true)">
-        Import Preset → Clientside
+        Import → Clientside
     </MudButton>
+    <MudButton StartIcon="@Icons.Material.Filled.Save"
+               Color="Color.Primary" Variant="Variant.Outlined"
+               Size="Size.Small"
+               Disabled="@(!Instance.Mods.Any())"
+               OnClick="@(() => _showSavePresetDialog = true)">
+        Save Preset
+    </MudButton>
+    @if (_presets.Count > 0)
+    {
+        <MudBadge Content="@_presets.Count" Color="Color.Primary">
+            <MudButton StartIcon="@Icons.Material.Filled.History"
+                       Color="Color.Default" Variant="Variant.Outlined"
+                       Size="Size.Small"
+                       OnClick="@(() => _showPresetsPanel = !_showPresetsPanel)">
+                Presets
+            </MudButton>
+        </MudBadge>
+    }
 </div>
 
-<MudDropContainer T="ModDragItem"
-                  Items="@_modDragItems"
-                  ItemsSelector="@ModItemsSelector"
-                  ItemDropped="@OnModDropped"
-                  Class="d-flex flex-row gap-2 w-100">
-    <ChildContent>
-        @* ── Available ── *@
-        <div class="mud-paper mud-elevation-1 pa-0 mod-col">
-            <MudDropZone T="ModDragItem" Identifier="available" AllowReorder="false"
-                         Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
-                <div class="d-flex align-center gap-1 mb-2">
-                    <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Small" />
-                    <MudText Typo="Typo.subtitle2">Available</MudText>
-                    <MudSpacer />
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "available")</MudText>
-                </div>
-            </MudDropZone>
-        </div>
+@* ── Zone Filter Chips ── *@
+<div class="d-flex gap-1 mb-2 flex-wrap">
+    <MudChip T="string" Size="Size.Small" Variant="@(_activeZoneFilter == null ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Default" OnClick="@(() => _activeZoneFilter = null)">
+        All (@_tableRows.Count)
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="@(_activeZoneFilter == "available" ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Default" OnClick="@(() => ToggleZoneFilter("available"))">
+        Available (@CountInZone("available"))
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="@(_activeZoneFilter == "whitelisted" ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Warning" OnClick="@(() => ToggleZoneFilter("whitelisted"))">
+        Whitelisted (@CountInZone("whitelisted"))
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="@(_activeZoneFilter == "client" ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Info" OnClick="@(() => ToggleZoneFilter("client"))">
+        Clientside (@CountInZone("client"))
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="@(_activeZoneFilter == "server" ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Primary" OnClick="@(() => ToggleZoneFilter("server"))">
+        Serverside (@CountInZone("server"))
+    </MudChip>
+</div>
 
-        @* ── Whitelisted ── *@
-        <div class="mud-paper mud-elevation-1 pa-0 mod-col">
-            <MudDropZone T="ModDragItem" Identifier="whitelisted" AllowReorder="true"
-                         Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
-                <div class="d-flex align-center gap-1 mb-1">
-                    <MudIcon Icon="@Icons.Material.Filled.VpnKey" Size="Size.Small" Color="Color.Warning" />
-                    <MudText Typo="Typo.subtitle2">Whitelisted</MudText>
-                    <MudSpacer />
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "whitelisted")</MudText>
-                </div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;">Symlinked + keys only</MudText>
-            </MudDropZone>
-        </div>
+@* ════════════ TABLE VIEW ════════════ *@
+@if (_viewMode == "table")
+{
+    <MudTable Items="_filteredTableRows" Hover="true" Dense="true" Elevation="1"
+              MultiSelection="true" @bind-SelectedItems="_selectedRows"
+              Style="max-height:55vh; overflow-y:auto;" FixedHeader="true">
+        <HeaderContent>
+            <MudTh Style="width:40px;"></MudTh>
+            <MudTh>Mod</MudTh>
+            <MudTh Style="width:100px;">Zone</MudTh>
+            <MudTh Style="width:70px;">Order</MudTh>
+            <MudTh Style="width:60px;"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <img src="@(context.ThumbnailUrl ?? "")" alt="" onerror="this.style.display='none'"
+                     style="width:20px;height:20px;object-fit:cover;border-radius:2px;flex-shrink:0;" />
+            </MudTd>
+            <MudTd DataLabel="Mod">
+                <MudText Typo="Typo.body2" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px;">
+                    @context.Name
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Zone">
+                <MudSelect T="string" Value="@context.Zone" ValueChanged="@(async v => await MoveModToZone(context, v))"
+                           AnchorOrigin="Origin.BottomCenter" Dense="true"
+                           Style="min-width:110px;" Variant="Variant.Outlined">
+                    <MudSelectItem Value="@("available")">
+                        <MudText Typo="Typo.caption">Available</MudText>
+                    </MudSelectItem>
+                    <MudSelectItem Value="@("whitelisted")">
+                        <MudText Typo="Typo.caption" Color="Color.Warning">Whitelisted</MudText>
+                    </MudSelectItem>
+                    <MudSelectItem Value="@("client")">
+                        <MudText Typo="Typo.caption" Color="Color.Info">Clientside</MudText>
+                    </MudSelectItem>
+                    <MudSelectItem Value="@("server")">
+                        <MudText Typo="Typo.caption" Color="Color.Primary">Serverside</MudText>
+                    </MudSelectItem>
+                </MudSelect>
+            </MudTd>
+            <MudTd DataLabel="Order">
+                @if (context.Zone != "available")
+                {
+                    <MudNumericField T="int" Value="@GetLoadOrder(context)" ValueChanged="@(async v => await SetLoadOrder(context, v))"
+                                     Min="0" HideSpinButtons="true" Margin="Margin.Dense"
+                                     Style="max-width:60px;" Variant="Variant.Outlined" />
+                }
+            </MudTd>
+            <MudTd DataLabel="">
+                @if (context.Zone != "available")
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => RemoveModFromZone(context))" />
+                }
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="@(new[] { 25, 50, 100 })" />
+        </PagerContent>
+    </MudTable>
 
-        @* ── Clientside ── *@
-        <div class="mud-paper mud-elevation-1 pa-0 mod-col">
-            <MudDropZone T="ModDragItem" Identifier="client" AllowReorder="true"
-                         Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
-                <div class="d-flex align-center gap-1 mb-1">
-                    <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Info" />
-                    <MudText Typo="Typo.subtitle2">Clientside</MudText>
-                    <MudSpacer />
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "client")</MudText>
-                </div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;"><code>-mod=</code></MudText>
-            </MudDropZone>
+    @* Bulk actions for selected rows *@
+    @if (_selectedRows.Count > 0)
+    {
+        <div class="d-flex align-center gap-2 mt-2 pa-2 mud-paper mud-elevation-1">
+            <MudText Typo="Typo.caption">@_selectedRows.Count selected</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Info"
+                       OnClick="@(() => BulkMoveSelected("client"))">
+                → Clientside
+            </MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="@(() => BulkMoveSelected("server"))">
+                → Serverside
+            </MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                       OnClick="@(() => BulkMoveSelected("whitelisted"))">
+                → Whitelisted
+            </MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                       OnClick="BulkRemoveSelected">
+                Remove from instance
+            </MudButton>
         </div>
+    }
+}
 
-        @* ── Serverside ── *@
-        <div class="mud-paper mud-elevation-1 pa-0 mod-col">
-            <MudDropZone T="ModDragItem" Identifier="server" AllowReorder="true"
-                         Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
-                <div class="d-flex align-center gap-1 mb-1">
-                    <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Color="Color.Primary" />
-                    <MudText Typo="Typo.subtitle2">Serverside</MudText>
-                    <MudSpacer />
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "server")</MudText>
-                </div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;"><code>-serverMod=</code></MudText>
-            </MudDropZone>
-        </div>
-    </ChildContent>
-    <ItemRenderer>
-        <div class="mod-item">
-            @if (!string.IsNullOrEmpty(context.ThumbnailUrl))
-            {
-                <img src="@context.ThumbnailUrl" alt=""
-                     style="width:18px;height:18px;object-fit:cover;border-radius:2px;flex-shrink:0;" />
-            }
-            else
-            {
-                <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small"
-                         Style="flex-shrink:0;opacity:.45;" />
-            }
-            <span class="mod-item-name">@context.Name</span>
-        </div>
-    </ItemRenderer>
-</MudDropContainer>
+@* ════════════ COLUMN DRAG-DROP VIEW ════════════ *@
+@if (_viewMode == "columns")
+{
+    <MudDropContainer T="ModDragItem"
+                      Items="@_modDragItems"
+                      ItemsSelector="@ModItemsSelector"
+                      ItemDropped="@OnModDropped"
+                      Class="d-flex flex-row gap-2 w-100">
+        <ChildContent>
+            <div class="mud-paper mud-elevation-1 pa-0 mod-col">
+                <MudDropZone T="ModDragItem" Identifier="available" AllowReorder="false"
+                             Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle2">Available</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "available")</MudText>
+                    </div>
+                </MudDropZone>
+            </div>
+            <div class="mud-paper mud-elevation-1 pa-0 mod-col">
+                <MudDropZone T="ModDragItem" Identifier="whitelisted" AllowReorder="true"
+                             Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
+                    <div class="d-flex align-center gap-1 mb-1">
+                        <MudIcon Icon="@Icons.Material.Filled.VpnKey" Size="Size.Small" Color="Color.Warning" />
+                        <MudText Typo="Typo.subtitle2">Whitelisted</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "whitelisted")</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;">Symlinked + keys only</MudText>
+                </MudDropZone>
+            </div>
+            <div class="mud-paper mud-elevation-1 pa-0 mod-col">
+                <MudDropZone T="ModDragItem" Identifier="client" AllowReorder="true"
+                             Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
+                    <div class="d-flex align-center gap-1 mb-1">
+                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Info" />
+                        <MudText Typo="Typo.subtitle2">Clientside</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "client")</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;"><code>-mod=</code></MudText>
+                </MudDropZone>
+            </div>
+            <div class="mud-paper mud-elevation-1 pa-0 mod-col">
+                <MudDropZone T="ModDragItem" Identifier="server" AllowReorder="true"
+                             Class="pa-3 d-flex flex-column mod-dropzone flex-grow-1">
+                    <div class="d-flex align-center gap-1 mb-1">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Color="Color.Primary" />
+                        <MudText Typo="Typo.subtitle2">Serverside</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_modDragItems.Count(x => x.Zone == "server")</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2" Style="opacity:.55; font-size:0.68rem;"><code>-serverMod=</code></MudText>
+                </MudDropZone>
+            </div>
+        </ChildContent>
+        <ItemRenderer>
+            <div class="mod-item">
+                @if (!string.IsNullOrEmpty(context.ThumbnailUrl))
+                {
+                    <img src="@context.ThumbnailUrl" alt=""
+                         style="width:18px;height:18px;object-fit:cover;border-radius:2px;flex-shrink:0;" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Small"
+                             Style="flex-shrink:0;opacity:.45;" />
+                }
+                <span class="mod-item-name">@context.Name</span>
+            </div>
+        </ItemRenderer>
+    </MudDropContainer>
+}
 
-@* ── Preset Import Dialog ── *@
+@* ── Saved Presets Panel ── *@
+@if (_showPresetsPanel && _presets.Count > 0)
+{
+    <div class="mud-paper mud-elevation-1 pa-3 mt-3">
+        <div class="d-flex align-center gap-2 mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Saved Presets</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           OnClick="@(() => _showPresetsPanel = false)" />
+        </div>
+        <MudTable Items="_presets" Hover="true" Dense="true" Elevation="0">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Created</MudTh>
+                <MudTh>Last Applied</MudTh>
+                <MudTh Style="width:180px;">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">@context.Name</MudTd>
+                <MudTd DataLabel="Type">
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.Type == KAST.Core.Enums.ModPresetType.Kast ? Color.Primary : Color.Secondary)"
+                             Variant="Variant.Filled">
+                        @context.Type
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Created">@context.CreatedAt.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                <MudTd DataLabel="Last Applied">
+                    @(context.LastAppliedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudButton StartIcon="@Icons.Material.Filled.PlayArrow"
+                               Color="Color.Success" Size="Size.Small" Variant="Variant.Filled"
+                               OnClick="@(() => ApplyPreset(context))"
+                               Disabled="@IsApplyingPreset(context)">
+                        Apply
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeletePreset(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </div>
+}
+
+@* ════════════ Save Preset Dialog ════════════ *@
+<MudDialog @bind-Visible="_showSavePresetDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Save Current Mods as Preset</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_savePresetName" Label="Preset Name" Required="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Saves the current mod layout (all 4 columns) as a KAST preset.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showSavePresetDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="SaveCurrentAsPreset"
+                   Disabled="@(string.IsNullOrWhiteSpace(_savePresetName))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ════════════ Preset Import Dialog ════════════ *@
 <MudDialog @bind-Visible="_showPresetImportDialog"
            Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true })">
     <TitleContent>
@@ -196,22 +406,73 @@
     </DialogActions>
 </MudDialog>
 
+@* ════════════ Unload All / Load All Confirmation Dialogs ════════════ *@
+<MudDialog @bind-Visible="_showUnloadAllDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Unload All Mods</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Remove all @Instance.Mods.Count mods from this server instance? The mod files themselves are not deleted, only their assignment to this server.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showUnloadAllDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Warning" Variant="Variant.Filled"
+                   OnClick="ConfirmUnloadAll">
+            Unload All
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_showLoadAllDialog"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Load All Available Mods</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Add all @UnassignedMods.Count available mods to this server as clientside mods?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showLoadAllDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Info" Variant="Variant.Filled"
+                   OnClick="ConfirmLoadAll">
+            Load All
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     [Parameter, EditorRequired] public ServerInstance Instance { get; set; } = default!;
     [Parameter] public bool IsNew { get; set; }
 
     private List<SteamMod> _availableMods = [];
     private List<ModDragItem> _modDragItems = [];
+    private List<ModDragItem> _tableRows = [];
+    private HashSet<ModDragItem> _selectedRows = [];
     private string _modSearch = "";
+    private string _viewMode = "table";
+    private string? _activeZoneFilter;
 
     // Preset import
     private bool _showPresetImportDialog;
     private string _parsedPresetName = "";
+    private string _parsedPresetHtml = "";
     private List<(long WorkshopId, string DisplayName)> _parsedPresetMods = [];
     private HashSet<long> _presetSelectedIds = [];
     private bool _isImportingPreset;
     private int _presetImportDone;
     private int _presetImportTotal;
+
+    // Saved presets
+    private List<ModPreset> _presets = [];
+    private bool _showPresetsPanel;
+    private bool _showSavePresetDialog;
+    private string _savePresetName = "";
+    private int? _applyingPresetId;
+
+    // Confirmation dialogs
+    private bool _showUnloadAllDialog;
+    private bool _showLoadAllDialog;
 
     private List<SteamMod> UnassignedMods => _availableMods
         .Where(m => !Instance.Mods.Any(im => im.SteamModId == m.Id)).ToList();
@@ -222,25 +483,184 @@
     private List<ServerInstanceMod> ServerMods => Instance.Mods
         .Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder).ToList();
 
+    private IEnumerable<ModDragItem> _filteredTableRows =>
+        string.IsNullOrWhiteSpace(_modSearch)
+            ? _tableRows.Where(r => _activeZoneFilter == null || r.Zone == _activeZoneFilter)
+            : _tableRows.Where(r => (_activeZoneFilter == null || r.Zone == _activeZoneFilter) &&
+                                     r.Name.Contains(_modSearch, StringComparison.OrdinalIgnoreCase));
+
+    private int CountInZone(string zone) => _tableRows.Count(r => r.Zone == zone);
+
+    private int GetLoadOrder(ModDragItem row)
+    {
+        var im = Instance.Mods.FirstOrDefault(m => m.SteamModId == row.ModId);
+        return im?.LoadOrder ?? 0;
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
     protected override async Task OnInitializedAsync()
     {
         _availableMods = (await ModService.GetAllModsAsync()).ToList();
-        BuildDragItems();
+        BuildAllItems();
+        await LoadPresets();
     }
 
-    private void BuildDragItems()
+    private void BuildAllItems()
     {
-        _modDragItems =
-            UnassignedMods
-                .Select(m => new ModDragItem { ModId = m.Id, Name = m.Name ?? "", ThumbnailUrl = m.ThumbnailUrl, Zone = "available" })
+        _modDragItems = BuildDragItemsForZone(null).ToList();
+        _tableRows = _modDragItems.ToList();
+    }
+
+    private IEnumerable<ModDragItem> BuildDragItemsForZone(string? zone)
+    {
+        var items = UnassignedMods
+            .Select(m => new ModDragItem { ModId = m.Id, Name = m.Name ?? "", ThumbnailUrl = m.ThumbnailUrl, Zone = "available" })
             .Concat(WhitelistedMods
                 .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "whitelisted" }))
             .Concat(ClientMods
                 .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "client" }))
             .Concat(ServerMods
-                .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "server" }))
-            .ToList();
+                .Select(im => new ModDragItem { ModId = im.SteamModId, Name = im.SteamMod?.Name ?? im.SteamModId.ToString(), ThumbnailUrl = im.SteamMod?.ThumbnailUrl, Zone = "server" }));
+        return items;
     }
+
+    private bool ModItemsSelector(ModDragItem item, string zone)
+    {
+        if (item.Zone != zone) return false;
+        if (zone == "available" && !string.IsNullOrWhiteSpace(_modSearch))
+            return item.Name.Contains(_modSearch, StringComparison.OrdinalIgnoreCase);
+        return true;
+    }
+
+    // ── Zone filtering ───────────────────────────────────────────────────────
+
+    private void ToggleZoneFilter(string zone)
+    {
+        _activeZoneFilter = _activeZoneFilter == zone ? null : zone;
+    }
+
+    // ── Table view: move mod between zones ────────────────────────────────────
+
+    private async Task MoveModToZone(ModDragItem row, string newZone)
+    {
+        if (row.Zone == newZone) return;
+
+        await ApplyZoneChange(row.ModId, newZone);
+        RefreshAllItems();
+    }
+
+    private async Task RemoveModFromZone(ModDragItem row)
+    {
+        await RemoveMod(row.ModId);
+        RefreshAllItems();
+    }
+
+    private async Task SetLoadOrder(ModDragItem row, int newOrder)
+    {
+        var im = Instance.Mods.FirstOrDefault(m => m.SteamModId == row.ModId);
+        if (im == null || im.LoadOrder == newOrder) return;
+        im.LoadOrder = newOrder;
+        if (!IsNew)
+            await ServerService.UpdateModLoadOrderAsync(Instance.Id, row.ModId, newOrder);
+        ReindexMods();
+        RefreshAllItems();
+    }
+
+    private async Task ApplyZoneChange(int modId, string newZone)
+    {
+        if (newZone == "available")
+        {
+            await RemoveMod(modId);
+        }
+        else
+        {
+            var im = Instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+            if (im != null)
+            {
+                im.IsClientSide = newZone == "client";
+                im.IsServerSide = newZone == "server";
+                if (!IsNew)
+                    await ServerService.UpdateModFlagsAsync(Instance.Id, modId, im.IsClientSide, im.IsServerSide);
+            }
+            else
+            {
+                await AddMod(modId, newZone);
+            }
+        }
+        ReindexMods();
+    }
+
+    private void RefreshAllItems()
+    {
+        _modDragItems = BuildDragItemsForZone(null).ToList();
+        _tableRows = _modDragItems.ToList();
+        _selectedRows.Clear();
+        StateHasChanged();
+    }
+
+    // ── Bulk operations ──────────────────────────────────────────────────────
+
+    private async Task BulkMoveSelected(string zone)
+    {
+        foreach (var row in _selectedRows.ToList())
+        {
+            await ApplyZoneChange(row.ModId, zone);
+        }
+        RefreshAllItems();
+    }
+
+    private async Task BulkRemoveSelected()
+    {
+        foreach (var row in _selectedRows.ToList())
+        {
+            await RemoveMod(row.ModId);
+        }
+        RefreshAllItems();
+    }
+
+    // ── Core mod operations ──────────────────────────────────────────────────
+
+    private async Task AddMod(int modId, string zone)
+    {
+        if (!IsNew)
+            await ServerService.AddModToInstanceAsync(Instance.Id, modId,
+                isClientSide: zone == "client",
+                isServerSide: zone == "server");
+
+        var steamMod = _availableMods.FirstOrDefault(m => m.Id == modId);
+        if (steamMod != null)
+            Instance.Mods.Add(new ServerInstanceMod
+            {
+                SteamModId = modId,
+                SteamMod = steamMod,
+                IsClientSide = zone == "client",
+                IsServerSide = zone == "server",
+                LoadOrder = Instance.Mods.Count
+            });
+
+        ReindexMods();
+    }
+
+    private async Task RemoveMod(int modId)
+    {
+        if (!IsNew)
+            await ServerService.RemoveModFromInstanceAsync(Instance.Id, modId);
+
+        var toRemove = Instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
+        if (toRemove != null) Instance.Mods.Remove(toRemove);
+
+        ReindexMods();
+    }
+
+    private void ReindexMods()
+    {
+        int wi = 0; foreach (var m in Instance.Mods.Where(m => !m.IsClientSide && !m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = wi++;
+        int ci = 0; foreach (var m in Instance.Mods.Where(m => m.IsClientSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = ci++;
+        int si = 0; foreach (var m in Instance.Mods.Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = si++;
+    }
+
+    // ── Drag-drop view operations ────────────────────────────────────────────
 
     private async Task OnModDropped(MudItemDropInfo<ModDragItem> info)
     {
@@ -281,95 +701,43 @@
         }
         else
         {
-            await MoveModToZone(item.ModId, newZone);
+            var im = Instance.Mods.FirstOrDefault(m => m.SteamModId == item.ModId);
+            if (im is not null)
+            {
+                im.IsClientSide = newZone == "client";
+                im.IsServerSide = newZone == "server";
+                if (!IsNew)
+                    await ServerService.UpdateModFlagsAsync(Instance.Id, item.ModId, im.IsClientSide, im.IsServerSide);
+            }
         }
 
-        BuildDragItems();
+        RefreshAllItems();
     }
 
-    private bool ModItemsSelector(ModDragItem item, string zone)
+    private async Task ConfirmUnloadAll()
     {
-        if (item.Zone != zone) return false;
-        if (zone == "available" && !string.IsNullOrWhiteSpace(_modSearch))
-            return item.Name.Contains(_modSearch, StringComparison.OrdinalIgnoreCase);
-        return true;
-    }
-
-    private async Task AddMod(int modId, string zone)
-    {
-        if (!IsNew)
-            await ServerService.AddModToInstanceAsync(Instance.Id, modId,
-                isClientSide: zone == "client",
-                isServerSide: zone == "server");
-
-        var steamMod = _availableMods.FirstOrDefault(m => m.Id == modId);
-        if (steamMod != null)
-            Instance.Mods.Add(new ServerInstanceMod
-            {
-                SteamModId   = modId,
-                SteamMod     = steamMod,
-                IsClientSide = zone == "client",
-                IsServerSide = zone == "server",
-                LoadOrder    = Instance.Mods.Count
-            });
-
-        ReindexMods();
-    }
-
-    private async Task RemoveMod(int modId)
-    {
-        if (!IsNew)
-            await ServerService.RemoveModFromInstanceAsync(Instance.Id, modId);
-
-        var toRemove = Instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
-        if (toRemove != null) Instance.Mods.Remove(toRemove);
-
-        ReindexMods();
-    }
-
-    private async Task MoveModToZone(int modId, string zone)
-    {
-        var im = Instance.Mods.FirstOrDefault(m => m.SteamModId == modId);
-        if (im is null) return;
-        im.IsClientSide = zone == "client";
-        im.IsServerSide = zone == "server";
-        if (!IsNew)
-            await ServerService.UpdateModFlagsAsync(Instance.Id, modId, im.IsClientSide, im.IsServerSide);
-        ReindexMods();
-    }
-
-    private async Task UnloadAllMods()
-    {
+        _showUnloadAllDialog = false;
         foreach (var modId in Instance.Mods.Select(m => m.SteamModId).ToList())
             await RemoveMod(modId);
-
-        BuildDragItems();
-        StateHasChanged();
+        RefreshAllItems();
     }
 
-    private async Task LoadAllAvailableMods()
+    private async Task ConfirmLoadAll()
     {
+        _showLoadAllDialog = false;
         foreach (var mod in UnassignedMods.OrderBy(m => m.Name).ToList())
             await AddMod(mod.Id, "client");
-
-        BuildDragItems();
-        StateHasChanged();
+        RefreshAllItems();
     }
 
-    private void ReindexMods()
-    {
-        int wi = 0; foreach (var m in Instance.Mods.Where(m => !m.IsClientSide && !m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = wi++;
-        int ci = 0; foreach (var m in Instance.Mods.Where(m => m.IsClientSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = ci++;
-        int si = 0; foreach (var m in Instance.Mods.Where(m => m.IsServerSide).OrderBy(m => m.LoadOrder)) m.LoadOrder = si++;
-    }
-
-    // ── Preset Import ─────────────────────────────────────────────────────────
+    // ── Preset Import ────────────────────────────────────────────────────────
 
     private void ClosePresetImportDialog()
     {
         _showPresetImportDialog = false;
         _parsedPresetMods = [];
         _parsedPresetName = "";
+        _parsedPresetHtml = "";
         _presetSelectedIds = [];
         _isImportingPreset = false;
         _presetImportDone = 0;
@@ -382,6 +750,7 @@
         using var stream = file.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024);
         using var reader = new StreamReader(stream);
         var html = await reader.ReadToEndAsync();
+        _parsedPresetHtml = html;
 
         var nameMatch = Regex.Match(html,
             @"<meta\s+name=""arma:PresetName""\s+content=""([^""]+)""",
@@ -472,7 +841,7 @@
 
                 desiredClientMods.Add(mod);
             }
-            catch { /* skip mods that fail to resolve */ }
+            catch { }
 
             _presetImportDone++;
             StateHasChanged();
@@ -484,11 +853,8 @@
             {
                 clientMod.IsClientSide = false;
                 if (!IsNew)
-                    await ServerService.UpdateModFlagsAsync(
-                        Instance.Id,
-                        clientMod.SteamModId,
-                        isClientSide: false,
-                        isServerSide: true);
+                    await ServerService.UpdateModFlagsAsync(Instance.Id, clientMod.SteamModId,
+                        isClientSide: false, isServerSide: true);
             }
             else
             {
@@ -506,20 +872,13 @@
             if (existingLink == null)
             {
                 if (!IsNew)
-                    await ServerService.AddModToInstanceAsync(
-                        Instance.Id,
-                        mod.Id,
-                        index,
-                        isClientSide: true,
-                        isServerSide: false);
+                    await ServerService.AddModToInstanceAsync(Instance.Id, mod.Id, index,
+                        isClientSide: true, isServerSide: false);
 
                 Instance.Mods.Add(new ServerInstanceMod
                 {
-                    SteamModId   = mod.Id,
-                    SteamMod     = mod,
-                    IsClientSide = true,
-                    IsServerSide = false,
-                    LoadOrder    = index
+                    SteamModId = mod.Id, SteamMod = mod,
+                    IsClientSide = true, IsServerSide = false, LoadOrder = index
                 });
             }
             else
@@ -527,22 +886,112 @@
                 existingLink.IsClientSide = true;
                 existingLink.IsServerSide = false;
                 existingLink.LoadOrder = index;
-
                 if (!IsNew)
                 {
-                    await ServerService.UpdateModFlagsAsync(
-                        Instance.Id,
-                        mod.Id,
-                        isClientSide: true,
-                        isServerSide: false);
+                    await ServerService.UpdateModFlagsAsync(Instance.Id, mod.Id,
+                        isClientSide: true, isServerSide: false);
                     await ServerService.UpdateModLoadOrderAsync(Instance.Id, mod.Id, index);
                 }
             }
         }
 
+        try
+        {
+            var presetName = string.IsNullOrWhiteSpace(_parsedPresetName)
+                ? $"Import {DateTime.UtcNow:yyyy-MM-dd HH:mm}"
+                : _parsedPresetName;
+            await ModPresetService.ImportFromArmaHtmlAsync(Instance.Id, presetName, _parsedPresetHtml);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Preset saved but failed to persist: {ex.Message}", Severity.Warning);
+        }
+
         ReindexMods();
-        BuildDragItems();
+        RefreshAllItems();
         ClosePresetImportDialog();
+        await LoadPresets();
+    }
+
+    // ── Preset Management ────────────────────────────────────────────────────
+
+    private bool IsApplyingPreset(ModPreset preset) => _applyingPresetId == preset.Id;
+
+    private async Task LoadPresets()
+    {
+        if (IsNew) return;
+        try
+        {
+            _presets = (await ModPresetService.GetPresetsForInstanceAsync(Instance.Id)).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load presets: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SaveCurrentAsPreset()
+    {
+        if (string.IsNullOrWhiteSpace(_savePresetName)) return;
+        try
+        {
+            var preset = await ModPresetService.SaveInstanceAsKastPresetAsync(Instance.Id, _savePresetName.Trim());
+            Snackbar.Add($"Preset '{preset.Name}' saved", Severity.Success);
+            _showSavePresetDialog = false;
+            _savePresetName = "";
+            _showPresetsPanel = true;
+            await LoadPresets();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save preset: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ApplyPreset(ModPreset preset)
+    {
+        _applyingPresetId = preset.Id;
+        StateHasChanged();
+        try
+        {
+            await ModPresetService.ApplyPresetAsync(preset.Id, Instance.Id);
+            Snackbar.Add($"Applied preset '{preset.Name}'", Severity.Success);
+
+            _availableMods = (await ModService.GetAllModsAsync()).ToList();
+            var fresh = await ServerService.GetInstanceByIdAsync(Instance.Id);
+            if (fresh != null)
+            {
+                Instance.Mods.Clear();
+                foreach (var m in fresh.Mods) Instance.Mods.Add(m);
+            }
+            RefreshAllItems();
+            await LoadPresets();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to apply preset: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _applyingPresetId = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeletePreset(ModPreset preset)
+    {
+        try
+        {
+            await ModPresetService.DeletePresetAsync(preset.Id);
+            Snackbar.Add($"Deleted preset '{preset.Name}'", Severity.Success);
+            await LoadPresets();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete preset: {ex.Message}", Severity.Error);
+        }
     }
 
     private sealed class ModDragItem

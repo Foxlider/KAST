@@ -289,10 +289,11 @@ public partial class ServerConfigService : IServerConfigService
         // In-game Settings
         if (int.TryParse(FindValue(ast, "vonCodec"), out var vc)) data.VonCodec = vc;
         if (int.TryParse(FindValue(ast, "vonCodecQuality"), out var vcq)) data.VonCodecQuality = vcq;
-
-        // Logging
-        if (int.TryParse(FindValue(ast, "armaUnitsTimeout"), out var aut)) data.ArmaUnitsTimeout = aut;
-        if (int.TryParse(FindValue(ast, "queueSizeLogG"), out var qslg)) data.QueueSizeLogG = qslg;
+        if (int.TryParse(FindValue(ast, "forceRotorLibSimulation"), out var frls)) data.ForceRotorLibSimulation = frls;
+        if (int.TryParse(FindValue(ast, "idleFPSLimit"), out var ifps)) data.IdleFPSLimit = ifps;
+        if (int.TryParse(FindValue(ast, "callExtReportLimit"), out var cerl)) data.CallExtReportLimit = cerl;
+        if (int.TryParse(FindValue(ast, "overrideHazeQuality"), out var ohq)) data.OverrideHazeQuality = ohq;
+        if (int.TryParse(FindValue(ast, "zeusCompositionScriptLevel"), out var zcsl)) data.ZeusCompositionScriptLevel = zcsl;
 
         // Timeouts
         if (int.TryParse(FindValue(ast, "disconnectTimeout"), out var dt)) data.DisconnectTimeout = dt;
@@ -303,6 +304,16 @@ public partial class ServerConfigService : IServerConfigService
         if (int.TryParse(FindValue(ast, "briefingTimeOut"), out var bto)) data.BriefingTimeOut = bto;
         if (int.TryParse(FindValue(ast, "roleTimeOut"), out var rto)) data.RoleTimeOut = rto;
         if (int.TryParse(FindValue(ast, "debriefingTimeOut"), out var dbt)) data.DebriefingTimeOut = dbt;
+
+        // Mission
+        if (int.TryParse(FindValue(ast, "missionsToServerRestart"), out var mtsr)) data.MissionsToServerRestart = mtsr;
+        if (int.TryParse(FindValue(ast, "missionsToShutdown"), out var mts)) data.MissionsToShutdown = mts;
+
+        // Kick Timeout
+        if (int.TryParse(FindValue(ast, "kickTimeoutManual"), out var ktm)) data.KickTimeoutManual = ktm;
+        if (int.TryParse(FindValue(ast, "kickTimeoutConnect"), out var ktc)) data.KickTimeoutConnect = ktc;
+        if (int.TryParse(FindValue(ast, "kickTimeoutBattlEye"), out var ktbe)) data.KickTimeoutBattlEye = ktbe;
+        if (int.TryParse(FindValue(ast, "kickTimeoutHarmless"), out var kth)) data.KickTimeoutHarmless = kth;
     }
 
     private static void ExtractStringServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -316,7 +327,16 @@ public partial class ServerConfigService : IServerConfigService
 
         // In-game Settings
         data.TimeStampFormat = FindValue(ast, "timeStampFormat") ?? "short";
+        data.TimeStampFormatConsole = FindValue(ast, "timeStampFormatConsole") ?? "short";
         data.ForcedDifficulty = FindValue(ast, "forcedDifficulty") ?? "Custom";
+
+        // Security Extensions
+        data.AllowedLoadFileExtensions = FindValue(ast, "allowedLoadFileExtensions");
+        data.AllowedPreprocessFileExtensions = FindValue(ast, "allowedPreprocessFileExtensions");
+        data.AllowedHTMLLoadExtensions = FindValue(ast, "allowedHTMLLoadExtensions");
+        data.AllowedHTMLLoadURIs = FindValue(ast, "allowedHTMLLoadURIs");
+        data.MissionWhitelist = FindValue(ast, "missionWhitelist");
+        data.MissionHTTPDownloadBaseURL = FindValue(ast, "missionHTTPDownloadBaseURL");
 
         // Scripting
         data.DoubleIdDetected = FindValue(ast, "doubleIdDetected");
@@ -326,6 +346,7 @@ public partial class ServerConfigService : IServerConfigService
         data.OnDifferentData = FindValue(ast, "onDifferentData");
         data.OnUnsignedData = FindValue(ast, "onUnsignedData") ?? "kick (_this select 0)";
         data.OnUserKicked = FindValue(ast, "onUserKicked");
+        data.RegularCheck = FindValue(ast, "regularCheck");
     }
 
     private static void ExtractBooleanServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -333,6 +354,7 @@ public partial class ServerConfigService : IServerConfigService
         data.KickDuplicate = FindValue(ast, "kickDuplicate") != "0";
         data.Loopback = FindValue(ast, "loopback") == "1";
         data.Upnp = FindValue(ast, "upnp") == "1";
+        data.EqualModRequired = FindValue(ast, "equalModRequired") == "1";
         data.DisableVoN = FindValue(ast, "disableVoN") == "1";
         data.SkipLobby = FindValue(ast, "skipLobby") == "1";
         data.PersistentBattlefield = FindValue(ast, "persistent") == "1";
@@ -346,6 +368,9 @@ public partial class ServerConfigService : IServerConfigService
         data.AutoSelectMission = FindValue(ast, "autoSelectMission") != "0";
         data.RandomMissionOrder = FindValue(ast, "randomMissionOrder") != "0";
         data.KickClientOnSlowNetwork = FindArrayValues(ast, "kickClientsOnSlowNetwork")?.Any(v => v == "1") ?? false;
+        data.EnablePlayerDiag = FindValue(ast, "enablePlayerDiag") == "1";
+        data.StatisticsEnabled = FindValue(ast, "statisticsEnabled") != "0";
+        data.AllowProfileGlasses = FindValue(ast, "allowProfileGlasses") != "0";
     }
 
     private static void ExtractArrayServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -367,6 +392,10 @@ public partial class ServerConfigService : IServerConfigService
         var lcValues = FindArrayValues(ast, "localClient");
         if (lcValues is { Count: > 0 })
             data.LocalClient = string.Join("\n", lcValues);
+
+        var fpeValues = FindArrayValues(ast, "filePatchingExceptions");
+        if (fpeValues is { Count: > 0 })
+            data.FilePatchingExceptions = string.Join("\n", fpeValues);
     }
 
     public ServerConfigData ParseServerConfig(string rawContent)
@@ -394,7 +423,9 @@ public partial class ServerConfigService : IServerConfigService
         if (data.ServerCommandPassword != null) SetValue(ast, "serverCommandPassword", data.ServerCommandPassword, quoted: true);
         SetValue(ast, "logFile", data.LogFile ?? "server_console.log", quoted: true);
         SetValue(ast, "timeStampFormat", data.TimeStampFormat, quoted: true);
+        SetValue(ast, "timeStampFormatConsole", data.TimeStampFormatConsole, quoted: true);
         SetValue(ast, "forcedDifficulty", data.ForcedDifficulty, quoted: true);
+        if (data.MissionHTTPDownloadBaseURL != null) SetValue(ast, "missionHTTPDownloadBaseURL", data.MissionHTTPDownloadBaseURL, quoted: true);
     }
 
     private static void SerializeBooleanServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -402,6 +433,7 @@ public partial class ServerConfigService : IServerConfigService
         SetValue(ast, "kickDuplicate", data.KickDuplicate ? "1" : "0");
         SetValue(ast, "loopback", data.Loopback ? "1" : "0");
         SetValue(ast, "upnp", data.Upnp ? "1" : "0");
+        SetValue(ast, "equalModRequired", data.EqualModRequired ? "1" : "0");
         SetValue(ast, "disableVoN", data.DisableVoN ? "1" : "0");
         SetValue(ast, "skipLobby", data.SkipLobby ? "1" : "0");
         SetValue(ast, "persistent", data.PersistentBattlefield ? "1" : "0");
@@ -412,6 +444,9 @@ public partial class ServerConfigService : IServerConfigService
         SetValue(ast, "ignoreMissionLoadErrors", data.IgnoreMissionLoadErrors ? "1" : "0");
         SetValue(ast, "randomMissionOrder", data.RandomMissionOrder ? "1" : "0");
         SetValue(ast, "autoSelectMission", data.AutoSelectMission ? "1" : "0");
+        SetValue(ast, "enablePlayerDiag", data.EnablePlayerDiag ? "1" : "0");
+        SetValue(ast, "statisticsEnabled", data.StatisticsEnabled ? "1" : "0");
+        SetValue(ast, "allowProfileGlasses", data.AllowProfileGlasses ? "1" : "0");
     }
 
     private static void SerializeNumericServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -425,8 +460,8 @@ public partial class ServerConfigService : IServerConfigService
         SetValue(ast, "motdInterval", data.MotdInterval.ToString());
         SetValue(ast, "vonCodec", data.VonCodec.ToString());
         SetValue(ast, "vonCodecQuality", data.VonCodecQuality.ToString());
-        SetValue(ast, "armaUnitsTimeout", data.ArmaUnitsTimeout.ToString());
-        SetValue(ast, "queueSizeLogG", data.QueueSizeLogG.ToString());
+        SetValue(ast, "idleFPSLimit", data.IdleFPSLimit.ToString());
+        SetValue(ast, "zeusCompositionScriptLevel", data.ZeusCompositionScriptLevel.ToString());
         SetValue(ast, "disconnectTimeout", data.DisconnectTimeout.ToString());
         SetValue(ast, "maxDesync", data.MaxDesync.ToString());
         SetValue(ast, "maxPing", data.MaxPing.ToString());
@@ -435,6 +470,11 @@ public partial class ServerConfigService : IServerConfigService
         SetValue(ast, "briefingTimeOut", data.BriefingTimeOut.ToString());
         SetValue(ast, "roleTimeOut", data.RoleTimeOut.ToString());
         SetValue(ast, "debriefingTimeOut", data.DebriefingTimeOut.ToString());
+        if (data.ForceRotorLibSimulation > 0) SetValue(ast, "forceRotorLibSimulation", data.ForceRotorLibSimulation.ToString());
+        if (data.OverrideHazeQuality >= 0) SetValue(ast, "overrideHazeQuality", data.OverrideHazeQuality.ToString());
+        if (data.CallExtReportLimit > 0) SetValue(ast, "callExtReportLimit", data.CallExtReportLimit.ToString());
+        if (data.MissionsToServerRestart > 0) SetValue(ast, "missionsToServerRestart", data.MissionsToServerRestart.ToString());
+        if (data.MissionsToShutdown > 0) SetValue(ast, "missionsToShutdown", data.MissionsToShutdown.ToString());
     }
 
     private static void SerializeVotingServerFields(List<ConfigNode> ast, ServerConfigData data)
@@ -465,6 +505,16 @@ public partial class ServerConfigService : IServerConfigService
             SetArrayValue(ast, "headlessClients", data.HeadlessClients.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
         if (!string.IsNullOrEmpty(data.LocalClient))
             SetArrayValue(ast, "localClient", data.LocalClient.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
+        if (!string.IsNullOrEmpty(data.FilePatchingExceptions))
+            SetArrayValue(ast, "filePatchingExceptions", data.FilePatchingExceptions.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList());
+
+        // Kick timeout array
+        SetArrayValue(ast, "kickTimeout", [
+            $"{{ 0, {data.KickTimeoutManual} }}",
+            $"{{ 1, {data.KickTimeoutConnect} }}",
+            $"{{ 2, {data.KickTimeoutBattlEye} }}",
+            $"{{ 3, {data.KickTimeoutHarmless} }}"
+        ]);
     }
 
     private static void SerializeScriptingServerFields(List<ConfigNode> ast, ServerConfigData data)

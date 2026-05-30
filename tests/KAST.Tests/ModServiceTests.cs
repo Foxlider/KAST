@@ -230,7 +230,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _steamService.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -247,7 +247,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _steamService.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -263,7 +263,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _steamService.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("Steam CDN error"));
 
         await Assert.ThrowsAsync<Exception>(() => _sut.DownloadModAsync(mod.Id));

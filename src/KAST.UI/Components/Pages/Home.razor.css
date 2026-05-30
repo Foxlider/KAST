@@ -1,0 +1,24 @@
+.wizard-step-circle {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    border: 2px solid var(--mud-palette-divider);
+    color: var(--mud-palette-text-secondary);
+    transition: all 250ms ease;
+}
+.wizard-circle-active {
+    border-color: var(--mud-palette-primary);
+    background: var(--mud-palette-primary);
+    color: var(--mud-palette-primary-contrast-text);
+}
+.wizard-circle-done {
+    border-color: var(--mud-palette-success);
+    background: var(--mud-palette-success);
+    color: var(--mud-palette-success-contrast-text);
+}
+.wizard-done {
+    opacity: .72;
+}
+.wizard-pending {
+    opacity: .48;
+}

@@ -15,6 +15,7 @@ public class SignalREventBroadcaster(
 {
     public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
     public event Action<ModStatusChangedEvent>? OnModStatusChanged;
+    public event Action<ServerStatusChangedEvent>? OnServerStatusChanged;
 
     public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress)
     {
@@ -29,7 +30,10 @@ public class SignalREventBroadcaster(
     }
 
     public Task BroadcastServerStatusChangedAsync(ServerStatusChangedEvent status)
-        => MonitoringHub.BroadcastServerStatus(monitoringHub, status);
+    {
+        OnServerStatusChanged?.Invoke(status);
+        return MonitoringHub.BroadcastServerStatus(monitoringHub, status);
+    }
 
     public Task BroadcastHostMetricsAsync(HostMetricsUpdatedEvent metrics)
         => MonitoringHub.BroadcastHostMetrics(monitoringHub, metrics);

@@ -34,8 +34,11 @@ public interface IContentOrchestrator
         string destinationPath,
         long workshopId = 0,
         string? sourcePath = null,
+        long expectedSizeBytes = 0,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
-        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null);
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
+        int maxParallelDownloads = 4);
 
     /// <summary>Cancels the active download for the given key.</summary>
     void Cancel(string key);

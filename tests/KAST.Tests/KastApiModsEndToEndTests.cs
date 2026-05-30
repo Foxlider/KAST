@@ -6,6 +6,7 @@ using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Services.Content;
 using KAST.UI.Api;
 using KAST.UI.Services;
 using Microsoft.AspNetCore.Builder;
@@ -181,6 +182,8 @@ public class KastApiModsEndToEndTests
             builder.Services.AddSingleton<IAppEventBroadcaster, NoopAppEventBroadcaster>();
             builder.Services.AddSingleton(sp => new ModDownloadManager(
                 sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<IContentOrchestrator>(),
+                sp.GetRequiredService<ContentProgressTracker>(),
                 NullLogger<ModDownloadManager>.Instance));
 
             var app = builder.Build();
@@ -227,6 +230,7 @@ public class KastApiModsEndToEndTests
     {
         public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
         public event Action<ModStatusChangedEvent>? OnModStatusChanged;
+        public event Action<ServerStatusChangedEvent>? OnServerStatusChanged;
         public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress) => Task.CompletedTask;
         public Task BroadcastModStatusChangedAsync(ModStatusChangedEvent status) => Task.CompletedTask;
         public Task BroadcastServerStatusChangedAsync(ServerStatusChangedEvent status) => Task.CompletedTask;
@@ -262,7 +266,7 @@ public class KastApiModsEndToEndTests
         public Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default) => Task.FromResult(false);
         public Task LogoutAsync() => Task.CompletedTask;
 
-        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default)
+        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, int maxParallelDownloads = 4, CancellationToken ct = default)
             => throw new InvalidOperationException("Downloads are intentionally disabled in end-to-end API tests.");
 
         public Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null,

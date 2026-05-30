@@ -141,6 +141,35 @@
         window.KAST = {
             scrollToBottom: function (el) {
                 if (el) el.scrollTop = el.scrollHeight;
+            },
+            downloadFile: function (filename, content) {
+                var blob = new Blob([content], { type: 'application/json' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            },
+            scrollToTop: function (el) {
+                if (el) el.scrollTop = 0;
+            },
+            keyboard: {
+                init: function (dotNetRef) {
+                    this._ref = dotNetRef;
+                    this._handler = function (e) {
+                        // Ctrl+Shift+L → toggle-log
+                        if (e.ctrlKey && e.shiftKey && e.key === 'L') { e.preventDefault(); dotNetRef.invokeMethodAsync('OnKeyDown', 'ctrl+shift+l'); }
+                        // ? → show-shortcuts
+                        if (!e.ctrlKey && !e.metaKey && e.key === '?' && !e.target.matches('input,textarea,[contenteditable]')) { e.preventDefault(); dotNetRef.invokeMethodAsync('OnKeyDown', '?'); }
+                    };
+                    document.addEventListener('keydown', this._handler);
+                },
+                dispose: function () {
+                    if (this._handler) document.removeEventListener('keydown', this._handler);
+                }
             }
         };
 

@@ -7,6 +7,8 @@ using KAST.UI.Api;
 using KAST.UI.Components;
 using KAST.UI.Hubs;
 using KAST.UI.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
@@ -37,13 +39,78 @@ builder.Services.AddKastInfrastructure(connectionString);
 builder.Services.AddMudServices(config =>
 {
     config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomLeft;
-    config.SnackbarConfiguration.VisibleStateDuration = 2000;
+    config.SnackbarConfiguration.VisibleStateDuration = 3000;
     config.SnackbarConfiguration.HideTransitionDuration = 200;
     config.SnackbarConfiguration.ShowTransitionDuration = 150;
 });
 builder.Services.AddScoped<KAST.UI.Services.ThemeService>();
 builder.Services.AddScoped<KastInternalUrlProvider>();
 builder.Services.AddSingleton<ModDownloadManager>();
+builder.Services.AddScoped<KeyboardShortcutService>();
+builder.Services.AddSingleton<InternalHubTokenService>();
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "KAST.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.SlidingExpiration = true;
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var userId = context.Principal?.GetUserId();
+            if (userId is null)
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return;
+            }
+
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<IUserAccountService>();
+            var user = await accounts.GetByIdAsync(userId.Value, context.HttpContext.RequestAborted);
+            if (user is null)
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+        };
+        options.Events.OnRedirectToLogin = async context =>
+        {
+            if (AccountGateMiddlewareExtensions.IsApiOrHubRequest(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<IUserAccountService>();
+            var returnUrl = $"{context.Request.PathBase}{context.Request.Path}{context.Request.QueryString}";
+            var destination = await accounts.HasAnyUsersAsync()
+                ? $"/login?returnUrl={Uri.EscapeDataString(returnUrl)}"
+                : "/setup/account";
+            context.Response.Redirect(destination);
+        };
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, InternalHubAuthenticationHandler>(
+        InternalHubAuthenticationDefaults.AuthenticationScheme,
+        _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOrInternalHub", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            InternalHubAuthenticationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+    });
+});
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -138,7 +205,9 @@ using (var scope = app.Services.CreateScope())
         .Where(m => m.Status == ModStatus.Downloading || m.Status == ModStatus.Updating)
         .ToListAsync();
     foreach (var mod in stuckMods)
-        mod.Status = mod.LocalPath != null ? ModStatus.UpdateAvailable : ModStatus.NotInstalled;
+        mod.Status = !string.IsNullOrWhiteSpace(mod.LocalPath) && Directory.Exists(mod.LocalPath)
+            ? ModStatus.UpdateAvailable
+            : ModStatus.NotInstalled;
     if (stuckMods.Count > 0)
         await db.SaveChangesAsync();
 }
@@ -150,20 +219,29 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/api") &&
+               !context.Request.Path.StartsWithSegments("/hubs") &&
+               !context.Request.Path.StartsWithSegments("/_blazor"),
+    branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 app.UseStaticFiles();
 app.UseAntiforgery();
+app.UseAuthentication();
+app.UseKastAccountGate();
+app.UseAuthorization();
 
 // ── Health checks ─────────────────────────────────────────────────────────────
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/alive");
 
+app.MapAccountEndpoints();
+
 // ── Minimal API groups ────────────────────────────────────────────────────────
-app.MapGroup("/api").MapKastApi();
+app.MapGroup("/api").MapKastApi().RequireAuthorization();
 
 // ── SignalR hubs ──────────────────────────────────────────────────────────────
-app.MapHub<MonitoringHub>("/hubs/monitoring");
-app.MapHub<DownloadHub>("/hubs/downloads");
+app.MapHub<MonitoringHub>("/hubs/monitoring").RequireAuthorization("AdminOrInternalHub");
+app.MapHub<DownloadHub>("/hubs/downloads").RequireAuthorization("AdminOrInternalHub");
 
 // ── Blazor ────────────────────────────────────────────────────────────────────
 app.MapStaticAssets();

@@ -4,6 +4,7 @@ using KAST.Core.Enums;
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Services.Content;
 using KAST.UI.Api;
 using KAST.UI.Services;
 using Microsoft.AspNetCore.Builder;
@@ -85,7 +86,7 @@ public class KastApiModsEndpointsTests
         var response = await app.Client.PostAsync("/api/mods/42/download", content: null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        orchestrator.DidNotReceiveWithAnyArgs().StartModInstall(default, default, default!, default, default, default!, default!);
+        orchestrator.DidNotReceiveWithAnyArgs().StartModInstall(default, default, default!, default, default, default, default, default, default, default);
     }
 
     [Fact]
@@ -122,12 +123,8 @@ public class KastApiModsEndpointsTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        await modService.Received(1).UpdateModAsync(
-            Arg.Is<SteamMod>(m => m.Id == modId && m.Status == ModStatus.Downloading),
-            Arg.Any<CancellationToken>());
-
-        await broadcaster.Received(1).BroadcastModStatusChangedAsync(
-            Arg.Is<ModStatusChangedEvent>(evt => evt.ModId == modId && evt.NewStatus == nameof(ModStatus.Downloading)));
+        await modService.DidNotReceive().UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>());
+        await broadcaster.DidNotReceive().BroadcastModStatusChangedAsync(Arg.Any<ModStatusChangedEvent>());
 
         orchestrator.Received(1).StartModInstall(
             modId,
@@ -135,6 +132,8 @@ public class KastApiModsEndpointsTests
             Path.Combine("/tmp/kast-mods", EnhancedMovementWorkshopId.ToString()),
             EnhancedMovementWorkshopId,
             null,
+            Arg.Any<long>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>());
     }
@@ -155,7 +154,7 @@ public class KastApiModsEndpointsTests
         var response = await app.Client.PostAsync("/api/mods/12/update", content: null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        orchestrator.DidNotReceiveWithAnyArgs().StartModInstall(default, default, default!, default, default, default!, default!);
+        orchestrator.DidNotReceiveWithAnyArgs().StartModInstall(default, default, default!, default, default, default, default, default, default, default);
     }
 
     [Fact]
@@ -189,12 +188,8 @@ public class KastApiModsEndpointsTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        await modService.Received(1).UpdateModAsync(
-            Arg.Is<SteamMod>(m => m.Id == modId && m.Status == ModStatus.Updating),
-            Arg.Any<CancellationToken>());
-
-        await broadcaster.Received(1).BroadcastModStatusChangedAsync(
-            Arg.Is<ModStatusChangedEvent>(evt => evt.ModId == modId && evt.NewStatus == nameof(ModStatus.Updating)));
+        await modService.DidNotReceive().UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>());
+        await broadcaster.DidNotReceive().BroadcastModStatusChangedAsync(Arg.Any<ModStatusChangedEvent>());
 
         orchestrator.Received(1).StartModInstall(
             modId,
@@ -202,6 +197,8 @@ public class KastApiModsEndpointsTests
             localPath,
             EnhancedMovementWorkshopId,
             null,
+            Arg.Any<long>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
             Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>());
     }
@@ -236,12 +233,17 @@ public class KastApiModsEndpointsTests
         builder.Services.AddSingleton(Substitute.For<IServerInstanceService>());
         builder.Services.AddSingleton(Substitute.For<IMonitoringService>());
         builder.Services.AddSingleton(Substitute.For<IApiKeyService>());
+        builder.Services.AddSingleton(Substitute.For<IModPresetService>());
+        builder.Services.AddSingleton(Substitute.For<IMissionService>());
         builder.Services.AddSingleton(orchestrator ?? Substitute.For<IContentOrchestrator>());
+        builder.Services.AddSingleton<ContentProgressTracker>();
         builder.Services.AddSingleton(settingsService ?? BuildDefaultSettingsService());
         builder.Services.AddSingleton(fileSystemService ?? Substitute.For<IFileSystemService>());
         builder.Services.AddSingleton(broadcaster ?? BuildDefaultBroadcaster());
         builder.Services.AddSingleton(sp => new ModDownloadManager(
             sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<IContentOrchestrator>(),
+            sp.GetRequiredService<ContentProgressTracker>(),
             NullLogger<ModDownloadManager>.Instance));
 
         var app = builder.Build();

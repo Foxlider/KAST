@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using KAST.Core.Enums;
+using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
@@ -9,7 +10,7 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Downloads a Steam Workshop mod via SteamKit2.
 /// </summary>
-public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : IContentInstaller
+public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IAppEventBroadcaster? broadcaster = null) : IContentInstaller
 {
     public ContentType Type => ContentType.SteamMod;
 
@@ -39,8 +40,29 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
             if (!steam.IsConnected)
                 throw new InvalidOperationException("Failed to connect to Steam.");
 
-            var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
-            var installedManifestId = await steam.DownloadWorkshopItemAsync(request.WorkshopId, request.DestinationPath, progress, ct);
+            var progress = new Progress<double>(pct =>
+            {
+                state.SetStepProgress(0, pct);
+                if (request.ModId <= 0 || broadcaster is null)
+                    return;
+
+                var bytesDownloaded = request.ExpectedSizeBytes > 0
+                    ? (long)(pct / 100.0 * request.ExpectedSizeBytes)
+                    : 0;
+                _ = broadcaster.BroadcastDownloadProgressAsync(new ModDownloadProgressEvent(
+                    request.ModId,
+                    request.WorkshopId,
+                    pct,
+                    bytesDownloaded,
+                    request.ExpectedSizeBytes));
+            });
+            state.AddLog($"Parallel chunk downloads: {Math.Max(1, request.MaxParallelDownloads)}.");
+            var installedManifestId = await steam.DownloadWorkshopItemAsync(
+                request.WorkshopId,
+                request.DestinationPath,
+                progress,
+                request.MaxParallelDownloads,
+                ct);
             state.InstalledManifestId = installedManifestId;
 
             state.CompleteStep(0);

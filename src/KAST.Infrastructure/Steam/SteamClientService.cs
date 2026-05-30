@@ -639,7 +639,7 @@ public class SteamClientService : ISteamService, IDisposable
 
     public async Task<ulong> DownloadWorkshopItemAsync(
         long workshopId, string destinationPath,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        IProgress<double>? progress = null, int maxParallelDownloads = 4, CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -714,7 +714,10 @@ public class SteamClientService : ISteamService, IDisposable
                 progressBase: 0, progressTotal: totalSize,
                 progress, logProgress: null,
                 logPrefix: $"Workshop {workshopId}",
-                maxParallelWorkers: 4, ct);
+                maxParallelWorkers: Math.Clamp(maxParallelDownloads, 1, 64), ct);
+
+            var verifiedFiles = ValidateManifestFiles(destinationPath, files);
+            var prunedFiles = PruneFilesOutsideManifest(destinationPath, files);
 
             var totalMbDownloaded = bytesTransferred / 1_048_576.0;
             var avgMbps = dlElapsed.TotalSeconds > 0 ? totalMbDownloaded / dlElapsed.TotalSeconds : 0;
@@ -722,6 +725,8 @@ public class SteamClientService : ISteamService, IDisposable
             workshopActivity?.SetTag("workshop.mb_transferred", Math.Round(totalMbDownloaded, 1));
             workshopActivity?.SetTag("workshop.duration_s", Math.Round(dlElapsed.TotalSeconds, 1));
             workshopActivity?.SetTag("workshop.avg_mbps", Math.Round(avgMbps, 2));
+            workshopActivity?.SetTag("workshop.files_verified", verifiedFiles);
+            workshopActivity?.SetTag("workshop.files_pruned", prunedFiles);
 
             _logger.LogInformation("Workshop item {Id} download complete → {Path}  ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
                 workshopId, destinationPath, totalMbDownloaded, dlElapsed.TotalSeconds, avgMbps);
@@ -834,7 +839,7 @@ public class SteamClientService : ISteamService, IDisposable
                 scanActivity?.SetTag("depot.id", depotId);
                 foreach (var file in files)
                 {
-                    var filePath = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                    var filePath = ResolveContentPath(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
                     var dir = Path.GetDirectoryName(filePath);
                     if (dir != null) Directory.CreateDirectory(dir);
 
@@ -879,7 +884,7 @@ public class SteamClientService : ISteamService, IDisposable
                                 return;
                             }
 
-                            var path = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                            var path = ResolveContentPath(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
                             var match = await Task.Run(() =>
                             {
                                 using var sha1 = System.Security.Cryptography.SHA1.Create();
@@ -990,10 +995,11 @@ public class SteamClientService : ISteamService, IDisposable
     }
 
     /// <summary>
-    /// Downloads a single depot chunk with up to <c>MaxChunkRetries</c> attempts, rotating CDN
-    /// servers on each failure.  Only re-throws on user cancellation or exhausted retries.
+    /// Downloads depot data with retry attempts, rotating CDN servers between failures and
+    /// backing off when Steam is throttling or temporarily unavailable.
     /// </summary>
-    private const int MaxChunkRetries = 3;
+    private const int MaxChunkRetries = 5;
+    private const int MaxManifestRetries = 6;
 
     /// Records an exception as a span event using the OTel semantic convention,
     /// equivalent to Activity.RecordException() from the OpenTelemetry SDK.
@@ -1034,12 +1040,19 @@ public class SteamClientService : ISteamService, IDisposable
         uint depotId, ulong manifestId, ulong requestCode, byte[]? depotKey,
         CdnServerPool pool, Activity? spanActivity, CancellationToken ct)
     {
-        var server = pool.GetServer(ct);
-        DepotManifest manifest;
+        DepotManifest? manifest = null;
+        Exception? lastEx = null;
+
+        for (var attempt = 1; attempt <= MaxManifestRetries; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var server = pool.GetServer(ct);
         try
         {
             manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, requestCode, server, depotKey);
             pool.ReturnServer(server, false);
+            break;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1048,6 +1061,8 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
+            lastEx = ex;
+            var transient = IsTransientSteamCdnException(ex);
             _logger.LogWarning(ex, "CDN manifest failed on {Host} for depot {DepotId} — trying next server",
                 server.Host, depotId);
             spanActivity?.AddEvent(new ActivityEvent("manifest.server_fallback", tags: new ActivityTagsCollection
@@ -1055,10 +1070,20 @@ public class SteamClientService : ISteamService, IDisposable
                 ["cdn.server"] = server.Host,
                 ["exception.message"] = ex.Message
             }));
-            pool.ReturnServer(server, true); // discard faulty server
-            server = pool.GetServer(ct);     // get a fresh one
-            manifest = await _cdnClient.DownloadManifestAsync(depotId, manifestId, requestCode, server, depotKey);
-            pool.ReturnServer(server, false); // fixes pool leak: fallback server was never returned before
+            pool.ReturnServer(server, true);
+
+            if (attempt == MaxManifestRetries)
+                break;
+
+            await Task.Delay(GetSteamRetryDelay(attempt, transient), ct);
+        }
+        }
+
+        if (manifest == null)
+        {
+            throw new IOException(
+                $"Failed to download depot manifest {manifestId} for depot {depotId} after {MaxManifestRetries} attempts. Steam may be rate limiting or temporarily unavailable.",
+                lastEx);
         }
 
         if (manifest.FilenamesEncrypted && depotKey != null)
@@ -1118,7 +1143,7 @@ public class SteamClientService : ISteamService, IDisposable
             async (file, fileCt) =>
             {
                 var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
-                var filePath = Path.Combine(destinationPath, relativePath);
+                var filePath = ResolveContentPath(destinationPath, relativePath);
                 var fileSizeMb = file.TotalSize / 1_048_576.0;
 
                 // Explicitly parent each span to the caller's span context.
@@ -1139,21 +1164,43 @@ public class SteamClientService : ISteamService, IDisposable
 
                     _logger.LogDebug("{Prefix}: downloading {File} ({Size:F2} MB)", logPrefix, relativePath, fileSizeMb);
 
-                    await using var fs = File.Create(filePath);
-                    if (file.TotalSize > 0)
-                        fs.SetLength((long)file.TotalSize);
-
-                    foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                    var tempPath = Path.Combine(
+                        dir ?? destinationPath,
+                        $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
+                    try
                     {
-                        fileCt.ThrowIfCancellationRequested();
-                        var buf = new byte[chunk.UncompressedLength];
-                        var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
-                        fs.Position = (long)chunk.Offset;
-                        await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
+                        await using (var fs = new FileStream(
+                                         tempPath,
+                                         FileMode.CreateNew,
+                                         FileAccess.Write,
+                                         FileShare.None,
+                                         bufferSize: 1024 * 1024,
+                                         FileOptions.SequentialScan | FileOptions.Asynchronous))
+                        {
+                            if (file.TotalSize > 0)
+                                fs.SetLength((long)file.TotalSize);
 
-                        var newBytes = Interlocked.Add(ref bytesDownloaded, chunk.UncompressedLength);
-                        if (progressTotal > 0)
-                            progress?.Report((double)(progressBase + newBytes) / progressTotal * 100.0);
+                            foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                            {
+                                fileCt.ThrowIfCancellationRequested();
+                                var buf = new byte[chunk.UncompressedLength];
+                                var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
+                                fs.Position = (long)chunk.Offset;
+                                await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
+
+                                var newBytes = Interlocked.Add(ref bytesDownloaded, written);
+                                if (progressTotal > 0)
+                                    progress?.Report((double)(progressBase + newBytes) / progressTotal * 100.0);
+                            }
+                        }
+
+                        ValidateDownloadedFile(tempPath, file);
+                        File.Move(tempPath, filePath, overwrite: true);
+                    }
+                    catch
+                    {
+                        TryDeleteTempFile(tempPath);
+                        throw;
                     }
 
                     var done = Interlocked.Increment(ref filesDone);
@@ -1201,6 +1248,119 @@ public class SteamClientService : ISteamService, IDisposable
         return (Interlocked.Read(ref bytesDownloaded), filesDone, sw.Elapsed);
     }
 
+    private static string ResolveContentPath(string destinationPath, string relativePath)
+    {
+        var destinationRoot = Path.GetFullPath(destinationPath);
+        var rootWithSeparator = destinationRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? destinationRoot
+            : destinationRoot + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(Path.Combine(destinationRoot, relativePath));
+
+        if (!fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Depot file path '{relativePath}' would write outside the destination directory.");
+
+        return fullPath;
+    }
+
+    private static int ValidateManifestFiles(string destinationPath, IReadOnlyCollection<DepotManifest.FileData> files)
+    {
+        var verified = 0;
+        foreach (var file in files)
+        {
+            var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+            var filePath = ResolveContentPath(destinationPath, relativePath);
+            if (!FileMatchesManifest(filePath, file))
+                throw new IOException($"Downloaded file '{file.FileName}' is missing or failed final manifest verification.");
+            verified++;
+        }
+
+        return verified;
+    }
+
+    private static int PruneFilesOutsideManifest(string destinationPath, IReadOnlyCollection<DepotManifest.FileData> files)
+    {
+        if (!Directory.Exists(destinationPath))
+            return 0;
+
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+        var expectedPaths = files
+            .Select(file => ResolveContentPath(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar)))
+            .ToHashSet(comparer);
+
+        var pruned = 0;
+        foreach (var filePath in Directory.EnumerateFiles(destinationPath, "*", SearchOption.AllDirectories))
+        {
+            var fullPath = Path.GetFullPath(filePath);
+            if (expectedPaths.Contains(fullPath))
+                continue;
+
+            try
+            {
+                File.Delete(fullPath);
+                pruned++;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Failed to remove stale file '{fullPath}' from workshop mod directory.", ex);
+            }
+        }
+
+        PruneEmptyDirectories(destinationPath);
+        return pruned;
+    }
+
+    private static void PruneEmptyDirectories(string destinationPath)
+    {
+        foreach (var dir in Directory.EnumerateDirectories(destinationPath, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+        {
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                    Directory.Delete(dir);
+            }
+            catch (IOException)
+            {
+                // Non-empty or transiently locked; harmless to leave behind.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Best effort cleanup only.
+            }
+        }
+    }
+
+    private static void ValidateDownloadedFile(string filePath, DepotManifest.FileData file)
+    {
+        var info = new FileInfo(filePath);
+        if (info.Length != (long)file.TotalSize)
+            throw new IOException($"Downloaded file '{file.FileName}' has length {info.Length}, expected {file.TotalSize}.");
+
+        if (file.FileHash is not { Length: > 0 })
+            return;
+
+        using var sha1 = System.Security.Cryptography.SHA1.Create();
+        using var stream = File.OpenRead(filePath);
+        if (!sha1.ComputeHash(stream).SequenceEqual(file.FileHash))
+            throw new IOException($"Downloaded file '{file.FileName}' failed hash verification.");
+    }
+
+    private static void TryDeleteTempFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            // Best effort cleanup; a future repair run will ignore stale temp files.
+        }
+    }
+
     private async Task<int> DownloadChunkWithRetryAsync(
         uint depotId, DepotManifest.ChunkData chunk, CdnServerPool pool,
         byte[] buf, byte[]? depotKey, CancellationToken ct)
@@ -1226,6 +1386,7 @@ public class SteamClientService : ISteamService, IDisposable
             catch (Exception ex)
             {
                 lastEx = ex;
+                var transient = IsTransientSteamCdnException(ex);
                 _logger.LogWarning(ex,
                     "Chunk download failed on {Server} (attempt {Attempt}/{Max}) — discarding and retrying",
                     server.Host, attempt + 1, MaxChunkRetries);
@@ -1236,19 +1397,68 @@ public class SteamClientService : ISteamService, IDisposable
                     ["chunk.id"] = chunk.ChunkID is { Length: > 0 } ? Convert.ToHexString(chunk.ChunkID) : "unknown",
                     ["chunk.attempt"] = attempt + 1,
                     ["cdn.server"] = server.Host,
-                    ["error"] = ex.Message
+                    ["error"] = ex.Message,
+                    ["error.transient"] = transient
                 }));
 
                 pool.ReturnServer(server, true); // faulty — permanently discard it
 
                 if (attempt < MaxChunkRetries - 1)
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct); // 1s, 2s back-off
+                    await Task.Delay(GetSteamRetryDelay(attempt + 1, transient), ct);
             }
         }
 
         throw new IOException(
-            $"Failed to download chunk after {MaxChunkRetries} attempts — no healthy CDN server responded.",
+            $"Failed to download chunk after {MaxChunkRetries} attempts. Steam may be rate limiting or temporarily unavailable.",
             lastEx);
+    }
+
+    private static TimeSpan GetSteamRetryDelay(int attempt, bool transient)
+    {
+        var baseSeconds = transient ? 3 : 1;
+        var seconds = Math.Min(45, baseSeconds * Math.Pow(2, Math.Max(0, attempt - 1)));
+        var jitterMs = Random.Shared.Next(250, 1250);
+        return TimeSpan.FromSeconds(seconds) + TimeSpan.FromMilliseconds(jitterMs);
+    }
+
+    private static bool IsTransientSteamCdnException(Exception ex)
+    {
+        for (var current = ex; current != null; current = current.InnerException!)
+        {
+            var typeName = current.GetType().FullName ?? current.GetType().Name;
+            var message = current.Message;
+
+            if (typeName.Contains("SteamKitWebRequestException", StringComparison.OrdinalIgnoreCase) &&
+                ContainsTransientHttpSignal(message))
+            {
+                return true;
+            }
+
+            if (current is HttpRequestException or IOException or TimeoutException &&
+                ContainsTransientHttpSignal(message))
+            {
+                return true;
+            }
+
+            if (ContainsTransientHttpSignal(message))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool ContainsTransientHttpSignal(string message)
+    {
+        return message.Contains("429", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("500", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("502", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("503", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("Service Unavailable", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("504", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("Gateway Timeout", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task DownloadAppAsync(

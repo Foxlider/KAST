@@ -1,0 +1,23 @@
+.kast-title {
+    transition: color 300ms ease, transform 300ms ease;
+    text-shadow: 0 0 8px currentColor;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    will-change: transform;
+    animation: kast-pulse 2.5s infinite ease-in-out;
+}
+
+@keyframes kast-pulse {
+    0% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
+    50% { transform: scale(1.02); filter: drop-shadow(0 0 18px currentColor); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
+}
+
+.shortcuts-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

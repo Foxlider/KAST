@@ -78,14 +78,24 @@ public class ServerConfigData
     // Admin UIDs
     public string? Admins { get; set; }
 
+    // File patching exceptions
+    public string? FilePatchingExceptions { get; set; }
+
     // ── Joining Rules ──
     public bool KickDuplicate { get; set; } = true;
-    public int VerifySignatures { get; set; } = 2;                // 0=Disabled, 1=Deprecated, 2=Activated
-    public int AllowedFilePatching { get; set; }                  // 0=No clients, 1=HC only, 2=All
-    public int RequiredBuild { get; set; } = -1;                  // -1 = not set
+    public int VerifySignatures { get; set; } = 2;
+    public int AllowedFilePatching { get; set; }
+    public int RequiredBuild { get; set; } = -1;
     public int SteamProtocolMaxDataSize { get; set; } = 1024;
     public bool Loopback { get; set; }
     public bool Upnp { get; set; }
+    public bool EqualModRequired { get; set; }
+
+    // ── Security Extensions ──
+    public string? AllowedLoadFileExtensions { get; set; }
+    public string? AllowedPreprocessFileExtensions { get; set; }
+    public string? AllowedHTMLLoadExtensions { get; set; }
+    public string? AllowedHTMLLoadURIs { get; set; }
 
     // ── Voting ──
     public bool VotingEnabled { get; set; } = true;
@@ -102,8 +112,17 @@ public class ServerConfigData
     public bool AutoInit { get; set; }
     public bool BattlEye { get; set; } = true;
     public string TimeStampFormat { get; set; } = "short";        // none, short, full
+    public string TimeStampFormatConsole { get; set; } = "short"; // none, short, full
     public string ForcedDifficulty { get; set; } = "Custom";
     public bool DrawingInMap { get; set; } = true;
+    public int ForceRotorLibSimulation { get; set; }              // 0=player choice, 1=AFM, 2=SFM
+    public bool AllowProfileGlasses { get; set; } = true;
+    public int ZeusCompositionScriptLevel { get; set; } = 1;     // 0=forbidden, 1=attributes, 2=all
+    public int OverrideHazeQuality { get; set; } = -1;            // -1=unset, 0=VeryLow, 1=Low, 2=Standard
+    public int IdleFPSLimit { get; set; } = 30;
+    public bool EnablePlayerDiag { get; set; }
+    public bool StatisticsEnabled { get; set; } = true;
+    public int CallExtReportLimit { get; set; } = 1000;
 
     // ── Logging ──
     public bool LogObjectNotFound { get; set; } = true;
@@ -124,10 +143,20 @@ public class ServerConfigData
     public int RoleTimeOut { get; set; } = 90;
     public int DebriefingTimeOut { get; set; } = 45;
 
+    // ── Kick Timeout ──
+    public int KickTimeoutManual { get; set; } = -1;    // -1=until missionEnd
+    public int KickTimeoutConnect { get; set; } = 180;
+    public int KickTimeoutBattlEye { get; set; } = 180;
+    public int KickTimeoutHarmless { get; set; } = 180;
+
     // ── Mission ──
     public bool AutoSelectMission { get; set; } = true;
     public bool RandomMissionOrder { get; set; } = true;
+    public int MissionsToServerRestart { get; set; }
+    public int MissionsToShutdown { get; set; }
+    public string? MissionWhitelist { get; set; }
     public string? MissionContentOverride { get; set; }
+    public string? MissionHTTPDownloadBaseURL { get; set; }
 
     // ── Headless Client ──
     public string? HeadlessClients { get; set; }                  // newline-separated IPs
@@ -141,6 +170,7 @@ public class ServerConfigData
     public string? OnDifferentData { get; set; }
     public string? OnUnsignedData { get; set; } = "kick (_this select 0)";
     public string? OnUserKicked { get; set; }
+    public string? RegularCheck { get; set; }
 
     // ── Performance (launch args) ──
     public bool MaxMemOverride { get; set; }

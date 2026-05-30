@@ -39,6 +39,11 @@ public class ContentProgressTracker
         return state;
     }
 
+    public void Set(ContentInstallState state)
+    {
+        _states[state.Key] = state;
+    }
+
     public ContentInstallState? Get(string key)
         => _states.TryGetValue(key, out var s) ? s : null;
 

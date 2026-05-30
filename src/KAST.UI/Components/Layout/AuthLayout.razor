@@ -1,0 +1,35 @@
+@inherits LayoutComponentBase
+@inject ThemeService ThemeService
+
+<MudThemeProvider Theme="@_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--mud-palette-background);">
+    <div style="width:100%;max-width:420px;">
+        <div class="d-flex align-center justify-center gap-2 mb-4">
+            <MudText Typo="Typo.h4" Style="@($"font-weight:800;color:{ThemeService.AccentColor};")">KAST</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Keelah's Arma Server Tool</MudText>
+        </div>
+        @Body
+    </div>
+</div>
+
+@code {
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#42A5F5",
+            Secondary = "#FF7043",
+            Background = "#121212",
+            Surface = "#1E1E1E",
+            AppbarBackground = "#121212",
+            TextPrimary = "#EEEEEE",
+            TextSecondary = "#9E9E9E",
+            Divider = "#2E2E2E"
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "4px" }
+    };
+}

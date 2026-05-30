@@ -56,6 +56,67 @@
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxDesync" ValueChanged="@((int v) => { Config.MaxDesync = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Desync" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxPacketLoss" ValueChanged="@((int v) => { Config.MaxPacketLoss = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Packet Loss" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.DisconnectTimeout" ValueChanged="@((int v) => { Config.DisconnectTimeout = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Disconnect Timeout" Min="5" Max="90" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.LobbyIdleTimeout" ValueChanged="@((int v) => { Config.LobbyIdleTimeout = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Lobby Idle Timeout" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.KickClientOnSlowNetwork" Label="Kick on Slow Network" Color="Color.Warning" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">VoN &amp; Audio</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.DisableVoN" Label="Disable VoN" Color="Color.Error" /></MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Config.VonCodec.ToString()"
+                                   ValueChanged="@((string v) => { Config.VonCodec = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="Codec" FullWidth="true">
+                            <MudSelectItem Value="@("0")">SPEEX</MudSelectItem>
+                            <MudSelectItem Value="@("1")">OPUS</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.VonCodecQuality" ValueChanged="@((int v) => { Config.VonCodecQuality = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Codec Quality (1-30)" Min="1" Max="30" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Advanced</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.PersistentBattlefield" Label="Persistent" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.DrawingInMap" Label="Drawing in Map" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.SkipLobby" Label="Skip Lobby" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.EnablePlayerDiag" Label="Player Diagnostics" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.StatisticsEnabled" Label="Statistics" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch @bind-Value="Config.AllowProfileGlasses" Label="Profile Glasses" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Config.ForceRotorLibSimulation.ToString()"
+                                   ValueChanged="@((string v) => { Config.ForceRotorLibSimulation = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="Force RotorLib" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Player Choice</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Force AFM</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Force SFM</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Config.ZeusCompositionScriptLevel.ToString()"
+                                   ValueChanged="@((string v) => { Config.ZeusCompositionScriptLevel = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="Zeus Script Level" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Forbidden</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Attributes Only</MudSelectItem>
+                            <MudSelectItem Value="@("2")">All Scripts</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Config.OverrideHazeQuality.ToString()"
+                                   ValueChanged="@((string v) => { Config.OverrideHazeQuality = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
+                                   Label="Override Haze" FullWidth="true">
+                            <MudSelectItem Value="@("-1")">Do Not Force</MudSelectItem>
+                            <MudSelectItem Value="@("0")">Very Low</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Low</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Standard</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" Value="@Config.IdleFPSLimit" ValueChanged="@((int v) => { Config.IdleFPSLimit = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Idle FPS Limit" Min="5" Max="60" /></MudItem>
                 </MudGrid>
             </MudCardContent>
         </MudCard>

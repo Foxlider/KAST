@@ -1,8 +1,12 @@
 ﻿@using System.Net.Http
 @using System.Net.Http.Json
+@using System.Net
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using static Microsoft.AspNetCore.Components.Web.RenderMode
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Microsoft.JSInterop
@@ -11,8 +15,9 @@
 @using KAST.UI
 @using KAST.UI.Components
 @using KAST.UI.Components.Layout
+@using KAST.UI.Helpers
 @using KAST.Core.Enums
+@using KAST.Core.Events
 @using KAST.Core.Interfaces
 @using KAST.Core.Models
 @using KAST.UI.Services
-@using KAST.Infrastructure.Services.Content

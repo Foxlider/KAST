@@ -1,6 +1,8 @@
 using KAST.Core.Enums;
+using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Services.Content;
 using KAST.UI.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,210 +13,157 @@ namespace KAST.Tests;
 public class ModDownloadManagerTests
 {
     [Fact]
-    public async Task StartDownload_RunsDownloadInBackgroundScope()
+    public async Task StartDownloadAsync_QueuesThroughOrchestratorAndSetsRunningStatus()
     {
+        var mod = new SteamMod
+        {
+            Id = 12,
+            WorkshopId = 101,
+            Name = "ACE",
+            Source = ModSource.SteamWorkshop,
+            Status = ModStatus.NotInstalled
+        };
         var modService = Substitute.For<IModService>();
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        modService.DownloadModAsync(12, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                started.SetResult();
-                return release.Task;
-            });
-        var manager = CreateManager(modService);
+        modService.GetModByIdAsync(12, Arg.Any<CancellationToken>()).Returns(mod);
+        modService.UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<SteamMod>());
+        var orchestrator = Substitute.For<IContentOrchestrator>();
+        var manager = CreateManager(modService, orchestrator: orchestrator);
 
-        var queued = manager.StartDownload(12, isUpdate: false);
+        var queued = await manager.StartDownloadAsync(12, isUpdate: false);
 
         Assert.True(queued);
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.True(manager.IsActive(12));
-        release.SetResult();
-        await WaitForAsync(() => !manager.IsActive(12));
-        await modService.Received(1).DownloadModAsync(12, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        await modService.DidNotReceive().UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>());
+        orchestrator.Received(1).StartModInstall(
+            12,
+            ContentType.SteamMod,
+            Path.Combine("mods", "101"),
+            101,
+            null,
+            Arg.Any<long>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
+            4);
     }
 
     [Fact]
-    public async Task StartDownload_RejectsDuplicateActiveDownload()
+    public async Task StartDownloadAsync_RejectsAlreadyRunningDownload()
     {
         var modService = Substitute.For<IModService>();
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        modService.DownloadModAsync(7, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                started.SetResult();
-                return release.Task;
-            });
-        var manager = CreateManager(modService);
+        var orchestrator = Substitute.For<IContentOrchestrator>();
+        orchestrator.IsRunning(ContentProgressTracker.ModKey(7)).Returns(true);
+        var manager = CreateManager(modService, orchestrator: orchestrator);
 
-        Assert.True(manager.StartDownload(7, isUpdate: false));
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var queued = await manager.StartDownloadAsync(7, isUpdate: false);
 
-        Assert.False(manager.StartDownload(7, isUpdate: false));
-
-        release.SetResult();
-        await WaitForAsync(() => !manager.IsActive(7));
-        await modService.Received(1).DownloadModAsync(7, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        Assert.False(queued);
+        await modService.DidNotReceiveWithAnyArgs().GetModByIdAsync(default);
+        orchestrator.DidNotReceiveWithAnyArgs().StartModInstall(default, default, default!, default, default, default, default, default, default, default);
     }
 
     [Fact]
-    public async Task Cancel_CancelsActiveDownloadToken()
+    public void Cancel_DelegatesToOrchestrator()
     {
-        var modService = Substitute.For<IModService>();
-        var started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        modService.DownloadModAsync(3, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var ct = call.ArgAt<CancellationToken>(2);
-                started.SetResult(ct);
-                return release.Task;
-            });
-        var manager = CreateManager(modService);
-
-        Assert.True(manager.StartDownload(3, isUpdate: false));
-        var token = await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var orchestrator = Substitute.For<IContentOrchestrator>();
+        orchestrator.IsRunning(ContentProgressTracker.ModKey(3)).Returns(true);
+        var manager = CreateManager(Substitute.For<IModService>(), orchestrator: orchestrator);
 
         Assert.True(manager.Cancel(3));
-        Assert.True(token.IsCancellationRequested);
 
-        release.SetCanceled(token);
-        await WaitForAsync(() => !manager.IsActive(3));
+        orchestrator.Received(1).Cancel(ContentProgressTracker.ModKey(3));
     }
 
     [Fact]
-    public async Task StartDownload_UsesUpdateWhenRequested()
+    public async Task StartDownloadAsync_UsesUpdateStatusAndExistingPathWhenRequested()
     {
-        var modService = Substitute.For<IModService>();
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        modService.UpdateModFilesAsync(5, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                started.SetResult();
-                return Task.CompletedTask;
-            });
-        var manager = CreateManager(modService);
-
-        Assert.True(manager.StartDownload(5, isUpdate: true));
-
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await WaitForAsync(() => !manager.IsActive(5));
-        await modService.Received(1).UpdateModFilesAsync(5, Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task StartAllOutdatedAsync_QueuesEachDownloadInSeparateScope()
-    {
-        var state = new ScopedModServiceState
+        var mod = new SteamMod
         {
-            Mods =
-            [
-                new SteamMod { Id = 1, WorkshopId = 101, Name = "New", Source = ModSource.SteamWorkshop, Status = ModStatus.NotInstalled },
-                new SteamMod { Id = 2, WorkshopId = 102, Name = "Old", Source = ModSource.SteamWorkshop, Status = ModStatus.UpdateAvailable },
-                new SteamMod { Id = 3, WorkshopId = 103, Name = "Local", Source = ModSource.LocalFolder, Status = ModStatus.Error }
-            ]
+            Id = 5,
+            WorkshopId = 105,
+            Name = "RHS",
+            Source = ModSource.SteamWorkshop,
+            Status = ModStatus.UpdateAvailable,
+            LocalPath = "existing-mod"
         };
-        var services = new ServiceCollection();
-        services.AddSingleton(state);
-        services.AddScoped<IModService, ScopedModService>();
-        var provider = services.BuildServiceProvider();
-        var manager = new ModDownloadManager(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ModDownloadManager>.Instance);
+        var modService = Substitute.For<IModService>();
+        modService.GetModByIdAsync(5, Arg.Any<CancellationToken>()).Returns(mod);
+        modService.UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<SteamMod>());
+        var orchestrator = Substitute.For<IContentOrchestrator>();
+        var manager = CreateManager(modService, orchestrator: orchestrator);
+
+        Assert.True(await manager.StartDownloadAsync(5, isUpdate: true));
+
+        await modService.DidNotReceive().UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>());
+        orchestrator.Received(1).StartModInstall(
+            5,
+            ContentType.SteamMod,
+            "existing-mod",
+            105,
+            null,
+            Arg.Any<long>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
+            4);
+    }
+
+    [Fact]
+    public async Task StartAllOutdatedAsync_QueuesEligibleWorkshopMods()
+    {
+        var mods = new List<SteamMod>
+        {
+            new() { Id = 1, WorkshopId = 101, Name = "New", Source = ModSource.SteamWorkshop, Status = ModStatus.NotInstalled },
+            new() { Id = 2, WorkshopId = 102, Name = "Old", Source = ModSource.SteamWorkshop, Status = ModStatus.UpdateAvailable, LocalPath = "old-mod" },
+            new() { Id = 3, WorkshopId = 103, Name = "Local", Source = ModSource.LocalFolder, Status = ModStatus.Error }
+        };
+
+        var modService = Substitute.For<IModService>();
+        modService.GetAllModsAsync(Arg.Any<CancellationToken>()).Returns(mods);
+        modService.GetModByIdAsync(1, Arg.Any<CancellationToken>()).Returns(mods[0]);
+        modService.GetModByIdAsync(2, Arg.Any<CancellationToken>()).Returns(mods[1]);
+        modService.UpdateModAsync(Arg.Any<SteamMod>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<SteamMod>());
+        var orchestrator = Substitute.For<IContentOrchestrator>();
+        var manager = CreateManager(modService, orchestrator: orchestrator);
 
         var queued = await manager.StartAllOutdatedAsync();
 
         Assert.Equal(2, queued);
-        await WaitForAsync(() => state.OperationCount == 2);
-        Assert.Equal(2, state.OperationScopeCount);
+        orchestrator.Received(2).StartModInstall(
+            Arg.Any<int>(),
+            ContentType.SteamMod,
+            Arg.Any<string>(),
+            Arg.Any<long>(),
+            null,
+            Arg.Any<long>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Task>>(),
+            Arg.Any<Func<IServiceProvider, ContentInstallState, Exception, Task>>(),
+            4);
     }
 
-    private static ModDownloadManager CreateManager(IModService modService)
+    private static ModDownloadManager CreateManager(
+        IModService modService,
+        IContentOrchestrator? orchestrator = null,
+        ContentProgressTracker? tracker = null)
     {
         var services = new ServiceCollection();
-        services.AddScoped(_ => modService);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings { ModsDirectory = "mods", ParallelDownloads = 4 });
+
+        services.AddSingleton(modService);
+        services.AddSingleton(settings);
+        services.AddSingleton(Substitute.For<IFileSystemService>());
+        services.AddSingleton(Substitute.For<IAppEventBroadcaster>());
+
         var provider = services.BuildServiceProvider();
         return new ModDownloadManager(
             provider.GetRequiredService<IServiceScopeFactory>(),
+            orchestrator ?? Substitute.For<IContentOrchestrator>(),
+            tracker ?? new ContentProgressTracker(),
             NullLogger<ModDownloadManager>.Instance);
-    }
-
-    private static async Task WaitForAsync(Func<bool> condition)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!condition())
-        {
-            await Task.Delay(10, timeout.Token);
-        }
-    }
-
-    private sealed class ScopedModServiceState
-    {
-        private readonly object _lock = new();
-
-        public IReadOnlyList<SteamMod> Mods { get; init; } = [];
-        private HashSet<Guid> DownloadScopeIds { get; } = [];
-        private HashSet<Guid> UpdateScopeIds { get; } = [];
-
-        public int OperationCount
-        {
-            get
-            {
-                lock (_lock)
-                    return DownloadScopeIds.Count + UpdateScopeIds.Count;
-            }
-        }
-
-        public int OperationScopeCount
-        {
-            get
-            {
-                lock (_lock)
-                    return DownloadScopeIds.Concat(UpdateScopeIds).Distinct().Count();
-            }
-        }
-
-        public void RecordDownload(Guid scopeId)
-        {
-            lock (_lock)
-                DownloadScopeIds.Add(scopeId);
-        }
-
-        public void RecordUpdate(Guid scopeId)
-        {
-            lock (_lock)
-                UpdateScopeIds.Add(scopeId);
-        }
-    }
-
-    private sealed class ScopedModService(ScopedModServiceState state) : IModService
-    {
-        private readonly Guid _scopeId = Guid.NewGuid();
-
-        public Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
-            => Task.FromResult(state.Mods);
-
-        public Task DownloadModAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
-        {
-            state.RecordDownload(_scopeId);
-            return Task.CompletedTask;
-        }
-
-        public Task UpdateModFilesAsync(int id, IProgress<double>? progress = null, CancellationToken ct = default)
-        {
-            state.RecordUpdate(_scopeId);
-            return Task.CompletedTask;
-        }
-
-        public Task<SteamMod?> GetModByIdAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<SteamMod?> GetModByWorkshopIdAsync(long workshopId, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<SteamMod> AddWorkshopModAsync(long workshopId, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<SteamMod> ImportLocalModAsync(string path, string name, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task DeleteModAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<SteamMod> UpdateModAsync(SteamMod mod, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task CheckForUpdatesAsync(CancellationToken ct = default) => throw new NotImplementedException();
-        public Task CheckModForUpdateAsync(int id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task UpdateAllOutdatedModsAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

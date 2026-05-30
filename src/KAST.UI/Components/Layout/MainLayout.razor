@@ -1,6 +1,9 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
 
 @inject ThemeService ThemeService
+@inject NavigationManager NavigationManager
+@inject KeyboardShortcutService KeyboardShortcuts
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
@@ -15,35 +18,59 @@
         <MudText Typo="Typo.caption" Class="ml-1 mud-text-secondary" Style="opacity:.5">
             Keelah's Arma Server Tool
         </MudText>
+        <MudMenu>
+            <ActivatorContent>
+                <MudIconButton Icon="@Icons.Material.Filled.FlashOn" Color="Color.Inherit" aria-label="Quick Actions" />
+            </ActivatorContent>
+            <ChildContent>
+                <MudMenuItem OnClick="@(() => NavigationManager.NavigateTo("/servers/new"))" Icon="@Icons.Material.Filled.Add">New Server Instance</MudMenuItem>
+                <MudMenuItem OnClick="@(() => NavigationManager.NavigateTo("/mods"))" Icon="@Icons.Material.Filled.Extension">Add Workshop Mod</MudMenuItem>
+                <MudMenuItem OnClick="@(() => NavigationManager.NavigateTo("/mods"))" Icon="@Icons.Material.Filled.Refresh">Check for Updates</MudMenuItem>
+                <MudMenuItem OnClick="@(() => NavigationManager.NavigateTo("/servers"))" Icon="@Icons.Material.Filled.Storage">Server List</MudMenuItem>
+            </ChildContent>
+        </MudMenu>
         <MudSpacer />
         <SteamAccountWidget />
+        <AccountWidget />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" aria-label="Toggle dark mode" />
     </MudAppBar>
-    <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+    <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2"
+               Breakpoint="Breakpoint.Md">
         <NavMenu />
     </MudDrawer>
     <MudMainContent Class="pt-16 pb-10 pa-4">
+        <MudBreadcrumbs Items="@_breadcrumbItems" Class="mb-4" />
         @Body
     </MudMainContent>
     <FooterBar />
-</MudLayout>
+    </MudLayout>
 
-<style>
-    .kast-title {
-        transition: color 300ms ease, transform 300ms ease;
-        text-shadow: 0 0 8px currentColor;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-        will-change: transform;
-        animation: kast-pulse 2.5s infinite ease-in-out;
+    @* ── Keyboard Shortcuts Help Overlay ── *@
+    @if (_showShortcutsHelp)
+    {
+        <MudOverlay Visible="true" OnClick="@(() => _showShortcutsHelp = false)" DarkBackground="true" ZIndex="2000">
+            <MudPaper Class="pa-6" Style="max-width:420px; margin:12vh auto;" Elevation="25">
+                <MudText Typo="Typo.h5" Class="mb-4" Style="font-weight:700;">
+                    <MudIcon Icon="@Icons.Material.Filled.Keyboard" Size="Size.Small" Class="mr-2" />Keyboard Shortcuts
+                </MudText>
+                <MudDivider Class="mb-3" />
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div class="d-flex align-center" style="gap:12px;">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Style="font-family:monospace; min-width:100px; text-align:center;">Ctrl+Shift+L</MudChip>
+                        <MudText Typo="Typo.body2">Toggle log console</MudText>
+                    </div>
+                    <div class="d-flex align-center" style="gap:12px;">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Style="font-family:monospace; min-width:100px; text-align:center;">?</MudChip>
+                        <MudText Typo="Typo.body2">Show this help</MudText>
+                    </div>
+                </div>
+                <MudDivider Class="my-3" />
+                <div class="d-flex" style="justify-content:flex-end;">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _showShortcutsHelp = false)">Close</MudButton>
+                </div>
+            </MudPaper>
+        </MudOverlay>
     }
-
-    @@keyframes kast-pulse {
-        0% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
-        50% { transform: scale(1.02); filter: drop-shadow(0 0 18px currentColor); }
-        100% { transform: scale(1); filter: drop-shadow(0 0 6px currentColor); }
-    }
-</style>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -55,6 +82,12 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private MudTheme? _theme = null;
+    private List<BreadcrumbItem> _breadcrumbItems = new();
+
+    private bool _showShortcutsHelp;
+    private bool _keyboardShortcutsInitialized;
+
+    private Action? _themeChangeHandler;
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,13 +105,100 @@
             LayoutProperties = new LayoutProperties { DefaultBorderRadius = "4px" },
         };
 
-        ThemeService.OnChange += () =>
+        _themeChangeHandler = () =>
         {
             _isDarkMode                  = ThemeService.IsDarkMode;
             _lightPalette.Secondary      = ThemeService.AccentColor;
             _darkPalette.Secondary       = ThemeService.AccentColor;
             InvokeAsync(StateHasChanged);
         };
+        ThemeService.OnChange += _themeChangeHandler;
+
+        BuildBreadcrumbs(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _keyboardShortcutsInitialized)
+            return;
+
+        _keyboardShortcutsInitialized = true;
+        await KeyboardShortcuts.InitializeAsync();
+        KeyboardShortcuts.Register("ctrl+shift+l", async () =>
+        {
+            // The FooterBar owns the log toggle; this shortcut is handled
+            // by the service.  Handlers from different components overlay
+            // the same key-combo, so place component-specific toggles where
+            // they live.  For now this serves as a placeholder for
+            // centrally-triggered actions.
+        });
+        KeyboardShortcuts.Register("?", async () =>
+        {
+            _showShortcutsHelp = true;
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        BuildBreadcrumbs(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void BuildBreadcrumbs(string uri)
+    {
+        _breadcrumbItems.Clear();
+
+        var relativePath = NavigationManager.ToBaseRelativePath(uri);
+
+        // Always start with Dashboard as the root
+        _breadcrumbItems.Add(new BreadcrumbItem("Dashboard", href: "/"));
+
+        if (string.IsNullOrEmpty(relativePath))
+            return;
+
+        var segments = relativePath.Trim('/').Split('/');
+
+        switch (segments[0].ToLowerInvariant())
+        {
+            case "servers":
+                _breadcrumbItems.Add(new BreadcrumbItem("Servers", href: "/servers"));
+
+                if (segments.Length > 1)
+                {
+                    if (segments[1].Equals("new", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _breadcrumbItems.Add(new BreadcrumbItem("New Instance", href: "/servers/new"));
+                    }
+                    else
+                    {
+                        _breadcrumbItems.Add(new BreadcrumbItem($"Instance {segments[1]}", href: $"/servers/{segments[1]}"));
+                    }
+                }
+                break;
+
+            case "mods":
+                _breadcrumbItems.Add(new BreadcrumbItem("Mods", href: "/mods"));
+                break;
+
+            case "monitoring":
+                _breadcrumbItems.Add(new BreadcrumbItem("Monitoring", href: "/monitoring"));
+                break;
+
+            case "settings":
+                _breadcrumbItems.Add(new BreadcrumbItem("Settings", href: "/settings"));
+                break;
+
+            case "about":
+                _breadcrumbItems.Add(new BreadcrumbItem("About", href: "/about"));
+                break;
+
+            default:
+                // Unknown route — show the segment as-is
+                _breadcrumbItems.Add(new BreadcrumbItem(segments[0], href: $"/{segments[0]}"));
+                break;
+        }
     }
 
     private void DrawerToggle() => _drawerOpen = !_drawerOpen;
@@ -86,6 +206,13 @@
     private async Task DarkModeToggle()
     {
         await ThemeService.SetDarkModeAsync(!_isDarkMode);
+    }
+
+    public void Dispose()
+    {
+        if (_themeChangeHandler != null)
+            ThemeService.OnChange -= _themeChangeHandler;
+        NavigationManager.LocationChanged -= OnLocationChanged;
     }
 
     // ── Light palette — Material Design 700/600 tones ───────────────────────
@@ -163,4 +290,3 @@
         false => Icons.Material.Outlined.DarkMode,
     };
 }
-

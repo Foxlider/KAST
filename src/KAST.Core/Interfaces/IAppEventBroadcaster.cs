@@ -19,4 +19,5 @@ public interface IAppEventBroadcaster
     /// <summary>In-process subscriptions for Blazor Server components (no HTTP needed).</summary>
     event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
     event Action<ModStatusChangedEvent>? OnModStatusChanged;
+    event Action<ServerStatusChangedEvent>? OnServerStatusChanged;
 }

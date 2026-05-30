@@ -1,0 +1,103 @@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IUserAccountService AccountService
+@inject NavigationManager Navigation
+
+@if (_user is not null)
+{
+    <MudTooltip Text="@_user.Username" Placement="Placement.Bottom">
+        <MudChip T="string" OnClick="TogglePopover"
+                 Style="cursor:pointer; height:30px;"
+                 Color="Color.Secondary"
+                 Variant="Variant.Outlined"
+                 Class="mud-chip-dense mr-1">
+            @if (!string.IsNullOrWhiteSpace(_user.AvatarFileName))
+            {
+                <img src="@($"/account/avatars/{_user.AvatarFileName}")" alt="@_user.Username"
+                     style="width:20px;height:20px;border-radius:50%;object-fit:cover;margin-right:6px;flex-shrink:0;" />
+            }
+            else
+            {
+                <MudAvatar Size="Size.Small" Color="Color.Secondary" Style="width:20px;height:20px;margin-right:6px;font-size:11px;">
+                    @GetInitial()
+                </MudAvatar>
+            }
+            <MudText Typo="Typo.caption" Style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                @_user.Username
+            </MudText>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowDropDown" Size="Size.Small" Class="ml-1" />
+        </MudChip>
+    </MudTooltip>
+
+    <MudPopover Open="@_open" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                Class="pa-0" Style="min-width:220px; z-index:9999;">
+        <MudPaper Elevation="8" Style="overflow:hidden; border-radius:8px;">
+            <div class="pa-3" style="border-bottom:1px solid var(--mud-palette-divider);">
+                <div class="d-flex align-center gap-3">
+                    @if (!string.IsNullOrWhiteSpace(_user.AvatarFileName))
+                    {
+                        <img src="@($"/account/avatars/{_user.AvatarFileName}")" alt="@_user.Username"
+                             style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;" />
+                    }
+                    else
+                    {
+                        <MudAvatar Size="Size.Medium" Color="Color.Secondary">@GetInitial()</MudAvatar>
+                    }
+                    <div style="min-width:0;">
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            @_user.Username
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">KAST administrator</MudText>
+                    </div>
+                </div>
+            </div>
+            <div class="pa-2">
+                <MudButton FullWidth="true" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                           OnClick="OpenAccountSettings"
+                           StartIcon="@Icons.Material.Filled.ManageAccounts">
+                    Account Settings
+                </MudButton>
+                <form method="post" action="/auth/logout" data-enhance="false">
+                    <button type="submit" class="mud-button-root mud-button mud-button-text mud-button-text-error mud-button-text-size-small mud-ripple"
+                            style="width:100%;justify-content:flex-start;padding:4px 8px;text-transform:none;">
+                        <span class="mud-button-label">
+                            <MudIcon Icon="@Icons.Material.Filled.Logout" Size="Size.Small" Class="mr-2" />
+                            Log out
+                        </span>
+                    </button>
+                </form>
+            </div>
+        </MudPaper>
+    </MudPopover>
+
+    @if (_open)
+    {
+        <div style="position:fixed;inset:0;z-index:9998;" @onclick="ClosePopover"></div>
+    }
+}
+
+@code {
+    private KastUser? _user;
+    private bool _open;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.GetUserId();
+        if (userId is not null)
+            _user = await AccountService.GetByIdAsync(userId.Value);
+    }
+
+    private void TogglePopover() => _open = !_open;
+    private void ClosePopover() => _open = false;
+
+    private void OpenAccountSettings()
+    {
+        _open = false;
+        Navigation.NavigateTo("/settings?tab=accounts");
+    }
+
+    private string GetInitial()
+        => string.IsNullOrWhiteSpace(_user?.Username)
+            ? "?"
+            : _user.Username.Trim()[0].ToString().ToUpperInvariant();
+}

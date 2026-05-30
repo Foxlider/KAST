@@ -1,9 +1,9 @@
-@using KAST.Core.Events
 @using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject KAST.UI.Services.ServerConsoleStore ConsoleStore
 @inject KastInternalUrlProvider InternalUrls
+@inject InternalHubTokenService InternalHubToken
 @inject ILogger<MonitorTab> Logger
 
 @if (!_monitoringConnected && _monitoringError is not null)
@@ -27,7 +27,7 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
-                <MudText Typo="Typo.h5">@FormatBytes(_monitorMemory)</MudText>
+                <MudText Typo="Typo.h5">@UiHelpers.FormatBytes(_monitorMemory)</MudText>
             </MudCardContent>
         </MudCard>
     </MudItem>
@@ -69,7 +69,7 @@
      style="background:var(--mud-palette-background-grey); padding:8px; font-family:monospace; font-size:12px; border-radius:4px;">
     @foreach (var entry in FilteredConsoleLines)
     {
-        <div style="@GetEntryStyle(entry.Type)">
+        <div style="@(entry.Type == ConsoleFilter.Error ? "color:var(--mud-palette-error-text);" : entry.Type == ConsoleFilter.Warning ? "color:var(--mud-palette-warning-text);" : "")">
             <span style="color:var(--mud-palette-text-secondary);">@entry.Timestamp.ToString("HH:mm:ss")</span>
             <span> @entry.Line</span>
         </div>
@@ -89,6 +89,8 @@
     private bool _followConsole = true;
     private bool _scrollConsole;
     private ConsoleFilter _consoleFilter = ConsoleFilter.All;
+    private DateTime _lastConsoleRender = DateTime.MinValue;
+    private const int ConsoleRenderThrottleMs = 100;
     private double _monitorCpu;
     private long _monitorMemory;
     private int _monitorPlayerCount;
@@ -123,7 +125,8 @@
         try
         {
             _hubConnection = new HubConnectionBuilder()
-                .WithUrl(InternalUrls.GetMonitoringHubUri())
+                .WithUrl(InternalUrls.GetMonitoringHubUri(), options =>
+                    options.Headers.Add(InternalHubAuthenticationDefaults.HeaderName, InternalHubToken.Token))
                 .WithAutomaticReconnect()
                 .Build();
 
@@ -156,7 +159,13 @@
                 _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
                 while (_consoleLines.Count > 1000) _consoleLines.RemoveAt(0);
                 if (_followConsole) _scrollConsole = true;
-                InvokeAsync(StateHasChanged);
+
+                var now = DateTime.UtcNow;
+                if ((now - _lastConsoleRender).TotalMilliseconds >= ConsoleRenderThrottleMs)
+                {
+                    _lastConsoleRender = now;
+                    InvokeAsync(StateHasChanged);
+                }
             });
 
             _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
@@ -239,21 +248,6 @@
             line.Contains("warn",    StringComparison.OrdinalIgnoreCase))
             return ConsoleFilter.Warning;
         return ConsoleFilter.Info;
-    }
-
-    private static string GetEntryStyle(ConsoleFilter type) => type switch
-    {
-        ConsoleFilter.Error   => "color:var(--mud-palette-error-text);",
-        ConsoleFilter.Warning => "color:var(--mud-palette-warning-text);",
-        _                     => ""
-    };
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes < 1024) return $"{bytes} B";
-        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
-        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
     }
 
     public async ValueTask DisposeAsync()

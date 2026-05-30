@@ -1,16 +1,29 @@
 @page "/servers"
+@attribute [Authorize]
+@using KAST.Infrastructure.Services.Content
 @inject IServerInstanceService ServerService
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
+@inject ContentProgressTracker ContentProgress
+@inject IJSRuntime JS
 
 <PageTitle>KAST — Servers</PageTitle>
 
 <div class="d-flex align-center justify-space-between mb-4">
     <MudText Typo="Typo.h5">Server Instances</MudText>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-               OnClick="@(() => Nav.NavigateTo("/servers/new"))">
-        New Instance
-    </MudButton>
+    <div class="d-flex align-center" style="gap: 8px;">
+        <MudFileUpload T="IBrowserFile" Accept=".json" FilesChanged="OnImportFileSelected">
+            <CustomContent>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.FileUpload">
+                    Import
+                </MudButton>
+            </CustomContent>
+        </MudFileUpload>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Nav.NavigateTo("/servers/new"))">
+            New Instance
+        </MudButton>
+    </div>
 </div>
 
 @if (_instances.Count == 0)
@@ -33,17 +46,22 @@ else
                 <MudCard Elevation="2" Style="cursor:pointer;" @onclick="@(() => Nav.NavigateTo($"/servers/{instance.Id}"))">
                     <MudCardContent>
                         <div class="d-flex align-center gap-2 mb-2">
-                            <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" />
+                            <MudIcon Icon="@UiHelpers.GetStatusIcon(instance.Status)" Color="@UiHelpers.GetStatusColor(instance.Status)" />
                             <MudText Typo="Typo.subtitle1" Style="font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                                 @instance.Name
                             </MudText>
-                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(instance.Status)" Variant="Variant.Filled">
+                            <MudChip T="string" Size="Size.Small" Color="@UiHelpers.GetStatusColor(instance.Status)" Variant="Variant.Filled">
                                 @instance.Status
                             </MudChip>
                         </div>
                         <MudText Typo="Typo.body2" Color="Color.Secondary">
                             Port: @instance.Port | Mods: @instance.Mods.Count | HC: @instance.HeadlessClientCount
                         </MudText>
+                        @if (instance.Status == ServerInstanceStatus.Downloading)
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Warning" Class="mt-2" />
+                            <MudText Typo="Typo.caption" Color="Color.Warning">Installing server files...</MudText>
+                        }
                         @if (instance.StartedAt.HasValue)
                         {
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
@@ -66,11 +84,13 @@ else
                             <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success"
                                        StartIcon="@Icons.Material.Filled.PlayArrow"
                                        OnClick="@(() => StartInstance(instance.Id))"
-                                       Disabled="@(!instance.InstalledAt.HasValue)">Start</MudButton>
+                                       Disabled="@(!instance.InstalledAt.HasValue || instance.Status == ServerInstanceStatus.Downloading)">Start</MudButton>
                         }
                         <MudSpacer />
+                        <MudIconButton Icon="@Icons.Material.Filled.FileDownload" Size="Size.Small"
+                                       OnClick="@(() => ExportInstance(instance.Id))" />
                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
-                                       OnClick="@(() => DeleteInstance(instance.Id))" />
+                                       OnClick="@(() => PromptDelete(instance))" />
                     </MudCardActions>
                 </MudCard>
             </MudItem>
@@ -78,13 +98,42 @@ else
     </MudGrid>
 }
 
+<MudDialog @bind-Visible="_deleteDialogVisible">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Server Instance</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>
+            Permanently delete @(_instancePendingDelete?.Name ?? "this instance")? This removes the instance configuration from KAST. Server files on disk are not removed.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@CancelDelete">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="@(() => DeleteInstance(_instancePendingDelete!.Id))">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     private IReadOnlyList<ServerInstance> _instances = [];
+    private ServerInstance? _instancePendingDelete;
+    private bool _deleteDialogVisible;
 
     protected override async Task OnInitializedAsync() => await RefreshInstances();
 
     private async Task RefreshInstances()
         => _instances = await ServerService.GetAllInstancesAsync();
+
+    private void PromptDelete(ServerInstance instance)
+    {
+        _instancePendingDelete = instance;
+        _deleteDialogVisible = true;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteDialogVisible = false;
+        _instancePendingDelete = null;
+    }
 
     private async Task StartInstance(int id)
     {
@@ -109,23 +158,94 @@ else
     private async Task DeleteInstance(int id)
     {
         await ServerService.DeleteInstanceAsync(id);
+        _deleteDialogVisible = false;
+        _instancePendingDelete = null;
         await RefreshInstances();
         Snackbar.Add("Instance deleted", Severity.Success);
     }
 
-    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    private async Task ExportInstance(int id)
     {
-        ServerInstanceStatus.Running => Color.Success,
-        ServerInstanceStatus.Crashed => Color.Error,
-        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
-        _ => Color.Default
-    };
+        try
+        {
+            var instance = await ServerService.GetInstanceByIdAsync(id);
+            if (instance is null)
+            {
+                Snackbar.Add("Instance not found", Severity.Error);
+                return;
+            }
 
-    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
+            var json = System.Text.Json.JsonSerializer.Serialize(instance, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
+            });
+
+            var filename = $"{instance.Name.Replace(" ", "_")}_{instance.Id}.json";
+            await JS.InvokeVoidAsync("KAST.downloadFile", filename, json);
+            Snackbar.Add($"Exported {instance.Name}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnImportFileSelected(IBrowserFile file)
     {
-        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
-        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
-        ServerInstanceStatus.Starting => Icons.Material.Filled.HourglassTop,
-        _ => Icons.Material.Filled.StopCircle
-    };
+        if (file is null) return;
+        try
+        {
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles,
+                PropertyNameCaseInsensitive = true
+            };
+            var instance = System.Text.Json.JsonSerializer.Deserialize<ServerInstance>(json, options);
+            if (instance is null)
+            {
+                Snackbar.Add("Failed to parse instance file", Severity.Error);
+                return;
+            }
+
+            // Reset fields for a fresh import
+            instance.Id = 0;
+            instance.Status = ServerInstanceStatus.Stopped;
+            instance.ProcessId = null;
+            instance.StartedAt = null;
+            instance.InstalledAt = null;
+            instance.InstalledBuildId = null;
+            instance.LastModified = null;
+
+            // Clear relational IDs and rewire navigations so EF creates new child rows
+            foreach (var mod in instance.Mods)
+            {
+                mod.ServerInstanceId = 0;
+                mod.ServerInstance = instance;
+            }
+            foreach (var hc in instance.HeadlessClients)
+            {
+                hc.Id = 0;
+                hc.ServerInstanceId = 0;
+                hc.ServerInstance = instance;
+                hc.Status = ServerInstanceStatus.Stopped;
+                hc.ProcessId = null;
+                hc.StartedAt = null;
+            }
+
+            await ServerService.CreateInstanceAsync(instance);
+            await RefreshInstances();
+            Snackbar.Add("Instance imported successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+    }
+
 }

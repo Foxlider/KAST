@@ -2,39 +2,160 @@
 
 <MudGrid Class="mt-3">
     <MudItem xs="12" md="6">
-        <MudGrid Spacing="2">
-            <MudItem xs="12" sm="6">
-                <MudSelect Value="@Profile.AiLevelPreset.ToString()"
-                           ValueChanged="@((string v) => { Profile.AiLevelPreset = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
-                           Label="AI Preset" FullWidth="true">
-                    <MudSelectItem Value="@("0")">Low</MudSelectItem>
-                    <MudSelectItem Value="@("1")">Normal</MudSelectItem>
-                    <MudSelectItem Value="@("2")">High</MudSelectItem>
-                    <MudSelectItem Value="@("3")">Custom</MudSelectItem>
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudSelect Value="@Profile.ThirdPersonView.ToString()"
-                           ValueChanged="@((string v) => { Profile.ThirdPersonView = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
-                           Label="3rd Person View" FullWidth="true">
-                    <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
-                    <MudSelectItem Value="@("1")">Enabled</MudSelectItem>
-                    <MudSelectItem Value="@("2")">Vehicles Only</MudSelectItem>
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.WeaponCrosshair != 0)" ValueChanged="@((bool v) => { Profile.WeaponCrosshair = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Weapon Crosshair" Color="Color.Primary" /></MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.VisionAid != 0)" ValueChanged="@((bool v) => { Profile.VisionAid = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Vision Aid" Color="Color.Primary" /></MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.AutoReport != 0)" ValueChanged="@((bool v) => { Profile.AutoReport = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Auto Report" Color="Color.Primary" /></MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.ScoreTable != 0)" ValueChanged="@((bool v) => { Profile.ScoreTable = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Score Table" Color="Color.Primary" /></MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.DeathMessages != 0)" ValueChanged="@((bool v) => { Profile.DeathMessages = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Death Messages" Color="Color.Primary" /></MudItem>
-            <MudItem xs="6"><MudSwitch Value="@(Profile.VonID != 0)" ValueChanged="@((bool v) => { Profile.VonID = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="VoN ID" Color="Color.Primary" /></MudItem>
-        </MudGrid>
+        @* ── Simulation ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Simulation</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.ReducedDamage != 0)" ValueChanged="@((bool v) => { Profile.ReducedDamage = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Reduced Damage" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── Situational Awareness ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Situational Awareness</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.GroupIndicators.ToString()"
+                                   ValueChanged="@((string v) => { Profile.GroupIndicators = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="Group Indicators" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Never</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Limited Distance</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Always</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.FriendlyTags != 0)" ValueChanged="@((bool v) => { Profile.FriendlyTags = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Friendly Tags" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.EnemyTags != 0)" ValueChanged="@((bool v) => { Profile.EnemyTags = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Enemy Tags" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.DetectedMines != 0)" ValueChanged="@((bool v) => { Profile.DetectedMines = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Detected Mines" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.Commands.ToString()"
+                                   ValueChanged="@((string v) => { Profile.Commands = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="Commands" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Never</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Fade Out</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Always</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.Waypoints != 0)" ValueChanged="@((bool v) => { Profile.Waypoints = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Waypoints" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.TacticalPing.ToString()"
+                                   ValueChanged="@((string v) => { Profile.TacticalPing = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="Tactical Ping" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                            <MudSelectItem Value="@("1")">3D Only</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Map Only</MudSelectItem>
+                            <MudSelectItem Value="@("3")">Both</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── Personal Awareness ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Personal Awareness</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.WeaponInfo.ToString()"
+                                   ValueChanged="@((string v) => { Profile.WeaponInfo = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="Weapon Info" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Never</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Fade Out</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Always</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.StanceIndicator.ToString()"
+                                   ValueChanged="@((string v) => { Profile.StanceIndicator = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="Stance Indicator" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Never</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Fade Out</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Always</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.StaminaBar != 0)" ValueChanged="@((bool v) => { Profile.StaminaBar = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Stamina Bar" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.WeaponCrosshair != 0)" ValueChanged="@((bool v) => { Profile.WeaponCrosshair = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Weapon Crosshair" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.VisionAid != 0)" ValueChanged="@((bool v) => { Profile.VisionAid = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Vision Aid" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── View ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">View</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.ThirdPersonView.ToString()"
+                                   ValueChanged="@((string v) => { Profile.ThirdPersonView = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="3rd Person View" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Disabled</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Enabled</MudSelectItem>
+                            <MudSelectItem Value="@("2")">Vehicles Only</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.CameraShake != 0)" ValueChanged="@((bool v) => { Profile.CameraShake = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Camera Shake" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
     </MudItem>
+
     <MudItem xs="12" md="6">
+        @* ── Multiplayer ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Multiplayer</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.ScoreTable != 0)" ValueChanged="@((bool v) => { Profile.ScoreTable = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Score Table" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.DeathMessages != 0)" ValueChanged="@((bool v) => { Profile.DeathMessages = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Death Messages" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.VonID != 0)" ValueChanged="@((bool v) => { Profile.VonID = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="VoN ID" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.MultipleSaves != 0)" ValueChanged="@((bool v) => { Profile.MultipleSaves = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Multiple Saves" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── Map ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Map Content</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.MapContentFriendly != 0)" ValueChanged="@((bool v) => { Profile.MapContentFriendly = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Friendly" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.MapContentEnemy != 0)" ValueChanged="@((bool v) => { Profile.MapContentEnemy = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Enemy" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.MapContentMines != 0)" ValueChanged="@((bool v) => { Profile.MapContentMines = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Mines" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@(Profile.AutoReport != 0)" ValueChanged="@((bool v) => { Profile.AutoReport = v ? 1 : 0; _ = OnProfileChanged.InvokeAsync(); })" Label="Auto Report" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── AI ── *@
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">AI Difficulty</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6">
+                        <MudSelect Value="@Profile.AiLevelPreset.ToString()"
+                                   ValueChanged="@((string v) => { Profile.AiLevelPreset = int.Parse(v); _ = OnProfileChanged.InvokeAsync(); })"
+                                   Label="AI Preset" FullWidth="true">
+                            <MudSelectItem Value="@("0")">Low</MudSelectItem>
+                            <MudSelectItem Value="@("1")">Normal</MudSelectItem>
+                            <MudSelectItem Value="@("2")">High</MudSelectItem>
+                            <MudSelectItem Value="@("3")">Custom</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6"><MudNumericField T="double" Value="@Profile.SkillAi" ValueChanged="@((double v) => { Profile.SkillAi = Math.Clamp(v, 0, 1); _ = OnProfileChanged.InvokeAsync(); })" Label="Skill AI (0-1)" Min="0" Max="1" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="double" Value="@Profile.PrecisionAi" ValueChanged="@((double v) => { Profile.PrecisionAi = Math.Clamp(v, 0, 1); _ = OnProfileChanged.InvokeAsync(); })" Label="Precision AI (0-1)" Min="0" Max="1" /></MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @* ── Raw Editor ── *@
         <MudTextField Value="@RawContent"
                       ValueChanged="@((string v) => OnRawContentChanged.InvokeAsync(v))"
                       Label="Raw Arma3Profile" FullWidth="true"
-                      Lines="35" Style="font-family:monospace; font-size:12px;" />
+                      Lines="20" Style="font-family:monospace; font-size:12px;" />
     </MudItem>
 </MudGrid>
 

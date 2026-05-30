@@ -1,23 +1,26 @@
 @page "/servers/new"
 @page "/servers/{Id:int}"
+@attribute [Authorize]
 @using KAST.UI.Components.Pages.ServerEditTabs
 @inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject ISettingsService SettingsService
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>KAST -- @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
 @* ── Toolbar ── *@
 <div class="d-flex align-center gap-2 mb-4 flex-wrap">
-    <MudIcon Icon="@GetStatusIcon(_instance.Status)" Color="@GetStatusColor(_instance.Status)" />
+    <MudIcon Icon="@UiHelpers.GetStatusIcon(_instance.Status)" Color="@UiHelpers.GetStatusColor(_instance.Status)" />
     <MudText Typo="Typo.h5" Class="mr-2" Style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;">
         @(_isNew ? "New Server Instance" : _instance.Name)
     </MudText>
     @if (!_isNew)
     {
-        <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(_instance.Status)" Variant="Variant.Filled">@_instance.Status</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="@UiHelpers.GetStatusColor(_instance.Status)" Variant="Variant.Filled">@_instance.Status</MudChip>
     }
     <MudSpacer />
     <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled" DropShadow="true">
@@ -77,18 +80,27 @@
     </MudTabPanel>
 
     @* ════════════ MODS ════════════ *@
-    <MudTabPanel Text="Mods">
+    <MudTabPanel Text="Mods" BadgeData="@_instance.Mods.Count.ToString()" BadgeColor="Color.Primary">
         <ModsTab Instance="_instance" IsNew="_isNew" />
     </MudTabPanel>
 
     @* ════════════ INSTALL ════════════ *@
-    <MudTabPanel Text="Install">
+    <MudTabPanel Text="Install"
+                 BadgeData="@(!_instance.InstalledAt.HasValue && !_isNew ? "!" : null)"
+                 BadgeColor="Color.Warning">
         <InstallTab Instance="_instance"
                     IsNew="_isNew"
                     OnInstallComplete="HandleInstallComplete" />
     </MudTabPanel>
+    @* ════════════ MISSIONS ════════════ *@
+    <MudTabPanel Text="Missions">
+        <MissionsTab Instance="_instance" />
+    </MudTabPanel>
+
     @* ════════════ MONITOR ════════════ *@
-    <MudTabPanel Text="Monitor">
+    <MudTabPanel Text="Monitor"
+                 BadgeDot="@(_instance.Status == ServerInstanceStatus.Running || _instance.Status == ServerInstanceStatus.Crashed || _instance.Status == ServerInstanceStatus.Starting)"
+                 BadgeColor="@(_instance.Status == ServerInstanceStatus.Running ? Color.Success : _instance.Status == ServerInstanceStatus.Crashed ? Color.Error : _instance.Status == ServerInstanceStatus.Starting ? Color.Warning : Color.Default)">
         <MonitorTab Instance="_instance" OnStatusChanged="StateHasChanged" />
     </MudTabPanel>
 
@@ -108,6 +120,9 @@
     private string _serverCfgRaw = "";
     private string _basicCfgRaw = "";
     private string _profileRaw = "";
+
+    private bool _isDirty;
+    private IDisposable? _locationChangingRegistration;
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,12 +151,15 @@
         if (string.IsNullOrEmpty(_serverCfgRaw)) _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
         if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
         if (string.IsNullOrEmpty(_profileRaw)) _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
+
+        _locationChangingRegistration = Nav.RegisterLocationChangingHandler(OnLocationChanging);
     }
 
     private void OnNameChanged()
     {
         if (_isNew && !string.IsNullOrWhiteSpace(_instance.Name))
             _instance.InstallPath = BuildInstallPath(_serversDirectory, _instance.Name);
+        _isDirty = true;
     }
 
     private static string BuildInstallPath(string serversDirectory, string serverName)
@@ -156,12 +174,12 @@
         return Path.Join(serversDirectory, string.IsNullOrWhiteSpace(safeName) ? "Server" : safeName);
     }
 
-    private void OnServerConfigChanged() => _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
-    private void OnServerCfgRawChanged(string v) { _serverCfgRaw = v; _serverConfig = ConfigService.ParseServerConfig(v); }
-    private void OnBasicConfigChanged() => _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
-    private void OnBasicCfgRawChanged(string v) { _basicCfgRaw = v; _basicConfig = ConfigService.ParseBasicConfig(v); }
-    private void OnProfileChanged() => _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
-    private void OnProfileRawChanged(string v) { _profileRaw = v; _profileData = ConfigService.ParseArma3Profile(v); }
+    private void OnServerConfigChanged() { _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig); _isDirty = true; }
+    private void OnServerCfgRawChanged(string v) { _serverCfgRaw = v; _serverConfig = ConfigService.ParseServerConfig(v); _isDirty = true; }
+    private void OnBasicConfigChanged() { _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig); _isDirty = true; }
+    private void OnBasicCfgRawChanged(string v) { _basicCfgRaw = v; _basicConfig = ConfigService.ParseBasicConfig(v); _isDirty = true; }
+    private void OnProfileChanged() { _profileRaw = ConfigService.SerializeArma3Profile(_profileData); _isDirty = true; }
+    private void OnProfileRawChanged(string v) { _profileRaw = v; _profileData = ConfigService.ParseArma3Profile(v); _isDirty = true; }
 
     private async Task HandleInstallComplete()
     {
@@ -186,6 +204,7 @@
         }
 
         Snackbar.Add("Server saved", Severity.Success);
+        _isDirty = false;
 
         if (Id == null || Id == 0) Nav.NavigateTo($"/servers/{_instance.Id}", replace: true);
     }
@@ -224,18 +243,21 @@
         return ServerService.GetCommandLine(_instance);
     }
 
-    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
+    private async ValueTask OnLocationChanging(LocationChangingContext context)
     {
-        ServerInstanceStatus.Running => Color.Success,
-        ServerInstanceStatus.Crashed => Color.Error,
-        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
-        _ => Color.Default
-    };
+        if (!_isDirty) return;
 
-    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
-    {
-        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
-        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
-        _ => Icons.Material.Filled.StopCircle
-    };
+        context.PreventNavigation();
+
+        var discard = await JS.InvokeAsync<bool>("confirm", "You have unsaved changes to this server instance. Discard them?");
+
+        if (discard)
+        {
+            _isDirty = false;
+            Nav.NavigateTo(context.TargetLocation, forceLoad: false);
+        }
+    }
+
+    public void Dispose() => _locationChangingRegistration?.Dispose();
+
 }

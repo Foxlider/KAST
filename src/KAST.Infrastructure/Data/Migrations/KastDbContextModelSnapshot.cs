@@ -15,7 +15,7 @@ namespace KAST.Infrastructure.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.7");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
 
             modelBuilder.Entity("KAST.Core.Models.ApiKey", b =>
                 {
@@ -49,6 +49,53 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.HasIndex("KeyPrefix");
 
                     b.ToTable("ApiKeys");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Campaign", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ServerInstanceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerInstanceId");
+
+                    b.ToTable("Campaigns");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.CampaignMission", b =>
+                {
+                    b.Property<int>("CampaignId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MissionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("CampaignId", "MissionId");
+
+                    b.HasIndex("MissionId");
+
+                    b.ToTable("CampaignMissions");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.DownloadTask", b =>
@@ -145,6 +192,191 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Settings");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.KastUser", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AvatarFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedUsername")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedUsername")
+                        .IsUnique();
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Mission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MapName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ModPresetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PhysicalPath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ServerInstanceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModPresetId");
+
+                    b.HasIndex("ServerInstanceId");
+
+                    b.HasIndex("ServerInstanceId", "FileName")
+                        .IsUnique();
+
+                    b.ToTable("Missions");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.MissionTag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ServerInstanceId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerInstanceId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("MissionTags");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.MissionTagAssignment", b =>
+                {
+                    b.Property<int>("MissionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MissionTagId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("MissionId", "MissionTagId");
+
+                    b.HasIndex("MissionTagId");
+
+                    b.ToTable("MissionTagAssignments");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.ModPreset", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAppliedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RawHtmlContent")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ServerInstanceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerInstanceId");
+
+                    b.ToTable("ModPresets");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.ModPresetEntry", b =>
+                {
+                    b.Property<int>("ModPresetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SteamModId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsClientSide")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsServerSide")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LoadOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("ModPresetId", "SteamModId");
+
+                    b.HasIndex("SteamModId");
+
+                    b.ToTable("ModPresetEntries");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.ServerInstance", b =>
@@ -274,6 +506,50 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.ToTable("ServerInstanceMods");
                 });
 
+            modelBuilder.Entity("KAST.Core.Models.Set", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ServerInstanceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerInstanceId");
+
+                    b.ToTable("Sets");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.SetMission", b =>
+                {
+                    b.Property<int>("SetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MissionId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SetId", "MissionId");
+
+                    b.HasIndex("MissionId");
+
+                    b.ToTable("SetMissions");
+                });
+
             modelBuilder.Entity("KAST.Core.Models.SteamMod", b =>
                 {
                     b.Property<int>("Id")
@@ -347,6 +623,36 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.ToTable("Mods");
                 });
 
+            modelBuilder.Entity("KAST.Core.Models.Campaign", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
+                        .WithMany()
+                        .HasForeignKey("ServerInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.CampaignMission", b =>
+                {
+                    b.HasOne("KAST.Core.Models.Campaign", "Campaign")
+                        .WithMany("CampaignMissions")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("KAST.Core.Models.Mission", "Mission")
+                        .WithMany("CampaignMissions")
+                        .HasForeignKey("MissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Campaign");
+
+                    b.Navigation("Mission");
+                });
+
             modelBuilder.Entity("KAST.Core.Models.HeadlessClient", b =>
                 {
                     b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
@@ -356,6 +662,84 @@ namespace KAST.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Mission", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ModPreset", "ModPreset")
+                        .WithMany("Missions")
+                        .HasForeignKey("ModPresetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
+                        .WithMany()
+                        .HasForeignKey("ServerInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ModPreset");
+
+                    b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.MissionTag", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
+                        .WithMany()
+                        .HasForeignKey("ServerInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.MissionTagAssignment", b =>
+                {
+                    b.HasOne("KAST.Core.Models.Mission", "Mission")
+                        .WithMany("TagAssignments")
+                        .HasForeignKey("MissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("KAST.Core.Models.MissionTag", "Tag")
+                        .WithMany("MissionAssignments")
+                        .HasForeignKey("MissionTagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Mission");
+
+                    b.Navigation("Tag");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.ModPreset", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
+                        .WithMany()
+                        .HasForeignKey("ServerInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.ModPresetEntry", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ModPreset", "ModPreset")
+                        .WithMany("Entries")
+                        .HasForeignKey("ModPresetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("KAST.Core.Models.SteamMod", "SteamMod")
+                        .WithMany()
+                        .HasForeignKey("SteamModId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ModPreset");
+
+                    b.Navigation("SteamMod");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.ServerInstanceMod", b =>
@@ -377,11 +761,72 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Navigation("SteamMod");
                 });
 
+            modelBuilder.Entity("KAST.Core.Models.Set", b =>
+                {
+                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
+                        .WithMany()
+                        .HasForeignKey("ServerInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServerInstance");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.SetMission", b =>
+                {
+                    b.HasOne("KAST.Core.Models.Mission", "Mission")
+                        .WithMany("SetMissions")
+                        .HasForeignKey("MissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("KAST.Core.Models.Set", "Set")
+                        .WithMany("SetMissions")
+                        .HasForeignKey("SetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Mission");
+
+                    b.Navigation("Set");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Campaign", b =>
+                {
+                    b.Navigation("CampaignMissions");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Mission", b =>
+                {
+                    b.Navigation("CampaignMissions");
+
+                    b.Navigation("SetMissions");
+
+                    b.Navigation("TagAssignments");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.MissionTag", b =>
+                {
+                    b.Navigation("MissionAssignments");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.ModPreset", b =>
+                {
+                    b.Navigation("Entries");
+
+                    b.Navigation("Missions");
+                });
+
             modelBuilder.Entity("KAST.Core.Models.ServerInstance", b =>
                 {
                     b.Navigation("HeadlessClients");
 
                     b.Navigation("Mods");
+                });
+
+            modelBuilder.Entity("KAST.Core.Models.Set", b =>
+                {
+                    b.Navigation("SetMissions");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.SteamMod", b =>

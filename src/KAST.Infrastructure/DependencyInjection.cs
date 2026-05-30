@@ -26,9 +26,12 @@ public static class DependencyInjection
         services.AddSingleton<IProcessManagerService, ProcessManagerService>();
         services.AddScoped<IModService, ModService>();
         services.AddScoped<IServerInstanceService, ServerInstanceService>();
+        services.AddScoped<IModPresetService, ModPresetService>();
+        services.AddScoped<IMissionService, MissionService>();
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<ISettingsService, SettingsService>();
+        services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();
 
         // Content install system — lives entirely in Infrastructure

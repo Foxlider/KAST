@@ -4,21 +4,21 @@
 @inject MonitoringStateService MonitoringState
 @inject IJSRuntime JSRuntime
 
+
+
 @* ── Drag-resize capture overlay ── *@
 @if (_isResizing)
 {
-    <div style="position:fixed;inset:0;z-index:99999;cursor:ew-resize;"
+    <div class="resize-overlay"
          @onmousemove="OnResizeMove" @onmousemove:preventDefault="true"
          @onmouseup="StopResize"></div>
 }
 
 @* ── Fixed footer bar ── *@
-<div style="position:fixed; bottom:0; left:0; right:0; height:28px; z-index:1200;
-    background:var(--mud-palette-appbar-background); border-top:1px solid var(--mud-palette-lines-default);
-    display:flex; align-items:center; padding:0 8px; gap:12px;">
+<div class="footer-bar" style="background:var(--mud-palette-appbar-background); border-top:1px solid var(--mud-palette-lines-default);">
 
     @* ══ Left: service status pills ══ *@
-    <div class="d-flex align-center gap-2" style="flex:1; overflow:hidden; font-size:11px;">
+    <div class="d-flex align-center gap-2 service-pills">
         @* API *@
         <div class="d-flex align-center gap-1">
             <MudIcon Icon="@Icons.Material.Filled.Circle" Style="@($"font-size:8px; color:{GetApiColor(MonitoringState.ApiStatus)};" )" />
@@ -58,6 +58,7 @@
             }
             <MudIconButton Icon="@(_logOpen ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.Terminal)"
                            Size="Size.Small" Style="width:22px; height:22px; padding:2px;"
+                           Class="@(_errorCount > 0 && !_logOpen ? "kast-log-pulse" : "")"
                            Color="@(_errorCount > 0 ? Color.Error : (_logOpen ? Color.Primary : Color.Default))"
                            OnClick="@(() => _logOpen = !_logOpen)" aria-label="Toggle log console" />
         </div>
@@ -66,18 +67,15 @@
     @* ══ Log console panel (fixed overlay, never shifts content) ══ *@
     @if (_logOpen)
     {
-    <div style="position:fixed; top:0; right:0; bottom:28px; width:@(_panelWidth)px; z-index:1350;
-        backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6);
-        border-left:1px solid var(--mud-palette-divider); box-shadow:-8px 0 32px rgba(0,0,0,.35);">
+    <div class="log-panel" style="width:@(_panelWidth)px;">
         <div style="display:flex; flex-direction:column; height:100%; position:relative;">
 
             @* Resize handle (left edge) *@
-            <div style="position:absolute; top:0; left:0; bottom:0; width:5px; cursor:ew-resize; z-index:10;"
+            <div class="resize-handle"
                  @onmousedown="StartResize" @onmousedown:preventDefault="true" title="Drag to resize"></div>
 
             @* Toolbar *@
-            <div class="d-flex align-center gap-1 px-2"
-                 style="height:32px; flex-shrink:0; border-bottom:1px solid var(--mud-palette-divider);">
+            <div class="d-flex align-center gap-1 px-2 log-toolbar">
                 <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Style="opacity:.6; font-size:14px;" />
                 <MudText Typo="Typo.caption" Style="font-weight:600; font-size:11px; letter-spacing:.05em;">LOG CONSOLE
                 </MudText>
@@ -94,14 +92,16 @@
                     </MudChip>
                 }
                 <MudDivider Vertical="true" FlexItem="true" Style="margin:4px 4px;" />
+                <MudIconButton Icon="@Icons.Material.Filled.VerticalAlignTop" Size="Size.Small"
+                               Style="width:20px; height:20px; padding:2px;" aria-label="Jump to top"
+                               OnClick="@ScrollToTop" />
                 <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
                                Style="width:20px; height:20px; padding:2px;" aria-label="Clear log"
                                OnClick="@(() => LogStore.Clear())" />
             </div>
 
             @* Log output *@
-            <div @ref="_logScrollRef"
-                 style="flex:1; overflow-y:auto; font-family:'Cascadia Code','Consolas',monospace; font-size:11px; padding:4px 8px; line-height:1.6;">
+            <div @ref="_logScrollRef" class="log-output">
                 @{
                     var entries = GetFilteredEntries();
                 }
@@ -111,15 +111,12 @@
                 }
                 @foreach (var entry in entries)
                 {
-                    <div style="display:flex; gap:8px; border-bottom:1px solid var(--mud-palette-lines-default);">
-                        <span
-                        style="color:var(--mud-palette-text-disabled); flex-shrink:0; user-select:none;">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                    <div class="log-entry">
+                        <span class="log-timestamp" style="color:var(--mud-palette-text-disabled);">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
                         <span
                         style="flex-shrink:0; min-width:30px; color:@GetLevelFg(entry.Level);">@GetLevelTag(entry.Level)</span>
-                        <span
-                        style="color:var(--mud-palette-text-secondary); opacity:.65; flex-shrink:0; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
-                        title="@entry.Category">@ShortCategory(entry.Category)</span>
-                        <span style="color:var(--mud-palette-text-primary); word-break:break-word;">@entry.Message</span>
+                        <span class="log-category" style="color:var(--mud-palette-text-secondary); opacity:.65;" title="@entry.Category">@ShortCategory(entry.Category)</span>
+                        <span class="log-message" style="color:var(--mud-palette-text-primary);">@entry.Message</span>
                     </div>
                 }
             </div>
@@ -214,6 +211,15 @@
     {
         if (_disposed) return;
         InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ScrollToTop()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("KAST.scrollToTop", _logScrollRef);
+        }
+        catch { }
     }
 
     private static string GetLevelTag(LogLevel l) => l switch

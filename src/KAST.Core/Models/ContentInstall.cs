@@ -28,6 +28,7 @@ public record ContentInstallRequest
 
     /// <summary>Final destination path (instance dir for servers, staging dir for mods).</summary>
     public required string DestinationPath { get; init; }
+    public int ModId { get; init; }
 
     // ── Local mod specifics ──
     /// <summary>Path to the ZIP archive or existing folder (local mods only).</summary>
@@ -35,6 +36,7 @@ public record ContentInstallRequest
 
     // ── Steam mod specifics ──
     public long WorkshopId { get; init; }
+    public long ExpectedSizeBytes { get; init; }
 
     // ── Server specifics ──
     public uint AppId { get; init; }

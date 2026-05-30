@@ -1,0 +1,84 @@
+@page "/setup/account"
+@layout AuthLayout
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+<PageTitle>KAST -- Initial Account</PageTitle>
+
+<MudPaper Elevation="3" Class="pa-5">
+    <MudText Typo="Typo.h5" Class="mb-1" Style="font-weight:700;">Create administrator</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        This account protects the KAST panel and API.
+    </MudText>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+    }
+
+    <form method="post" action="/auth/setup" enctype="multipart/form-data" data-enhance="false">
+        <div class="d-flex flex-column gap-3">
+            <label class="kast-auth-field">
+                <span>Username</span>
+                <input name="username" autocomplete="username" autofocus />
+            </label>
+            <label class="kast-auth-field">
+                <span>Password</span>
+                <input name="password" type="password" autocomplete="new-password" />
+            </label>
+            <div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
+                <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                       style="display:block;margin-top:6px;width:100%;" />
+            </div>
+            <button type="submit" class="kast-auth-submit">Create account</button>
+        </div>
+    </form>
+</MudPaper>
+
+<style>
+    .kast-auth-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        color: var(--mud-palette-text-secondary);
+        font-size: .75rem;
+    }
+
+    .kast-auth-field input {
+        height: 46px;
+        border: 1px solid var(--mud-palette-lines-inputs);
+        border-radius: 4px;
+        background: transparent;
+        color: var(--mud-palette-text-primary);
+        padding: 0 12px;
+        outline: none;
+        font: inherit;
+    }
+
+    .kast-auth-field input:focus {
+        border-color: var(--mud-palette-primary);
+    }
+
+    .kast-auth-submit {
+        height: 40px;
+        border: 0;
+        border-radius: 4px;
+        background: var(--mud-palette-primary);
+        color: var(--mud-palette-primary-text);
+        cursor: pointer;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+</style>
+
+@code {
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        _error = query["error"];
+    }
+}

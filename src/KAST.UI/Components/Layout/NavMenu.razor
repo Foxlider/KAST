@@ -1,8 +1,8 @@
 ﻿@using Microsoft.AspNetCore.SignalR.Client
-@using KAST.Core.Events
 @inject IServerInstanceService ServerService
 @inject NavigationManager Nav
 @inject KastInternalUrlProvider InternalUrls
+@inject InternalHubTokenService InternalHubToken
 @inject ILogger<NavMenu> Logger
 @implements IAsyncDisposable
 
@@ -12,11 +12,23 @@
     @if (_servers.Count > 0)
     {
         <div class="kast-sub-nav">
-            @foreach (var s in _servers)
+            @if (_servers.Count > 5)
+            {
+                <MudTextField @bind-Value="_serverFilter"
+                              Placeholder="Filter servers..."
+                              Immediate="true"
+                              Margin="Margin.Dense"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              AdornmentColor="Color.Default"
+                              Class="pa-2" />
+            }
+            @foreach (var s in GetFilteredServers())
             {
                 <MudNavLink Href="@($"/servers/{s.Id}")" Match="NavLinkMatch.All"
-                            Icon="@GetStatusIcon(s.Status)"
-                            IconColor="@GetStatusColor(s.Status)">
+                            Icon="@UiHelpers.GetStatusIcon(s.Status)"
+                            IconColor="@UiHelpers.GetStatusColor(s.Status)">
                     @s.Name
                 </MudNavLink>
             }
@@ -35,8 +47,18 @@
 
 @code {
     private IReadOnlyList<ServerInstance> _servers = [];
+    private string _serverFilter = string.Empty;
     private HubConnection? _hub;
     private bool _monitoringUnavailable;
+
+    private IEnumerable<ServerInstance> GetFilteredServers()
+    {
+        if (string.IsNullOrWhiteSpace(_serverFilter))
+            return _servers;
+
+        return _servers.Where(s =>
+            s.Name.Contains(_serverFilter, StringComparison.OrdinalIgnoreCase));
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -46,7 +68,8 @@
         try
         {
             _hub = new HubConnectionBuilder()
-                .WithUrl(InternalUrls.GetMonitoringHubUri())
+                .WithUrl(InternalUrls.GetMonitoringHubUri(), options =>
+                    options.Headers.Add(InternalHubAuthenticationDefaults.HeaderName, InternalHubToken.Token))
                 .WithAutomaticReconnect()
                 .Build();
 
@@ -106,20 +129,4 @@
         if (_hub is not null) await _hub.DisposeAsync();
     }
 
-    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
-    {
-        ServerInstanceStatus.Running                                      => Color.Success,
-        ServerInstanceStatus.Crashed                                      => Color.Error,
-        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
-        _                                                                 => Color.Default
-    };
-
-    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
-    {
-        ServerInstanceStatus.Running     => Icons.Material.Filled.PlayCircle,
-        ServerInstanceStatus.Crashed     => Icons.Material.Filled.Error,
-        ServerInstanceStatus.Starting    => Icons.Material.Filled.HourglassTop,
-        ServerInstanceStatus.Downloading => Icons.Material.Filled.Downloading,
-        _                                => Icons.Material.Outlined.StopCircle
-    };
 }

@@ -19,6 +19,8 @@ public static class KastApiEndpoints
     {
         group.MapServersApi();
         group.MapModsApi();
+        group.MapPresetsApi();
+        group.MapMissionsApi();
         group.MapMonitoringApi();
         group.MapSettingsApi();
         return group;
@@ -122,93 +124,23 @@ public static class KastApiEndpoints
         });
 
         g.MapPost("/{id:int}/download", async (int id, IModService modService,
-            IContentOrchestrator orchestrator, ISettingsService settingsService,
-            IFileSystemService fs, IAppEventBroadcaster broadcaster, CancellationToken ct) =>
+            ModDownloadManager downloadManager, CancellationToken ct) =>
         {
             var mod = await modService.GetModByIdAsync(id, ct);
             if (mod is null) return Results.NotFound();
 
-            mod.Status = ModStatus.Downloading;
-            await modService.UpdateModAsync(mod, ct);
-            await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
-
-            var settings = await settingsService.GetSettingsAsync(ct);
-            var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
-
-            orchestrator.StartModInstall(mod.Id, ContentType.SteamMod, destPath, mod.WorkshopId,
-                onComplete: async (sp, state) =>
-                {
-                    var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id, ct);
-                    if (m is null) return;
-                    m.Status = ModStatus.Installed;
-                    m.LocalPath = Path.GetFullPath(destPath);
-                    m.SizeBytes = fs.GetDirectorySize(destPath);
-                    m.LastUpdatedLocal = DateTime.UtcNow;
-                    if (state?.InstalledManifestId > 0)
-                    {
-                        m.InstalledManifestId = state.InstalledManifestId;
-                        m.SteamManifestId = state.InstalledManifestId;
-                    }
-                    await db.SaveChangesAsync(ct);
-                    await sp.GetRequiredService<IAppEventBroadcaster>()
-                        .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
-                },
-                onError: async (sp, _, _) =>
-                {
-                    var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id, ct);
-                    if (m is null) return;
-                    m.Status = ModStatus.Error;
-                    await db.SaveChangesAsync(ct);
-                    await sp.GetRequiredService<IAppEventBroadcaster>()
-                        .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
-                });
+            await downloadManager.StartDownloadAsync(id, isUpdate: false, ct);
 
             return Results.Ok();
         });
 
         g.MapPost("/{id:int}/update", async (int id, IModService modService,
-            IContentOrchestrator orchestrator, IFileSystemService fs,
-            IAppEventBroadcaster broadcaster, CancellationToken ct) =>
+            ModDownloadManager downloadManager, CancellationToken ct) =>
         {
             var mod = await modService.GetModByIdAsync(id, ct);
             if (mod is null) return Results.NotFound();
 
-            mod.Status = ModStatus.Updating;
-            await modService.UpdateModAsync(mod, ct);
-            await broadcaster.BroadcastModStatusChangedAsync(new ModStatusChangedEvent(mod.Id, mod.Status.ToString()));
-
-            var destPath = mod.LocalPath;
-
-            orchestrator.StartModInstall(mod.Id, ContentType.SteamMod, destPath, mod.WorkshopId,
-                onComplete: async (sp, state) =>
-                {
-                    var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id, ct);
-                    if (m is null) return;
-                    m.Status = ModStatus.Installed;
-                    m.SizeBytes = fs.GetDirectorySize(destPath);
-                    m.LastUpdatedLocal = DateTime.UtcNow;
-                    if (state?.InstalledManifestId > 0)
-                    {
-                        m.InstalledManifestId = state.InstalledManifestId;
-                        m.SteamManifestId = state.InstalledManifestId;
-                    }
-                    await db.SaveChangesAsync(ct);
-                    await sp.GetRequiredService<IAppEventBroadcaster>()
-                        .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
-                },
-                onError: async (sp, _, _) =>
-                {
-                    var db = sp.GetRequiredService<KastDbContext>();
-                    var m = await db.Mods.FindAsync(id, ct);
-                    if (m is null) return;
-                    m.Status = ModStatus.Error;
-                    await db.SaveChangesAsync(ct);
-                    await sp.GetRequiredService<IAppEventBroadcaster>()
-                        .BroadcastModStatusChangedAsync(new ModStatusChangedEvent(m.Id, m.Status.ToString()));
-                });
+            await downloadManager.StartDownloadAsync(id, isUpdate: true, ct);
 
             return Results.Ok();
         });
@@ -223,6 +155,230 @@ public static class KastApiEndpoints
         {
             var queued = await downloadManager.StartAllOutdatedAsync(ct);
             return Results.Accepted(value: new { queued });
+        });
+    }
+
+    // ── Presets ──────────────────────────────────────────────────────────────
+
+    private static void MapPresetsApi(this RouteGroupBuilder root)
+    {
+        var g = root.MapGroup("/presets").WithTags("Presets");
+
+        g.MapGet("/instance/{instanceId:int}", async (int instanceId, IModPresetService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetPresetsForInstanceAsync(instanceId, ct)));
+
+        g.MapGet("/{id:int}", async (int id, IModPresetService svc, CancellationToken ct) =>
+        {
+            var preset = await svc.GetPresetByIdAsync(id, ct);
+            return preset is null ? Results.NotFound() : Results.Ok(preset);
+        });
+
+        g.MapPost("/instance/{instanceId:int}/save", async (int instanceId, SaveKastPresetRequest req, IModPresetService svc, CancellationToken ct) =>
+        {
+            var preset = await svc.SaveInstanceAsKastPresetAsync(instanceId, req.Name, ct);
+            return Results.Created($"/api/presets/{preset.Id}", preset);
+        });
+
+        g.MapPost("/instance/{instanceId:int}/import", async (int instanceId, ImportPresetRequest req, IModPresetService svc, CancellationToken ct) =>
+        {
+            var preset = await svc.ImportFromArmaHtmlAsync(instanceId, req.Name, req.HtmlContent, ct);
+            return Results.Created($"/api/presets/{preset.Id}", preset);
+        });
+
+        g.MapPut("/{id:int}", async (int id, ModPreset preset, IModPresetService svc, CancellationToken ct) =>
+        {
+            preset.Id = id;
+            return Results.Ok(await svc.UpdatePresetAsync(preset, ct));
+        });
+
+        g.MapDelete("/{id:int}", async (int id, IModPresetService svc, CancellationToken ct) =>
+        {
+            await svc.DeletePresetAsync(id, ct);
+            return Results.NoContent();
+        });
+
+        g.MapPost("/{id:int}/apply/{instanceId:int}", async (int id, int instanceId, IModPresetService svc, CancellationToken ct) =>
+        {
+            await svc.ApplyPresetAsync(id, instanceId, ct);
+            return Results.Ok();
+        });
+    }
+
+    // ── Missions ─────────────────────────────────────────────────────────────
+
+    private static void MapMissionsApi(this RouteGroupBuilder root)
+    {
+        var mg = root.MapGroup("/missions").WithTags("Missions");
+
+        // Missions
+        mg.MapGet("/instance/{instanceId:int}", async (int instanceId, string? search, [FromQuery] string? tags, string? map, IMissionService svc, CancellationToken ct) =>
+        {
+            List<int>? tagIdList = null;
+            if (!string.IsNullOrWhiteSpace(tags))
+                tagIdList = tags.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+
+            var missions = await svc.SearchMissionsAsync(instanceId, search, tagIdList, map, ct);
+            return Results.Ok(missions);
+        });
+
+        mg.MapPost("/instance/{instanceId:int}/upload", async (int instanceId, HttpRequest request, IMissionService svc, CancellationToken ct) =>
+        {
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Expected multipart/form-data");
+
+            var form = await request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file");
+            if (file is null || file.Length == 0)
+                return Results.BadRequest("No file provided");
+
+            await using var stream = file.OpenReadStream();
+            var mission = await svc.UploadMissionAsync(instanceId, file.FileName, stream, ct);
+            return Results.Created($"/api/missions/{mission.Id}", mission);
+        }).DisableAntiforgery();
+
+        mg.MapGet("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            var mission = await svc.GetMissionByIdAsync(id, ct);
+            return mission is null ? Results.NotFound() : Results.Ok(mission);
+        });
+
+        mg.MapPut("/{id:int}", async (int id, Mission mission, IMissionService svc, CancellationToken ct) =>
+        {
+            mission.Id = id;
+            return Results.Ok(await svc.UpdateMissionAsync(mission, ct));
+        });
+
+        mg.MapDelete("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteMissionAsync(id, ct);
+            return Results.NoContent();
+        });
+
+        mg.MapGet("/{id:int}/download", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            var stream = await svc.GetMissionFileStreamAsync(id, ct);
+            if (stream is null) return Results.NotFound();
+            return Results.File(stream, "application/octet-stream");
+        });
+
+        // Tags
+        mg.MapGet("/instance/{instanceId:int}/tags", async (int instanceId, IMissionService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetTagsForInstanceAsync(instanceId, ct)));
+
+        mg.MapPost("/instance/{instanceId:int}/tags", async (int instanceId, CreateTagRequest req, IMissionService svc, CancellationToken ct) =>
+        {
+            var tag = await svc.CreateTagAsync(instanceId, req.Name, ct);
+            return Results.Created($"/api/missions/instance/{instanceId}/tags/{tag.Id}", tag);
+        });
+
+        mg.MapDelete("/tags/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteTagAsync(id, ct);
+            return Results.NoContent();
+        });
+
+        mg.MapPost("/{id:int}/tags/{tagId:int}", async (int id, int tagId, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.AssignTagAsync(id, tagId, ct);
+            return Results.Ok();
+        });
+
+        mg.MapDelete("/{id:int}/tags/{tagId:int}", async (int id, int tagId, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.RemoveTagAsync(id, tagId, ct);
+            return Results.NoContent();
+        });
+
+        // Campaigns
+        var cg = root.MapGroup("/campaigns").WithTags("Campaigns");
+
+        cg.MapGet("/instance/{instanceId:int}", async (int instanceId, IMissionService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetCampaignsForInstanceAsync(instanceId, ct)));
+
+        cg.MapGet("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            var campaign = await svc.GetCampaignByIdAsync(id, ct);
+            return campaign is null ? Results.NotFound() : Results.Ok(campaign);
+        });
+
+        cg.MapPost("/instance/{instanceId:int}", async (int instanceId, Campaign campaign, IMissionService svc, CancellationToken ct) =>
+        {
+            campaign.ServerInstanceId = instanceId;
+            var created = await svc.CreateCampaignAsync(campaign, ct);
+            return Results.Created($"/api/campaigns/{created.Id}", created);
+        });
+
+        cg.MapPut("/{id:int}", async (int id, Campaign campaign, IMissionService svc, CancellationToken ct) =>
+        {
+            campaign.Id = id;
+            return Results.Ok(await svc.UpdateCampaignAsync(campaign, ct));
+        });
+
+        cg.MapDelete("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteCampaignAsync(id, ct);
+            return Results.NoContent();
+        });
+
+        cg.MapPost("/{id:int}/missions", async (int id, AddCampaignMissionRequest req, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.AddMissionToCampaignAsync(id, req.MissionId, req.OrderIndex, ct);
+            return Results.Ok();
+        });
+
+        cg.MapDelete("/{id:int}/missions/{missionId:int}", async (int id, int missionId, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.RemoveMissionFromCampaignAsync(id, missionId, ct);
+            return Results.NoContent();
+        });
+
+        cg.MapPut("/{id:int}/missions/reorder", async (int id, ReorderRequest req, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.ReorderCampaignMissionsAsync(id, req.OrderedMissionIds, ct);
+            return Results.Ok();
+        });
+
+        // Sets
+        var sg = root.MapGroup("/sets").WithTags("Sets");
+
+        sg.MapGet("/instance/{instanceId:int}", async (int instanceId, IMissionService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetSetsForInstanceAsync(instanceId, ct)));
+
+        sg.MapGet("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            var set = await svc.GetSetByIdAsync(id, ct);
+            return set is null ? Results.NotFound() : Results.Ok(set);
+        });
+
+        sg.MapPost("/instance/{instanceId:int}", async (int instanceId, Set set, IMissionService svc, CancellationToken ct) =>
+        {
+            set.ServerInstanceId = instanceId;
+            var created = await svc.CreateSetAsync(set, ct);
+            return Results.Created($"/api/sets/{created.Id}", created);
+        });
+
+        sg.MapPut("/{id:int}", async (int id, Set set, IMissionService svc, CancellationToken ct) =>
+        {
+            set.Id = id;
+            return Results.Ok(await svc.UpdateSetAsync(set, ct));
+        });
+
+        sg.MapDelete("/{id:int}", async (int id, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteSetAsync(id, ct);
+            return Results.NoContent();
+        });
+
+        sg.MapPost("/{id:int}/missions", async (int id, AddSetMissionRequest req, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.AddMissionToSetAsync(id, req.MissionId, ct);
+            return Results.Ok();
+        });
+
+        sg.MapDelete("/{id:int}/missions/{missionId:int}", async (int id, int missionId, IMissionService svc, CancellationToken ct) =>
+        {
+            await svc.RemoveMissionFromSetAsync(id, missionId, ct);
+            return Results.NoContent();
         });
     }
 
@@ -279,3 +435,9 @@ public static class KastApiEndpoints
 
 public record ImportLocalModRequest(string Path, string Name);
 public record CreateApiKeyRequest(string Name);
+public record SaveKastPresetRequest(string Name);
+public record ImportPresetRequest(string Name, string HtmlContent);
+public record CreateTagRequest(string Name);
+public record AddCampaignMissionRequest(int MissionId, int OrderIndex);
+public record AddSetMissionRequest(int MissionId);
+public record ReorderRequest(List<int> OrderedMissionIds);

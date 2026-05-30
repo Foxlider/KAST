@@ -174,7 +174,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             var settings = await settingsService.GetSettingsAsync(ct);
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct: ct);
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
@@ -233,7 +233,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 ? Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString())
                 : mod.LocalPath;
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct: ct);
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);

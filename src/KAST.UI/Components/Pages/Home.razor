@@ -1,119 +1,351 @@
 @page "/"
+@attribute [Authorize]
+@using KAST.Infrastructure.Services.Content
 @implements IAsyncDisposable
 @inject IModService ModService
 @inject IServerInstanceService ServerService
 @inject MonitoringStateService MonitoringState
+@inject IAppEventBroadcaster Broadcaster
 @inject NavigationManager Nav
+@inject ContentProgressTracker ContentProgress
+@inject ISteamService SteamService
+@inject ILogger<Home> Logger
 
 <PageTitle>KAST -- Dashboard</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Dashboard</MudText>
-
-<MudGrid Spacing="3">
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Server Instances</MudText>
-                <MudText Typo="Typo.h4">@_instances.Count</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Total configured</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Running</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Success">@_instances.Count(i => i.Status == ServerInstanceStatus.Running)</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Active servers</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Installed Mods</MudText>
-                <MudText Typo="Typo.h4">@_mods.Count</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Available for use</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Updates Available</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Warning">@_mods.Count(m => m.Status == ModStatus.UpdateAvailable)</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Mods needing update</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-</MudGrid>
-
-<MudText Typo="Typo.h6" Class="mt-6 mb-3">Host Resources</MudText>
-<MudGrid Spacing="3">
-    <MudItem xs="12" sm="4">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
-                <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.CpuUsagePercent.ToString("F1")%</MudText>
-                <MudProgressLinear Value="@MonitoringState.HostMetrics.CpuUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.CpuUsagePercent)" Class="mt-2" />
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="4">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
-                <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatBytes(MonitoringState.HostMetrics.UsedMemoryBytes) / @FormatBytes(MonitoringState.HostMetrics.TotalMemoryBytes)</MudText>
-                <MudProgressLinear Value="@MonitoringState.HostMetrics.MemoryUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.MemoryUsagePercent)" Class="mt-2" />
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="4">
-        <MudCard Elevation="2">
-            <MudCardContent>
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Disk</MudText>
-                <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatBytes(MonitoringState.HostMetrics.UsedDiskBytes) / @FormatBytes(MonitoringState.HostMetrics.TotalDiskBytes)</MudText>
-                <MudProgressLinear Value="@MonitoringState.HostMetrics.DiskUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.DiskUsagePercent)" Class="mt-2" />
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-</MudGrid>
-
-<MudText Typo="Typo.h6" Class="mt-6 mb-3">Server Instances</MudText>
-
-@if (_instances.Count == 0)
+@if (!_isLoading)
 {
-    <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="1">
-        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
-        <MudText Color="Color.Secondary">No server instances configured yet.</MudText>
-        <MudButton Href="/servers" Color="Color.Primary" Class="mt-2">Create one</MudButton>
-    </MudPaper>
+    @* ═══════ First-Run Wizard ═══════ *@
+    @if (_instances.Count == 0 && _mods.Count == 0)
+    {
+        <MudCard Elevation="4" Class="mb-6" Style="border:1px solid var(--mud-palette-lines-default); overflow:hidden;">
+            <div style="background:linear-gradient(135deg, rgba(224,101,24,.12) 0%, rgba(255,112,67,.06) 100%);
+                        border-bottom:1px solid var(--mud-palette-divider);" class="pa-6">
+                <div class="d-flex align-center gap-3 mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Style="font-size:36px; color:var(--mud-palette-warning);" />
+                    <div>
+                        <MudText Typo="Typo.h5" Style="font-weight:700;">Welcome to KAST</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Follow these steps to get your first Arma 3 server running.
+                        </MudText>
+                    </div>
+                </div>
+            </div>
+            <MudCardContent Class="pa-0">
+                @{
+                    var steamOk = SteamService.IsAuthenticated;
+                    var modsOk = _mods.Count > 0;
+                    var serverOk = _instances.Count > 0;
+                }
+
+                @* Step 1 — Connect Steam *@
+                <div class="d-flex align-start pa-4 @(steamOk ? "wizard-done" : "wizard-current")"
+                     style="gap:16px; border-bottom:1px solid var(--mud-palette-divider);">
+                    <div class="wizard-step-circle @(steamOk ? "wizard-circle-done" : "wizard-circle-active")">
+                        @if (steamOk) { <MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size:16px;" /> }
+                        else { <MudText Typo="Typo.body2" Style="font-weight:700;">1</MudText> }
+                    </div>
+                    <div style="flex:1;">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Connect your Steam account</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            KAST needs Steam to download Arma 3 server files and Workshop mods.
+                            You can sign in with a QR code or your username and password.
+                        </MudText>
+                        @if (steamOk)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                                     Icon="@Icons.Material.Filled.CheckCircle">
+                                Connected as @(SteamService.Profile?.PersonaName ?? SteamService.CurrentUsername)
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Custom.Brands.Steam"
+                                       Href="/settings?tab=steam">
+                                Sign in with Steam
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+
+                @* Step 2 — Add Mods *@
+                <div class="d-flex align-start pa-4 @(modsOk ? "wizard-done" : (!steamOk ? "wizard-pending" : "wizard-current"))"
+                     style="gap:16px; border-bottom:1px solid var(--mud-palette-divider);">
+                    <div class="wizard-step-circle @(modsOk ? "wizard-circle-done" : (steamOk ? "wizard-circle-active" : ""))">
+                        @if (modsOk) { <MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size:16px;" /> }
+                        else { <MudText Typo="Typo.body2" Style="font-weight:700;">2</MudText> }
+                    </div>
+                    <div style="flex:1;">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Add Workshop mods</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Subscribe to mods from the Steam Workshop, import a preset from the Arma 3 launcher,
+                            or add local mod folders. Your mods will be available to all servers.
+                        </MudText>
+                        @if (!steamOk)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="opacity:.55;">
+                                Sign in to Steam first to browse and download mods.
+                            </MudText>
+                        }
+                        else if (modsOk)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                                     Icon="@Icons.Material.Filled.CheckCircle">
+                                @_mods.Count mod(s) available
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Extension"
+                                       Href="/mods">
+                                Browse Mods
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+
+                @* Step 3 — Create Server *@
+                <div class="d-flex align-start pa-4 @(serverOk ? "wizard-done" : "wizard-current")"
+                     style="gap:16px; border-bottom:1px solid var(--mud-palette-divider);">
+                    <div class="wizard-step-circle @(serverOk ? "wizard-circle-done" : "wizard-circle-active")">
+                        @if (serverOk) { <MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size:16px;" /> }
+                        else { <MudText Typo="Typo.body2" Style="font-weight:700;">3</MudText> }
+                    </div>
+                    <div style="flex:1;">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Create a server instance</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Configure your Arma 3 dedicated server — set the name, port, game mode, difficulty,
+                            and assign mods. KAST handles the rest.
+                        </MudText>
+                        @if (serverOk)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Storage"
+                                       OnClick="@(() => Nav.NavigateTo($"/servers/{_instances[0].Id}"))">
+                                Go to @_instances[0].Name
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       Href="/servers/new">
+                                Create Server
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+
+                @* Step 4 — Install & Launch *@
+                <div class="d-flex align-start pa-4 wizard-pending" style="gap:16px;">
+                    <div class="wizard-step-circle">
+                        <MudText Typo="Typo.body2" Style="font-weight:700;">4</MudText>
+                    </div>
+                    <div style="flex:1;">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Install server files and launch</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Once your server is created, go to its <strong>Install</strong> tab to download the Arma 3
+                            server files from Steam. Then assign mods in the <strong>Mods</strong> tab, review your
+                            configuration, and hit <strong>Launch</strong>.
+                        </MudText>
+                        @if (serverOk)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Download"
+                                       OnClick="@(() => Nav.NavigateTo($"/servers/{_instances[0].Id}"))">
+                                Open Server
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @* ═══════ Stat Cards ═══════ *@
+    <MudGrid Spacing="3">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Server Instances</MudText>
+                    <MudText Typo="Typo.h4">@_instances.Count</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Total configured</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Running</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Success">@_instances.Count(i => i.Status == ServerInstanceStatus.Running)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Active servers</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Installed Mods</MudText>
+                    <MudText Typo="Typo.h4">@_mods.Count</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Available for use</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Updates Available</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Warning">@_mods.Count(m => m.Status == ModStatus.UpdateAvailable)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Mods needing update</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
 }
 else
 {
     <MudGrid Spacing="3">
-        @foreach (var instance in _instances)
+        @for (int i = 0; i < 4; i++)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudSkeleton Height="80px" Animation="Animation.Pulse" />
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@if (!_isLoading)
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Host Resources</MudText>
+    <MudGrid Spacing="3">
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">CPU</MudText>
+                    <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.CpuUsagePercent.ToString("F1")%</MudText>
+                    <MudProgressLinear Value="@MonitoringState.HostMetrics.CpuUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.CpuUsagePercent)" Class="mt-2" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Memory</MudText>
+                    <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@UiHelpers.FormatBytes(MonitoringState.HostMetrics.UsedMemoryBytes) / @UiHelpers.FormatBytes(MonitoringState.HostMetrics.TotalMemoryBytes)</MudText>
+                    <MudProgressLinear Value="@MonitoringState.HostMetrics.MemoryUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.MemoryUsagePercent)" Class="mt-2" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Disk</MudText>
+                    <MudText Typo="Typo.h5">@MonitoringState.HostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@UiHelpers.FormatBytes(MonitoringState.HostMetrics.UsedDiskBytes) / @UiHelpers.FormatBytes(MonitoringState.HostMetrics.TotalDiskBytes)</MudText>
+                    <MudProgressLinear Value="@MonitoringState.HostMetrics.DiskUsagePercent" Color="@GetResourceColor(MonitoringState.HostMetrics.DiskUsagePercent)" Class="mt-2" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+else
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Host Resources</MudText>
+    <MudGrid Spacing="3">
+        @for (int i = 0; i < 3; i++)
+        {
+            <MudItem xs="12" sm="4">
+                <MudSkeleton Height="80px" Animation="Animation.Pulse" />
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@if (!_isLoading)
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Recent Activity</MudText>
+    @if (_recentActivities.Count == 0)
+    {
+        <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="1">
+            <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+            <MudText Color="Color.Secondary">No recent activity.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Elevation="1" Class="pa-2">
+            @foreach (var item in _recentActivities)
+            {
+                <div class="d-flex align-center pa-2" style="gap:12px;">
+                    <MudIcon Icon="@item.Icon" Color="@item.IconColor" Size="Size.Small" />
+                    <MudText Typo="Typo.body2" Style="flex:1;">@item.Message</MudText>
+                    <MudTooltip Text="@item.Timestamp.ToLocalTime().ToString("g")" Arrow="true">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="white-space:nowrap;">
+                            @UiHelpers.FormatRelativeTime(item.Timestamp)
+                        </MudText>
+                    </MudTooltip>
+                </div>
+            }
+        </MudPaper>
+    }
+
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Server Instances</MudText>
+
+    @if (_instances.Count == 0)
+    {
+        <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="1">
+            <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+            <MudText Color="Color.Secondary">No server instances configured yet.</MudText>
+            <MudButton Href="/servers" Color="Color.Primary" Class="mt-2">Create one</MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid Spacing="3">
+            @foreach (var instance in _instances)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="2" Style="cursor:pointer;" @onclick="@(() => GoToServer(instance.Id))">
+                        <MudCardContent>
+                            <div class="d-flex align-center gap-2 mb-1">
+                                <MudIcon Icon="@UiHelpers.GetStatusIcon(instance.Status)" Color="@UiHelpers.GetStatusColor(instance.Status)" Size="Size.Small" />
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@instance.Name</MudText>
+                                <MudSpacer />
+                                <MudChip T="string" Size="Size.Small" Color="@UiHelpers.GetStatusColor(instance.Status)" Variant="Variant.Filled">@instance.Status</MudChip>
+                            </div>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Port @instance.Port -- @instance.Mods.Count mods</MudText>
+                            @if (instance.Status == ServerInstanceStatus.Downloading)
+                            {
+                                <MudProgressLinear Indeterminate="true" Color="Color.Warning" Class="mt-2" />
+                                <MudText Typo="Typo.caption" Color="Color.Warning">Installing server files...</MudText>
+                            }
+                            @if (instance.StartedAt.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Running since @instance.StartedAt.Value.ToString("g")
+                                </MudText>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+}
+else
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Recent Activity</MudText>
+    <MudSkeleton Height="60px" Animation="Animation.Pulse" />
+
+    <MudText Typo="Typo.h6" Class="mt-6 mb-3">Server Instances</MudText>
+    <MudGrid Spacing="3">
+        @for (int i = 0; i < 3; i++)
         {
             <MudItem xs="12" sm="6" md="4">
-                <MudCard Elevation="2" Style="cursor:pointer;" @onclick="@(() => GoToServer(instance.Id))">
-                    <MudCardContent>
-                        <div class="d-flex align-center gap-2 mb-1">
-                            <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" Size="Size.Small" />
-                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@instance.Name</MudText>
-                            <MudSpacer />
-                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(instance.Status)" Variant="Variant.Filled">@instance.Status</MudChip>
-                        </div>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">Port @instance.Port -- @instance.Mods.Count mods</MudText>
-                        @if (instance.StartedAt.HasValue)
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Running since @instance.StartedAt.Value.ToString("g")
-                            </MudText>
-                        }
-                    </MudCardContent>
-                </MudCard>
+                <MudSkeleton Height="100px" Animation="Animation.Pulse" />
             </MudItem>
         }
     </MudGrid>
@@ -124,6 +356,12 @@ else
     private IReadOnlyList<ServerInstance> _instances = [];
     private CancellationTokenSource? _cts;
     private bool _disposed;
+    private bool _isLoading = true;
+
+    private readonly record struct ActivityEvent(string Icon, Color IconColor, string Message, DateTime Timestamp);
+
+    private readonly List<ActivityEvent> _recentActivities = [];
+    private const int MaxRecentActivities = 10;
 
     private void GoToServer(int id) => Nav.NavigateTo("/servers/" + id);
 
@@ -131,9 +369,55 @@ else
     {
         MonitoringState.EnsureStarted();
         MonitoringState.OnDataChanged += HandleDataChanged;
+
+        Broadcaster.OnModStatusChanged += HandleModStatusChanged;
+        Broadcaster.OnServerStatusChanged += HandleServerStatusChanged;
     }
 
     private void HandleDataChanged() => InvokeAsync(StateHasChanged);
+
+    private void HandleModStatusChanged(ModStatusChangedEvent e)
+    {
+        var mod = _mods.FirstOrDefault(m => m.Id == e.ModId);
+        var name = mod?.Name ?? $"Mod #{e.ModId}";
+        var (icon, color, verb) = e.NewStatus switch
+        {
+            "Installed" => (Icons.Material.Filled.CloudDownload, Color.Info, "installed"),
+            "Updating" => (Icons.Material.Filled.SystemUpdateAlt, Color.Warning, "updating"),
+            "Downloading" => (Icons.Material.Filled.CloudDownload, Color.Info, "downloading"),
+            "UpdateAvailable" => (Icons.Material.Filled.SystemUpdateAlt, Color.Warning, "has update available"),
+            "Error" => (Icons.Material.Filled.Error, Color.Error, "encountered an error"),
+            _ => (Icons.Material.Filled.Info, Color.Default, e.NewStatus.ToLowerInvariant())
+        };
+        AddActivityEvent(icon, color, $"Mod {name} {verb}");
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleServerStatusChanged(ServerStatusChangedEvent e)
+    {
+        var instance = _instances.FirstOrDefault(i => i.Id == e.ServerInstanceId);
+        var name = instance?.Name ?? $"Server #{e.ServerInstanceId}";
+        var (icon, color, verb) = e.NewStatus switch
+        {
+            "Running" => (Icons.Material.Filled.PlayCircle, Color.Success, "started"),
+            "Crashed" => (Icons.Material.Filled.Error, Color.Error, "crashed"),
+            "Stopped" => (Icons.Material.Filled.StopCircle, Color.Default, "stopped"),
+            "Starting" => (Icons.Material.Filled.PlayArrow, Color.Warning, "starting"),
+            "Stopping" => (Icons.Material.Filled.StopCircle, Color.Warning, "stopping"),
+            "Restarting" => (Icons.Material.Filled.Refresh, Color.Warning, "restarting"),
+            "Downloading" => (Icons.Material.Filled.CloudDownload, Color.Info, "downloading"),
+            _ => (Icons.Material.Filled.Info, Color.Default, e.NewStatus.ToLowerInvariant())
+        };
+        AddActivityEvent(icon, color, $"Server {name} {verb}");
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AddActivityEvent(string icon, Color iconColor, string message, DateTime? timestamp = null)
+    {
+        _recentActivities.Insert(0, new ActivityEvent(icon, iconColor, message, timestamp ?? DateTime.UtcNow));
+        while (_recentActivities.Count > MaxRecentActivities)
+            _recentActivities.RemoveAt(_recentActivities.Count - 1);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,7 +434,16 @@ else
             _mods = await ModService.GetAllModsAsync(ct);
             _instances = await ServerService.GetAllInstancesAsync(ct);
         }
-        catch { }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh dashboard data");
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+                _isLoading = false;
+        }
     }
 
     private async Task RunPeriodicRefresh(CancellationToken ct)
@@ -173,21 +466,6 @@ else
         catch (InvalidOperationException) { }
     }
 
-    private static Color GetStatusColor(ServerInstanceStatus status) => status switch
-    {
-        ServerInstanceStatus.Running => Color.Success,
-        ServerInstanceStatus.Crashed => Color.Error,
-        ServerInstanceStatus.Starting or ServerInstanceStatus.Downloading => Color.Warning,
-        _ => Color.Default
-    };
-
-    private static string GetStatusIcon(ServerInstanceStatus status) => status switch
-    {
-        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
-        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
-        _ => Icons.Material.Filled.StopCircle
-    };
-
     private static Color GetResourceColor(double pct) => pct switch
     {
         > 90 => Color.Error,
@@ -195,18 +473,12 @@ else
         _ => Color.Success
     };
 
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        int order = 0; double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
-        return $"{size:F1} {sizes[order]}";
-    }
-
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
         MonitoringState.OnDataChanged -= HandleDataChanged;
+        Broadcaster.OnModStatusChanged -= HandleModStatusChanged;
+        Broadcaster.OnServerStatusChanged -= HandleServerStatusChanged;
         _cts?.Cancel();
         _cts?.Dispose();
         await Task.CompletedTask;

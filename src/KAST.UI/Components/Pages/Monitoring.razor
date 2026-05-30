@@ -1,4 +1,5 @@
 @page "/monitoring"
+@attribute [Authorize]
 @implements IAsyncDisposable
 @inject MonitoringStateService State
 @inject IJSRuntime JS
@@ -26,7 +27,7 @@
                 <MudText Typo="Typo.h5">@State.HostMetrics.MemoryUsagePercent.ToString("F1")%</MudText>
                 <MudProgressLinear Value="@State.HostMetrics.MemoryUsagePercent" Min="0" Max="100" Color="Color.Info" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    @FormatBytes(State.HostMetrics.UsedMemoryBytes) / @FormatBytes(State.HostMetrics.TotalMemoryBytes)
+                    @UiHelpers.FormatBytes(State.HostMetrics.UsedMemoryBytes) / @UiHelpers.FormatBytes(State.HostMetrics.TotalMemoryBytes)
                 </MudText>
             </MudCardContent>
         </MudCard>
@@ -38,7 +39,7 @@
                 <MudText Typo="Typo.h5">@State.HostMetrics.DiskUsagePercent.ToString("F1")%</MudText>
                 <MudProgressLinear Value="@State.HostMetrics.DiskUsagePercent" Min="0" Max="100" Color="Color.Success" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    @FormatBytes(State.HostMetrics.UsedDiskBytes) / @FormatBytes(State.HostMetrics.TotalDiskBytes)
+                    @UiHelpers.FormatBytes(State.HostMetrics.UsedDiskBytes) / @UiHelpers.FormatBytes(State.HostMetrics.TotalDiskBytes)
                 </MudText>
             </MudCardContent>
         </MudCard>
@@ -82,7 +83,7 @@ else
         var metrics = State.InstanceMetrics.GetValueOrDefault(instance.Id);
         <div class="mb-5">
             <div class="d-flex align-center gap-2 mb-2">
-                <MudIcon Icon="@GetStatusIcon(instance.Status)" Color="@GetStatusColor(instance.Status)" />
+                <MudIcon Icon="@UiHelpers.GetStatusIcon(instance.Status)" Color="@UiHelpers.GetStatusColor(instance.Status)" />
                 <MudText Typo="Typo.subtitle1">@instance.Name</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Secondary">Port @instance.Port</MudText>
                 @if (metrics != null)
@@ -194,29 +195,6 @@ else
             }
         }
         catch (JSDisconnectedException) { }
-    }
-
-    private static Color GetStatusColor(ServerInstanceStatus s) => s switch
-    {
-        ServerInstanceStatus.Running => Color.Success,
-        ServerInstanceStatus.Crashed => Color.Error,
-        ServerInstanceStatus.Starting => Color.Warning,
-        _ => Color.Default
-    };
-
-    private static string GetStatusIcon(ServerInstanceStatus s) => s switch
-    {
-        ServerInstanceStatus.Running => Icons.Material.Filled.PlayCircle,
-        ServerInstanceStatus.Crashed => Icons.Material.Filled.Error,
-        _ => Icons.Material.Filled.StopCircle
-    };
-
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        int order = 0; double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
-        return $"{size:F1} {sizes[order]}";
     }
 
     public ValueTask DisposeAsync()

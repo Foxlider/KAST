@@ -1,3 +1,6 @@
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedLocalStorage Storage
+
 @if (_visible)
 {
     <div id="kast-splash" aria-hidden="true" class="@_cssClass">
@@ -29,6 +32,9 @@
 }
 
 @code {
+    private const string TimestampKey = "kast_splash_timestamp";
+    private static readonly TimeSpan SuppressWindow = TimeSpan.FromSeconds(10);
+
     private bool _visible = true;
     private string _cssClass = "";
 
@@ -36,9 +42,46 @@
     {
         if (!firstRender) return;
 
-        // Ensure the fill + spark animations have had time to play before revealing the logo text.
-        // OnAfterRenderAsync fires once the Blazor circuit is live, which already provides
-        // natural loading time; the extra delay guarantees a minimum visible duration.
+        // Check whether the splash was already shown recently (e.g. during a
+        // SignalR reconnect that created a fresh circuit).  If the stored
+        // timestamp is within the suppression window we hide the splash
+        // immediately so the user doesn't sit through the full animation again.
+        var skipAnimation = false;
+        try
+        {
+            var result = await Storage.GetAsync<string>(TimestampKey);
+            if (result.Success
+                && !string.IsNullOrEmpty(result.Value)
+                && DateTime.TryParse(result.Value, null, System.Globalization.DateTimeStyles.RoundtripKind, out var ts))
+            {
+                skipAnimation = DateTime.UtcNow - ts < SuppressWindow;
+            }
+        }
+        catch
+        {
+            // Storage may be unavailable during pre-rendering; default to
+            // playing the animation (safe fallback).
+        }
+
+        if (skipAnimation)
+        {
+            _visible = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Persist the current timestamp before starting the animation so that
+        // a quick reconnect that follows will see a recent value and skip.
+        try
+        {
+            await Storage.SetAsync(TimestampKey, DateTime.UtcNow.ToString("O"));
+        }
+        catch
+        {
+            // Non-critical — worst case the animation replays on reconnect.
+        }
+
+        // ── Original animation sequence (unchanged) ─────────────────────────
         await Task.Delay(1000);
 
         _cssClass = "ks-ready";

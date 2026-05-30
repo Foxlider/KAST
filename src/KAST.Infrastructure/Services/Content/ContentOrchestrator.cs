@@ -21,13 +21,17 @@ public class ContentOrchestrator(
     IEnumerable<IContentInstaller> installers,
     ILogger<ContentOrchestrator> logger) : IContentOrchestrator
 {
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _active = new();
+    private readonly ConcurrentDictionary<string, ActiveInstall> _active = new();
+    private readonly object _steamQueueLock = new();
+    private readonly Queue<SteamQueueEntry> _steamQueue = new();
+    private bool _steamQueueBusy;
     private readonly Dictionary<ContentType, IContentInstaller> _installers =
         installers.ToDictionary(i => i.Type);
 
     public bool IsRunning(string key) => _active.ContainsKey(key);
 
-    public ContentInstallState? GetState(string key) => tracker.Get(key);
+    public ContentInstallState? GetState(string key)
+        => _active.TryGetValue(key, out var active) ? active.State : tracker.Get(key);
 
     // ── Server install ───────────────────────────────────────────────────────
 
@@ -44,11 +48,11 @@ public class ContentOrchestrator(
         activity?.SetTag("content.instance_name", instance.Name);
         activity?.SetTag("content.parallel_workers", maxParallelDownloads);
 
-        if (_active.ContainsKey(key))
+        if (_active.TryGetValue(key, out var existing))
         {
             activity?.SetTag("content.queued", false);
             activity?.AddEvent(new ActivityEvent("install.already_running"));
-            return tracker.Get(key)!;
+            return existing.State;
         }
 
         var installer = _installers[ContentType.Server];
@@ -63,12 +67,27 @@ public class ContentOrchestrator(
         };
 
         var steps = installer.PlanSteps(request);
-        var state = tracker.Create(key, ContentType.Server, instance.Name, steps);
+        var state = new ContentInstallState
+        {
+            Key = key,
+            Type = ContentType.Server,
+            Label = instance.Name,
+            Steps = steps.ToList()
+        };
         state.IsDownloading = true;
         state.AddLog($"Queued download for instance {instanceId}.");
 
         var cts = new CancellationTokenSource();
-        _active[key] = cts;
+        var operation = new ActiveInstall(cts, state);
+        if (!_active.TryAdd(key, operation))
+        {
+            cts.Dispose();
+            activity?.SetTag("content.queued", false);
+            activity?.AddEvent(new ActivityEvent("install.already_running"));
+            return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+        }
+
+        tracker.Set(state);
 
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps", steps.Count);
@@ -81,8 +100,11 @@ public class ContentOrchestrator(
 
     public ContentInstallState StartModInstall(int modId, ContentType type, string destinationPath,
         long workshopId = 0, string? sourcePath = null,
+        long expectedSizeBytes = 0,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
-        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null)
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
+        int maxParallelDownloads = 4)
     {
         var key = ContentProgressTracker.ModKey(modId);
 
@@ -97,11 +119,11 @@ public class ContentOrchestrator(
         if (sourcePath is not null)
             activity?.SetTag("content.source_path", sourcePath);
 
-        if (_active.ContainsKey(key))
+        if (_active.TryGetValue(key, out var existing))
         {
             activity?.SetTag("content.queued", false);
             activity?.AddEvent(new ActivityEvent("install.already_running"));
-            return tracker.Get(key)!;
+            return existing.State;
         }
 
         var installer = _installers[type];
@@ -109,22 +131,40 @@ public class ContentOrchestrator(
         {
             Type = type,
             DestinationPath = destinationPath,
+            ModId = modId,
             WorkshopId = workshopId,
+            ExpectedSizeBytes = expectedSizeBytes,
             SourcePath = sourcePath,
+            MaxParallelDownloads = maxParallelDownloads
         };
 
         var steps = installer.PlanSteps(request);
-        var state = tracker.Create(key, type, $"Mod {modId}", steps);
+        var state = new ContentInstallState
+        {
+            Key = key,
+            Type = type,
+            Label = $"Mod {modId}",
+            Steps = steps.ToList()
+        };
         state.IsDownloading = true;
         state.AddLog($"Queued install for mod {modId}.");
 
         var cts = new CancellationTokenSource();
-        _active[key] = cts;
+        var operation = new ActiveInstall(cts, state);
+        if (!_active.TryAdd(key, operation))
+        {
+            cts.Dispose();
+            activity?.SetTag("content.queued", false);
+            activity?.AddEvent(new ActivityEvent("install.already_running"));
+            return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+        }
+
+        tracker.Set(state);
 
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps", steps.Count);
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onStarted, onComplete, onError), cts.Token);
         return state;
     }
 
@@ -132,8 +172,8 @@ public class ContentOrchestrator(
 
     public void Cancel(string key)
     {
-        if (_active.TryRemove(key, out var cts))
-            cts.Cancel();
+        if (_active.TryGetValue(key, out var active))
+            active.Cancellation.Cancel();
     }
 
     // ── Validation ───────────────────────────────────────────────────────────
@@ -147,6 +187,7 @@ public class ContentOrchestrator(
 
     private async Task RunAsync(string key, ContentInstallRequest request, ContentInstallState state,
         CancellationToken ct,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
         Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null)
     {
@@ -169,7 +210,7 @@ public class ContentOrchestrator(
                 await UpdateServerStatusAsync(request.ServerInstanceId, ServerInstanceStatus.Downloading, CancellationToken.None);
 
             var installer = _installers[request.Type];
-            await installer.InstallAsync(request, state, ct);
+            await RunInstallerAsync(installer, request, state, ct, onStarted);
             activity?.AddEvent(new ActivityEvent("install.completed"));
 
             await HandleServerInstallCompleteAsync(request, state);
@@ -215,7 +256,95 @@ public class ContentOrchestrator(
         }
         finally
         {
-            _active.TryRemove(key, out _);
+            if (_active.TryRemove(key, out var active))
+                active.Cancellation.Dispose();
+        }
+    }
+
+    private async Task RunInstallerAsync(IContentInstaller installer, ContentInstallRequest request,
+        ContentInstallState state, CancellationToken ct,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted)
+    {
+        if (request.Type is not (ContentType.SteamMod or ContentType.Server))
+        {
+            await HandleStartedCallbackAsync(onStarted, state);
+            await installer.InstallAsync(request, state, ct);
+            return;
+        }
+
+        state.AddLog("Queued for Steam content slot...");
+        using var lease = await WaitForSteamContentTurnAsync(state.Key, ct);
+        try
+        {
+            state.AddLog("Steam content slot acquired.");
+            await HandleStartedCallbackAsync(onStarted, state);
+            await installer.InstallAsync(request, state, ct);
+        }
+        finally
+        {
+        }
+    }
+
+    private async Task<IDisposable> WaitForSteamContentTurnAsync(string key, CancellationToken ct)
+    {
+        var entry = new SteamQueueEntry(key);
+        entry.Cancellation = ct.Register(() => CancelSteamQueueEntry(entry));
+
+        lock (_steamQueueLock)
+        {
+            _steamQueue.Enqueue(entry);
+            TryStartNextSteamQueueEntryLocked();
+        }
+
+        await entry.Ready.Task.WaitAsync(ct);
+        return new SteamQueueLease(this, entry);
+    }
+
+    private void CancelSteamQueueEntry(SteamQueueEntry entry)
+    {
+        lock (_steamQueueLock)
+        {
+            if (entry.Started)
+                return;
+
+            entry.Cancelled = true;
+            entry.Ready.TrySetCanceled();
+            TryStartNextSteamQueueEntryLocked();
+        }
+    }
+
+    private void CompleteSteamQueueEntry(SteamQueueEntry entry)
+    {
+        lock (_steamQueueLock)
+        {
+            if (_steamQueue.Count > 0 && ReferenceEquals(_steamQueue.Peek(), entry))
+                _steamQueue.Dequeue();
+
+            entry.Cancellation.Dispose();
+            _steamQueueBusy = false;
+            TryStartNextSteamQueueEntryLocked();
+        }
+    }
+
+    private void TryStartNextSteamQueueEntryLocked()
+    {
+        if (_steamQueueBusy)
+            return;
+
+        while (_steamQueue.Count > 0)
+        {
+            var next = _steamQueue.Peek();
+            if (next.Cancelled)
+            {
+                _steamQueue.Dequeue();
+                next.Cancellation.Dispose();
+                continue;
+            }
+
+            next.Started = true;
+            _steamQueueBusy = true;
+            next.Ready.TrySetResult();
+            return;
         }
     }
 
@@ -235,6 +364,15 @@ public class ContentOrchestrator(
         {
             using var scope = scopeFactory.CreateScope();
             await onComplete(scope.ServiceProvider, state);
+        }
+    }
+
+    private async Task HandleStartedCallbackAsync(Func<IServiceProvider, ContentInstallState, Task>? onStarted, ContentInstallState state)
+    {
+        if (onStarted is not null)
+        {
+            using var scope = scopeFactory.CreateScope();
+            await onStarted(scope.ServiceProvider, state);
         }
     }
 
@@ -337,5 +475,27 @@ public class ContentOrchestrator(
         instance.Status = ServerInstanceStatus.Stopped;
         await db.SaveChangesAsync(ct);
         activity?.SetTag("instance.found", true);
+    }
+
+    private sealed record ActiveInstall(CancellationTokenSource Cancellation, ContentInstallState State);
+
+    private sealed class SteamQueueEntry(string key)
+    {
+        public string Key { get; } = key;
+        public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationTokenRegistration Cancellation { get; set; }
+        public bool Started { get; set; }
+        public bool Cancelled { get; set; }
+    }
+
+    private sealed class SteamQueueLease(ContentOrchestrator owner, SteamQueueEntry entry) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                owner.CompleteSteamQueueEntry(entry);
+        }
     }
 }
