@@ -547,9 +547,10 @@ public class MissionServiceTests : IDisposable
     public async Task SearchMissions_ByName_FindsMatch()
     {
         var instance = await SeedInstance();
-        var m1 = new Mission { ServerInstanceId = instance.Id, FileName = "co40_tanoa.pbo", DisplayName = "Operation Tanoa", PhysicalPath = "/tmp/a.pbo" };
-        var m2 = new Mission { ServerInstanceId = instance.Id, FileName = "co10_stratis.pbo", DisplayName = "Stratis Patrol", PhysicalPath = "/tmp/b.pbo" };
-        _db.Missions.AddRange(m1, m2);
+        var m1 = await SeedMission(instance.Id, "co40_tanoa.pbo");
+        var m2 = await SeedMission(instance.Id, "co10_stratis.pbo");
+        m1.DisplayName = "Operation Tanoa";
+        m2.DisplayName = "Stratis Patrol";
         await _db.SaveChangesAsync();
 
         var result = await _sut.SearchMissionsAsync(instance.Id, "tanoa", null, null, CancellationToken.None);
@@ -578,9 +579,10 @@ public class MissionServiceTests : IDisposable
     public async Task SearchMissions_ByMapName_FindsExactMatch()
     {
         var instance = await SeedInstance();
-        var m1 = new Mission { ServerInstanceId = instance.Id, FileName = "a.pbo", MapName = "Altis", PhysicalPath = "/tmp/a.pbo" };
-        var m2 = new Mission { ServerInstanceId = instance.Id, FileName = "b.pbo", MapName = "Tanoa", PhysicalPath = "/tmp/b.pbo" };
-        _db.Missions.AddRange(m1, m2);
+        var m1 = await SeedMission(instance.Id, "a.pbo");
+        var m2 = await SeedMission(instance.Id, "b.pbo");
+        m1.MapName = "Altis";
+        m2.MapName = "Tanoa";
         await _db.SaveChangesAsync();
 
         var result = await _sut.SearchMissionsAsync(instance.Id, null, null, "Altis");
@@ -595,9 +597,12 @@ public class MissionServiceTests : IDisposable
         var instance = await SeedInstance();
         var tag = await SeedTag(instance.Id, "night");
 
-        var m1 = new Mission { ServerInstanceId = instance.Id, FileName = "match.pbo", DisplayName = "Night Patrol", MapName = "Altis", PhysicalPath = "/tmp/a.pbo" };
-        var m2 = new Mission { ServerInstanceId = instance.Id, FileName = "nomatch.pbo", DisplayName = "Night Raid", MapName = "Tanoa", PhysicalPath = "/tmp/b.pbo" };
-        _db.Missions.AddRange(m1, m2);
+        var m1 = await SeedMission(instance.Id, "match.pbo");
+        var m2 = await SeedMission(instance.Id, "nomatch.pbo");
+        m1.DisplayName = "Night Patrol";
+        m1.MapName = "Altis";
+        m2.DisplayName = "Night Raid";
+        m2.MapName = "Tanoa";
         await _db.SaveChangesAsync();
 
         _db.MissionTagAssignments.Add(new MissionTagAssignment { MissionId = m1.Id, MissionTagId = tag.Id });

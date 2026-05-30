@@ -22,8 +22,10 @@
     right: 0;
     bottom: 28px;
     z-index: 1350;
-    border-left: 1px solid var(--mud-palette-divider);
-    box-shadow: -8px 0 32px rgba(0,0,0,.35);
+    background: var(--mud-palette-surface);
+    border-left: 1px solid color-mix(in srgb, var(--mud-palette-divider) 80%, var(--mud-palette-text-primary));
+    box-shadow: -10px 0 36px rgba(0,0,0,.45);
+    color: var(--mud-palette-text-primary);
 }
 
 .log-toolbar {
@@ -33,7 +35,8 @@
     padding: 0 8px;
     height: 32px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--mud-palette-divider);
+    background: color-mix(in srgb, var(--mud-palette-surface) 88%, var(--mud-palette-text-primary));
+    border-bottom: 1px solid color-mix(in srgb, var(--mud-palette-divider) 80%, var(--mud-palette-text-primary));
 }
 
 .log-output {
@@ -43,12 +46,17 @@
     font-size: 11px;
     padding: 4px 8px;
     line-height: 1.6;
+    background: color-mix(in srgb, var(--mud-palette-background) 70%, #000);
 }
 
 .log-entry {
     display: flex;
     gap: 8px;
-    border-bottom: 1px solid var(--mud-palette-lines-default);
+    border-bottom: 1px solid color-mix(in srgb, var(--mud-palette-lines-default) 65%, transparent);
+}
+
+.log-entry:hover {
+    background: color-mix(in srgb, var(--mud-palette-primary) 10%, transparent);
 }
 
 .log-timestamp {
@@ -62,6 +70,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 600;
 }
 
 .log-message {
