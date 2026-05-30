@@ -538,23 +538,30 @@ public class ServerInstanceService(
         var configDir = GetInstanceConfigDirectory(instance);
         Directory.CreateDirectory(configDir);
 
-        if (instance.ServerCfgContent != null)
+        try
         {
-            var path = Path.Combine(configDir, "server.cfg");
-            File.WriteAllText(path, instance.ServerCfgContent);
-        }
+            if (instance.ServerCfgContent != null)
+            {
+                var path = Path.Combine(configDir, "server.cfg");
+                File.WriteAllText(path, instance.ServerCfgContent);
+            }
 
-        if (instance.BasicCfgContent != null)
-        {
-            var path = Path.Combine(configDir, "basic.cfg");
-            File.WriteAllText(path, instance.BasicCfgContent);
-        }
+            if (instance.BasicCfgContent != null)
+            {
+                var path = Path.Combine(configDir, "basic.cfg");
+                File.WriteAllText(path, instance.BasicCfgContent);
+            }
 
-        if (instance.ArmaProfileContent != null)
+            if (instance.ArmaProfileContent != null)
+            {
+                var profileName = $"server_{instance.Id}";
+                var path = Path.Combine(configDir, $"{profileName}.Arma3Profile");
+                File.WriteAllText(path, instance.ArmaProfileContent);
+            }
+        }
+        catch (IOException ex)
         {
-            var profileName = $"server_{instance.Id}";
-            var path = Path.Combine(configDir, $"{profileName}.Arma3Profile");
-            File.WriteAllText(path, instance.ArmaProfileContent);
+            logger.LogWarning(ex, "Could not write config files for instance {Id} — server may be running", instance.Id);
         }
 
         // On Linux the -profiles= flag is broken; symlink the expected profile directory

@@ -708,7 +708,7 @@ public class SteamClientService : ISteamService, IDisposable
             long totalSize = files.Sum(f => (long)f.TotalSize);
             Directory.CreateDirectory(destinationPath);
 
-            var (bytesTransferred, _, dlElapsed) = await DownloadFilesInParallelAsync(
+            var (bytesTransferred, _, dlElapsed, skippedFiles) = await DownloadFilesInParallelAsync(
                 files, depotId, depotKey, pool, destinationPath,
                 parentSpanContext: workshopActivity?.Context ?? Activity.Current?.Context ?? default,
                 progressBase: 0, progressTotal: totalSize,
@@ -716,7 +716,7 @@ public class SteamClientService : ISteamService, IDisposable
                 logPrefix: $"Workshop {workshopId}",
                 maxParallelWorkers: Math.Clamp(maxParallelDownloads, 1, 64), ct);
 
-            var verifiedFiles = ValidateManifestFiles(destinationPath, files);
+            var verifiedFiles = ValidateManifestFiles(destinationPath, files, skippedFiles);
             var prunedFiles = PruneFilesOutsideManifest(destinationPath, files);
 
             var totalMbDownloaded = bytesTransferred / 1_048_576.0;
@@ -726,6 +726,7 @@ public class SteamClientService : ISteamService, IDisposable
             workshopActivity?.SetTag("workshop.duration_s", Math.Round(dlElapsed.TotalSeconds, 1));
             workshopActivity?.SetTag("workshop.avg_mbps", Math.Round(avgMbps, 2));
             workshopActivity?.SetTag("workshop.files_verified", verifiedFiles);
+            workshopActivity?.SetTag("workshop.files_skipped", skippedFiles.Count);
             workshopActivity?.SetTag("workshop.files_pruned", prunedFiles);
 
             _logger.LogInformation("Workshop item {Id} download complete → {Path}  ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
@@ -950,7 +951,7 @@ public class SteamClientService : ISteamService, IDisposable
                 dlActivity?.SetTag("download.size_mb", Math.Round(downloadBytes / 1_048_576.0, 1));
                 dlActivity?.SetTag("download.workers", maxParallelDownloads);
 
-                var (bytesTransferred, filesTransferred, dlElapsed) = await DownloadFilesInParallelAsync(
+                var (bytesTransferred, filesTransferred, dlElapsed, _) = await DownloadFilesInParallelAsync(
                     toDownload, depotId, depotKey, pool, destinationPath,
                     parentSpanContext: dlActivity?.Context ?? Activity.Current?.Context ?? default,
                     progressBase: totalDownloaded, progressTotal: totalSize,
@@ -1106,7 +1107,7 @@ public class SteamClientService : ISteamService, IDisposable
     /// </param>
     /// <param name="logPrefix">Label prepended to debug log messages, e.g. "Workshop 12345" or "Depot 107410".</param>
     /// <returns>Bytes transferred, number of files completed, and wall-clock elapsed time.</returns>
-    private async Task<(long BytesTransferred, int FilesTransferred, TimeSpan Elapsed)>
+    private async Task<(long BytesTransferred, int FilesTransferred, TimeSpan Elapsed, IReadOnlyCollection<string> SkippedFiles)>
         DownloadFilesInParallelAsync(
             IList<DepotManifest.FileData> files,
             uint depotId, byte[]? depotKey, CdnServerPool pool,
@@ -1126,6 +1127,7 @@ public class SteamClientService : ISteamService, IDisposable
         var lastReportTime = sw.Elapsed;
         // Pre-compute so the lambda closure doesn't call Sum on every speed report.
         var downloadMb = files.Sum(f => (long)f.TotalSize) / 1_048_576.0;
+        var skippedFiles = new System.Collections.Concurrent.ConcurrentBag<string>();
 
         // Parallel.ForEachAsync only ever keeps MaxDegreeOfParallelism items in-flight.
         // Unlike Select().ToArray() + Task.WhenAll, it never queues thousands of async
@@ -1167,41 +1169,70 @@ public class SteamClientService : ISteamService, IDisposable
                     var tempPath = Path.Combine(
                         dir ?? destinationPath,
                         $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
-                    try
+                    var downloadAttempt = 0;
+                    var shouldMoveDownloadedFile = true;
+                    const int maxHashRetries = 2;
+                    while (true)
                     {
-                        await using (var fs = new FileStream(
-                                         tempPath,
-                                         FileMode.CreateNew,
-                                         FileAccess.Write,
-                                         FileShare.None,
-                                         bufferSize: 1024 * 1024,
-                                         FileOptions.SequentialScan | FileOptions.Asynchronous))
+                        downloadAttempt++;
+                        try
                         {
-                            if (file.TotalSize > 0)
-                                fs.SetLength((long)file.TotalSize);
-
-                            foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                            await using (var fs = new FileStream(
+                                             tempPath,
+                                             FileMode.CreateNew,
+                                             FileAccess.Write,
+                                             FileShare.None,
+                                             bufferSize: 1024 * 1024,
+                                             FileOptions.SequentialScan | FileOptions.Asynchronous))
                             {
-                                fileCt.ThrowIfCancellationRequested();
-                                var buf = new byte[chunk.UncompressedLength];
-                                var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
-                                fs.Position = (long)chunk.Offset;
-                                await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
+                                if (file.TotalSize > 0)
+                                    fs.SetLength((long)file.TotalSize);
 
-                                var newBytes = Interlocked.Add(ref bytesDownloaded, written);
-                                if (progressTotal > 0)
-                                    progress?.Report((double)(progressBase + newBytes) / progressTotal * 100.0);
+                                foreach (var chunk in file.Chunks.OrderBy(c => c.Offset))
+                                {
+                                    fileCt.ThrowIfCancellationRequested();
+                                    var buf = new byte[chunk.UncompressedLength];
+                                    var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
+                                    fs.Position = (long)chunk.Offset;
+                                    await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
+
+                                    var newBytes = Interlocked.Add(ref bytesDownloaded, written);
+                                    if (progressTotal > 0)
+                                        progress?.Report((double)(progressBase + newBytes) / progressTotal * 100.0);
+                                }
                             }
-                        }
 
-                        ValidateDownloadedFile(tempPath, file);
+                            ValidateDownloadedFile(tempPath, file);
+                            break; // success
+                        }
+                        catch (IOException ex) when (ex.Message.Contains("hash verification") && downloadAttempt < maxHashRetries)
+                        {
+                            _logger.LogWarning("{Prefix}: hash mismatch for {File}, retry {Attempt}/{Max}",
+                                logPrefix, relativePath, downloadAttempt, maxHashRetries);
+                            TryDeleteTempFile(tempPath);
+                            tempPath = Path.Combine(
+                                dir ?? destinationPath,
+                                $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
+                        }
+                        catch (IOException ex) when (ex.Message.Contains("hash verification") &&
+                                                    Path.GetExtension(relativePath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogWarning("{Prefix}: hash mismatch for non-critical file {File}, skipping",
+                                logPrefix, relativePath);
+                            TryDeleteTempFile(tempPath);
+                            skippedFiles.Add(relativePath);
+                            shouldMoveDownloadedFile = false;
+                            break; // skip this file, continue with remaining files
+                        }
+                        catch
+                        {
+                            TryDeleteTempFile(tempPath);
+                            throw;
+                        }
+                    }
+
+                    if (shouldMoveDownloadedFile)
                         File.Move(tempPath, filePath, overwrite: true);
-                    }
-                    catch
-                    {
-                        TryDeleteTempFile(tempPath);
-                        throw;
-                    }
 
                     var done = Interlocked.Increment(ref filesDone);
                     _logger.LogDebug("{Prefix}: [{Done}/{Total}] {File}", logPrefix, done, files.Count, relativePath);
@@ -1245,7 +1276,7 @@ public class SteamClientService : ISteamService, IDisposable
             });
 
         sw.Stop();
-        return (Interlocked.Read(ref bytesDownloaded), filesDone, sw.Elapsed);
+        return (Interlocked.Read(ref bytesDownloaded), filesDone, sw.Elapsed, skippedFiles.ToArray());
     }
 
     private static string ResolveContentPath(string destinationPath, string relativePath)
@@ -1262,12 +1293,22 @@ public class SteamClientService : ISteamService, IDisposable
         return fullPath;
     }
 
-    private static int ValidateManifestFiles(string destinationPath, IReadOnlyCollection<DepotManifest.FileData> files)
+    private static int ValidateManifestFiles(
+        string destinationPath,
+        IReadOnlyCollection<DepotManifest.FileData> files,
+        IReadOnlyCollection<string>? skippedFiles = null)
     {
+        var skippedSet = skippedFiles is { Count: > 0 }
+            ? skippedFiles.ToHashSet(GetContentPathComparer())
+            : null;
+
         var verified = 0;
         foreach (var file in files)
         {
             var relativePath = file.FileName.Replace('\\', Path.DirectorySeparatorChar);
+            if (skippedSet?.Contains(relativePath) == true)
+                continue;
+
             var filePath = ResolveContentPath(destinationPath, relativePath);
             if (!FileMatchesManifest(filePath, file))
                 throw new IOException($"Downloaded file '{file.FileName}' is missing or failed final manifest verification.");
@@ -1282,13 +1323,9 @@ public class SteamClientService : ISteamService, IDisposable
         if (!Directory.Exists(destinationPath))
             return 0;
 
-        var comparer = OperatingSystem.IsWindows()
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-
         var expectedPaths = files
             .Select(file => ResolveContentPath(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar)))
-            .ToHashSet(comparer);
+            .ToHashSet(GetContentPathComparer());
 
         var pruned = 0;
         foreach (var filePath in Directory.EnumerateFiles(destinationPath, "*", SearchOption.AllDirectories))
@@ -1310,6 +1347,13 @@ public class SteamClientService : ISteamService, IDisposable
 
         PruneEmptyDirectories(destinationPath);
         return pruned;
+    }
+
+    private static StringComparer GetContentPathComparer()
+    {
+        return OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
     }
 
     private static void PruneEmptyDirectories(string destinationPath)

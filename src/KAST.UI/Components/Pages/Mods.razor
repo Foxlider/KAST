@@ -1,7 +1,9 @@
 @page "/mods"
 @attribute [Authorize]
+@using KAST.Infrastructure.Services.Content
 @inject IModService ModService
 @inject IAppEventBroadcaster Broadcaster
+@inject ContentProgressTracker ContentTracker
 @inject ISnackbar Snackbar
 @inject ModDownloadManager DownloadManager
 @inject IJSRuntime JS
@@ -748,6 +750,7 @@ else
     private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
     private readonly HashSet<int> _queuedModIds = new();
     private readonly HashSet<int> _checkingMods = new();
+    private readonly Dictionary<string, (ContentInstallState State, Action Handler)> _progressSubscriptions = new();
 
     // Download speed tracking
     private readonly Dictionary<int, long> _downloadBytesPrev = new();
@@ -778,6 +781,9 @@ else
     {
         Broadcaster.OnModDownloadProgress -= HandleDownloadProgress;
         Broadcaster.OnModStatusChanged    -= HandleStatusChanged;
+        foreach (var (_, (state, handler)) in _progressSubscriptions)
+            state.Changed -= handler;
+        _progressSubscriptions.Clear();
         await Task.CompletedTask;
     }
 
@@ -819,6 +825,7 @@ else
                 if (activeIds.Contains(id) || !DownloadManager.IsActive(id))
                     _queuedModIds.Remove(id);
             }
+            SyncProgressSubscriptions(activeIds);
             StateHasChanged();
         });
     }
@@ -841,10 +848,65 @@ else
             if (!_taskIds.Contains(modId))
                 _taskIds.Insert(0, modId);
         }
+
+        SyncProgressSubscriptions(_mods
+            .Where(m => m.Status is ModStatus.Downloading or ModStatus.Updating)
+            .Select(m => m.Id)
+            .ToHashSet());
     }
 
-    private double GetModProgress(int modId) =>
-        _taskProgress.TryGetValue(modId, out var p) ? p : 0;
+    private double GetModProgress(int modId)
+    {
+        var eventProgress = _taskProgress.TryGetValue(modId, out var p) ? p : 0;
+        var trackedProgress = GetTrackedModProgress(modId);
+        return Math.Clamp(Math.Max(eventProgress, trackedProgress), 0, 100);
+    }
+
+    private double GetTrackedModProgress(int modId)
+    {
+        var state = ContentTracker.Get(ContentProgressTracker.ModKey(modId));
+        if (state is null)
+            return 0;
+
+        if (state.IsComplete)
+            return 100;
+
+        var downloadStep = state.Steps.FirstOrDefault();
+        if (downloadStep is null)
+            return 0;
+
+        return downloadStep.Status is ContentStepStatus.Completed or ContentStepStatus.Skipped
+            ? 100
+            : downloadStep.Progress;
+    }
+
+    private void SyncProgressSubscriptions(HashSet<int> activeModIds)
+    {
+        var activeKeys = activeModIds
+            .Select(ContentProgressTracker.ModKey)
+            .ToHashSet();
+
+        foreach (var key in _progressSubscriptions.Keys.Where(k => !activeKeys.Contains(k)).ToList())
+        {
+            var (state, handler) = _progressSubscriptions[key];
+            state.Changed -= handler;
+            _progressSubscriptions.Remove(key);
+        }
+
+        foreach (var key in activeKeys)
+        {
+            if (_progressSubscriptions.ContainsKey(key))
+                continue;
+
+            var state = ContentTracker.Get(key);
+            if (state is null)
+                continue;
+
+            Action handler = () => _ = InvokeAsync(StateHasChanged);
+            state.Changed += handler;
+            _progressSubscriptions[key] = (state, handler);
+        }
+    }
 
     private static string GridHeight => "60vh";
 
