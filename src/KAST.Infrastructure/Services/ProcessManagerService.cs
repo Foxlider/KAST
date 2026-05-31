@@ -13,9 +13,8 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
     {
         using var activity = KastActivitySources.Process.StartActivity(
             "kast.process.start", ActivityKind.Internal);
-        activity?.SetTag("process.executable", executablePath);
 
-        logger.LogInformation("Starting process: {Executable} {Args}", executablePath, arguments);
+        logger.LogInformation("Starting server process");
 
         var psi = new ProcessStartInfo
         {
@@ -29,7 +28,7 @@ public class ProcessManagerService(ILogger<ProcessManagerService> logger) : IPro
         };
 
         var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start process: {executablePath}");
+            ?? throw new InvalidOperationException("Failed to start server process.");
 
         logger.LogInformation("Process started with PID {Pid}", process.Id);
         activity?.SetTag("process.pid", process.Id);

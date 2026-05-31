@@ -9,14 +9,14 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Downloads a Steam Workshop mod via SteamKit2.
 /// </summary>
-public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : IContentInstaller
+public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IOutputSanitizer sanitizer) : IContentInstaller
 {
     public ContentType Type => ContentType.SteamMod;
 
     public IReadOnlyList<ContentStep> PlanSteps(ContentInstallRequest request) =>
     [
-        new ContentStep { Name = "Download from Workshop", Detail = $"ID {request.WorkshopId}" },
-        new ContentStep { Name = "Calculate size" }
+        new ContentStep { Name = "Download from Workshop", Detail = $"ID {request.WorkshopId} → {sanitizer.ToDisplayPath(request.DestinationPath)}" },
+        new ContentStep { Name = "Calculate size", Detail = sanitizer.ToDisplayPath(request.DestinationPath) }
     ];
 
     public async Task InstallAsync(ContentInstallRequest request, ContentInstallState state, CancellationToken ct)
@@ -24,12 +24,11 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.steam.mod_download", ActivityKind.Internal);
         activity?.SetTag("workshop.id",  request.WorkshopId);
-        activity?.SetTag("destination",  request.DestinationPath);
 
         try
         {
         state.BeginStep(0);
-        state.AddLog($"Downloading Workshop item {request.WorkshopId} → {request.DestinationPath}");
+        state.AddLog($"Downloading Workshop item {request.WorkshopId} to {sanitizer.ToDisplayPath(request.DestinationPath)}");
 
         if (!steam.IsConnected)
         {
@@ -57,7 +56,7 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             throw;
         }
     }
@@ -66,7 +65,8 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs) : ICo
     {
         var results = new List<ContentValidationResult>();
         bool exists = Directory.Exists(request.DestinationPath);
-        results.Add(new("Mod directory", exists, request.DestinationPath));
+        var displayPath = sanitizer.ToDisplayPath(request.DestinationPath);
+        results.Add(new("Mod directory", exists, exists ? displayPath : $"Missing: {displayPath}"));
 
         if (!exists) return results;
 

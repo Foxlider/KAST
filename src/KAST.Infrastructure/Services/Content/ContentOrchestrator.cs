@@ -19,7 +19,8 @@ public class ContentOrchestrator(
     IServiceScopeFactory scopeFactory,
     ContentProgressTracker tracker,
     IEnumerable<IContentInstaller> installers,
-    ILogger<ContentOrchestrator> logger) : IContentOrchestrator
+    ILogger<ContentOrchestrator> logger,
+    IOutputSanitizer sanitizer) : IContentOrchestrator
 {
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _active = new();
     private readonly Dictionary<ContentType, IContentInstaller> _installers =
@@ -39,7 +40,6 @@ public class ContentOrchestrator(
             "kast.content.queued", ActivityKind.Internal);
         activity?.SetTag("content.key",             key);
         activity?.SetTag("content.type",            ContentType.Server.ToString());
-        activity?.SetTag("content.destination",     installPath);
         activity?.SetTag("content.instance_id",     instanceId);
         activity?.SetTag("content.instance_name",   instance.Name);
         activity?.SetTag("content.parallel_workers", maxParallelDownloads);
@@ -73,7 +73,7 @@ public class ContentOrchestrator(
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps",  steps.Count);
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token), cts.Token);
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token));
         return state;
     }
 
@@ -90,12 +90,9 @@ public class ContentOrchestrator(
             "kast.content.queued", ActivityKind.Internal);
         activity?.SetTag("content.key",         key);
         activity?.SetTag("content.type",        type.ToString());
-        activity?.SetTag("content.destination",  destinationPath);
         activity?.SetTag("content.mod_id",      modId);
         if (workshopId != 0)
             activity?.SetTag("content.workshop_id", workshopId);
-        if (sourcePath is not null)
-            activity?.SetTag("content.source_path", sourcePath);
 
         if (_active.ContainsKey(key))
         {
@@ -124,7 +121,7 @@ public class ContentOrchestrator(
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps",  steps.Count);
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError));
         return state;
     }
 
@@ -158,7 +155,6 @@ public class ContentOrchestrator(
             "kast.content.install", ActivityKind.Internal);
         activity?.SetTag("content.key",         key);
         activity?.SetTag("content.type",        request.Type.ToString());
-        activity?.SetTag("content.destination",  request.DestinationPath);
         activity?.SetTag("content.steps",        state.Steps.Count);
         if (request.Type == ContentType.Server)
             activity?.SetTag("content.instance_id", request.ServerInstanceId);
@@ -191,25 +187,25 @@ public class ContentOrchestrator(
         {
             // Spurious TaskCanceledException from an HTTP timeout or SteamKit2 internals.
             // Treat it as a real error so the user sees a meaningful message.
-            logger.LogWarning(oce, "Spurious cancellation in content install {Key} (not user-requested) — treating as error", key);
-            activity?.SetStatus(ActivityStatusCode.Error, oce.Message);
+            var safeMessage = sanitizer.Sanitize(oce.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
                 ["exception.type"]    = oce.GetType().FullName ?? oce.GetType().Name,
-                ["exception.message"] = oce.Message
+                ["exception.message"] = safeMessage
             }));
             await HandleErrorAsync(key, request, state,
-                new IOException($"Network timeout or transient failure during download. Details: {oce.Message}", oce),
+                new IOException($"Network timeout or transient failure during download. Details: {safeMessage}", oce),
                 onError);
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            var safeMessage = sanitizer.Sanitize(ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"]       = ex.GetType().FullName ?? ex.GetType().Name,
-                ["exception.message"]    = ex.Message,
-                ["exception.stacktrace"] = ex.StackTrace ?? string.Empty
+                ["exception.type"]    = ex.GetType().FullName ?? ex.GetType().Name,
+                ["exception.message"] = safeMessage
             }));
             await HandleErrorAsync(key, request, state, ex, onError);
         }
@@ -265,19 +261,20 @@ public class ContentOrchestrator(
     private async Task HandleErrorAsync(string key, ContentInstallRequest request, ContentInstallState state, Exception ex,
         Func<IServiceProvider, ContentInstallState, Exception, Task>? onError)
     {
+        var safeMessage = sanitizer.Sanitize(ex.Message);
         logger.LogError(ex, "Content install failed: {Key}", key);
-        state.AddLog($"ERROR: {ex.Message}");
+        state.AddLog($"ERROR: {safeMessage}");
         state.IsDownloading = false;
-        state.ErrorMessage = ex.Message;
+        state.ErrorMessage = safeMessage;
 
         if (state.CurrentStep is { Status: ContentStepStatus.InProgress })
-            state.FailStep(state.CurrentStepIndex, ex.Message);
+            state.FailStep(state.CurrentStepIndex, safeMessage);
         else
         {
             // Error occurred before any step was started (e.g. Steam connection failure)
             var firstPending = state.Steps.FindIndex(s => s.Status == ContentStepStatus.Pending);
             if (firstPending >= 0)
-                state.FailStep(firstPending, ex.Message);
+                state.FailStep(firstPending, safeMessage);
         }
 
         await HandleErrorCallbackAsync(onError, state, ex);

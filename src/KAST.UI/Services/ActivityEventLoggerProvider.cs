@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KAST.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.UI.Services;
@@ -8,16 +9,16 @@ namespace KAST.UI.Services;
 /// that log messages are visible inside traces in Jaeger.
 /// Only wires up when there is an active span; has no effect otherwise.
 /// </summary>
-public sealed class ActivityEventLoggerProvider : ILoggerProvider
+public sealed class ActivityEventLoggerProvider(IOutputSanitizer sanitizer) : ILoggerProvider
 {
-    public ILogger CreateLogger(string categoryName) => new ActivityEventLogger(categoryName);
+    public ILogger CreateLogger(string categoryName) => new ActivityEventLogger(categoryName, sanitizer);
     public void Dispose()
     {
         // No unmanaged resources to release.
     }
 }
 
-file sealed class ActivityEventLogger(string categoryName) : ILogger
+file sealed class ActivityEventLogger(string categoryName, IOutputSanitizer sanitizer) : ILogger
 {
     // No span = no overhead; never block callers with actual I/O in this path.
     public bool IsEnabled(LogLevel logLevel) =>
@@ -34,14 +35,14 @@ file sealed class ActivityEventLogger(string categoryName) : ILogger
         var tags = new ActivityTagsCollection
         {
             ["log.severity"] = logLevel.ToString(),
-            ["log.message"]  = formatter(state, exception),
+            ["log.message"]  = sanitizer.Sanitize(formatter(state, exception)),
             ["log.category"] = categoryName
         };
 
         if (exception is not null)
         {
             tags["exception.type"]    = exception.GetType().Name;
-            tags["exception.message"] = exception.Message;
+            tags["exception.message"] = sanitizer.Sanitize(exception.Message);
         }
 
         activity.AddEvent(new ActivityEvent("log", tags: tags));
