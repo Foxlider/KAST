@@ -255,7 +255,7 @@ public class ServerInstanceService(
             var executable = GetServerExecutable(instance);
             var args = BuildLaunchArguments(instance);
 
-            activity?.SetTag("instance.executable", executable);
+            activity?.SetTag("instance.executable", sanitizer.ToDisplayPath(executable));
 
             logger.LogInformation("Starting server {Name}", instance.Name);
 
