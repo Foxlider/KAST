@@ -1,4 +1,23 @@
 /* ── Downloads fixed overlay panel ─────────────────────────────────────── */
+.mod-command-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+}
+
+.mod-search {
+    width: 100%;
+}
+
+.mod-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
 .dl-fixed-panel {
     position: relative;
     z-index: 1100;
@@ -248,6 +267,10 @@
 }
 
 @media (max-width: 600px) {
+    .mod-command-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .dl-fixed-panel {
         margin-left: -8px;
         margin-right: -8px;

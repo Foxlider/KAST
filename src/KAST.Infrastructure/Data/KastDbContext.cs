@@ -5,6 +5,8 @@ namespace KAST.Infrastructure.Data;
 
 public class KastDbContext : DbContext
 {
+    private static readonly SemaphoreSlim SqliteWriteLock = new(1, 1);
+
     public KastDbContext(DbContextOptions<KastDbContext> options) : base(options)
     {
         // DbContext configuration is supplied entirely through DI.
@@ -27,6 +29,46 @@ public class KastDbContext : DbContext
     public DbSet<CampaignMission> CampaignMissions => Set<CampaignMission>();
     public DbSet<Set> Sets => Set<Set>();
     public DbSet<SetMission> SetMissions => Set<SetMission>();
+
+    public override int SaveChanges()
+        => SaveChanges(acceptAllChangesOnSuccess: true);
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        if (!Database.IsSqlite())
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+
+        SqliteWriteLock.Wait();
+        try
+        {
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        finally
+        {
+            SqliteWriteLock.Release();
+        }
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+
+    public override async Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsSqlite())
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+        await SqliteWriteLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        finally
+        {
+            SqliteWriteLock.Release();
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

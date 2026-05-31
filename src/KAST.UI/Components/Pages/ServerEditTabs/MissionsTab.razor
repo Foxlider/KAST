@@ -8,7 +8,9 @@
 
     @* ── Toolbar ── *@
     <div class="d-flex align-center gap-2 mt-2 flex-wrap">
-        <MudTextField @bind-Value="_searchQuery"
+        <MudTextField T="string"
+                      Value="_searchQuery"
+                      ValueChanged="@((string value) => OnMissionSearchChanged(value))"
                       Placeholder="Search missions… (use #tag to filter)"
                       Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search"
@@ -25,6 +27,28 @@
         </MudButton>
     </div>
 
+    <div class="d-flex align-center gap-1 flex-wrap">
+        <MudChip T="string" Size="Size.Small"
+                 Variant="@(string.IsNullOrWhiteSpace(_activeMapFilter) ? Variant.Filled : Variant.Outlined)"
+                 Color="Color.Default"
+                 OnClick="@(() => SetMapFilter(null))">
+            All maps (@_missions.Count)
+        </MudChip>
+        @foreach (var map in AvailableMaps.Take(12))
+        {
+            <MudChip T="string" Size="Size.Small"
+                     Variant="@(_activeMapFilter == map ? Variant.Filled : Variant.Outlined)"
+                     Color="@(_activeMapFilter == map ? Color.Primary : Color.Default)"
+                     OnClick="@(() => SetMapFilter(map))">
+                @map (@CountMissionsOnMap(map))
+            </MudChip>
+        }
+        @if (AvailableMaps.Count > 12)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">+@(AvailableMaps.Count - 12) more maps</MudText>
+        }
+    </div>
+
     <div class="d-flex gap-3" style="flex:1; min-height:0;">
         @* ── Mission List (Left) ── *@
         <div class="mud-paper mud-elevation-1 pa-3" style="flex:3; overflow-y:auto;">
@@ -32,6 +56,12 @@
                 <MudText Typo="Typo.subtitle1">Missions</MudText>
                 <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
                     @_filteredMissions.Count total
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">
+                    @AvailableMaps.Count maps
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">
+                    @_missions.Count(m => m.TagAssignments.Count == 0) untagged
                 </MudChip>
             </div>
 
@@ -57,8 +87,8 @@
             {
                 <div class="d-flex flex-column align-center justify-center gap-2" style="padding:60px 0;">
                     <MudIcon Icon="@Icons.Material.Filled.FolderOff" Size="Size.Large" Color="Color.Default" />
-                    <MudText Typo="Typo.body1" Color="Color.Default">No missions yet</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Default">Upload a .pbo file to get started</MudText>
+                    <MudText Typo="Typo.body1" Color="Color.Default">@(HasMissionFilters ? "No missions match the filters" : "No missions yet")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">@(HasMissionFilters ? "Clear search, map, or tag filters to widen the list." : "Upload a .pbo file to get started")</MudText>
                 </div>
             }
             else
@@ -509,6 +539,7 @@
     private List<MissionTag> _activeFilterTags = [];
     private List<ModPreset> _availablePresets = [];
     private string _searchQuery = "";
+    private string? _activeMapFilter;
     private bool _loadingMissions;
 
     // Upload
@@ -576,6 +607,37 @@
         }
     }
 
+    private IReadOnlyList<string> AvailableMaps => _missions
+        .Select(m => m.MapName)
+        .Where(m => !string.IsNullOrWhiteSpace(m))
+        .GroupBy(m => m, StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(g => g.Count())
+        .ThenBy(g => g.Key)
+        .Select(g => g.Key)
+        .ToList();
+
+    private bool HasMissionFilters =>
+        !string.IsNullOrWhiteSpace(_searchQuery) ||
+        !string.IsNullOrWhiteSpace(_activeMapFilter) ||
+        _activeFilterTags.Count > 0;
+
+    private void OnMissionSearchChanged(string value)
+    {
+        _searchQuery = value;
+        ApplyFilter();
+    }
+
+    private void SetMapFilter(string? map)
+    {
+        _activeMapFilter = string.Equals(_activeMapFilter, map, StringComparison.OrdinalIgnoreCase) ? null : map;
+        ApplyFilter();
+    }
+
+    private int CountMissionsOnMap(string map)
+    {
+        return _missions.Count(m => string.Equals(m.MapName, map, StringComparison.OrdinalIgnoreCase));
+    }
+
     private void ApplyFilter()
     {
         var filtered = _missions.AsEnumerable();
@@ -603,6 +665,11 @@
                     m.FileName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                     m.MapName.Contains(q, StringComparison.OrdinalIgnoreCase));
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_activeMapFilter))
+        {
+            filtered = filtered.Where(m => string.Equals(m.MapName, _activeMapFilter, StringComparison.OrdinalIgnoreCase));
         }
 
         if (_activeFilterTags.Count > 0)

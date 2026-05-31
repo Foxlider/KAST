@@ -90,6 +90,29 @@
     </div>
 </div>
 
+<div class="mod-command-row mb-3">
+    <MudTextField @bind-Value="_modSearchQuery"
+                  Placeholder="Search mods..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Immediate="true"
+                  Margin="Margin.Dense"
+                  Variant="Variant.Outlined"
+                  Class="mod-search" />
+    <div class="mod-filter-row">
+        @foreach (var filter in _modFilters)
+        {
+            <MudChip T="string" Size="Size.Small"
+                     Variant="@(_activeModFilter == filter.Key ? Variant.Filled : Variant.Outlined)"
+                     Color="@filter.Color"
+                     OnClick="@(() => SetModFilter(filter.Key))">
+                @filter.Label (@CountMods(filter.Key))
+            </MudChip>
+        }
+    </div>
+</div>
+
 @{
     var activeDownloads = _mods
         .Where(m => m.Status is ModStatus.Downloading or ModStatus.Updating)
@@ -123,7 +146,7 @@
         }
         else if (_viewMode == "table")
         {
-            <MudDataGrid T="SteamMod" Items="@_mods" Filterable="true" SortMode="SortMode.Multiple"
+            <MudDataGrid T="SteamMod" Items="@FilteredMods" Filterable="false" SortMode="SortMode.Multiple"
                          Hover="true" Dense="true" RowClick="@(args => ShowModDetails(args.Item))"
                          Virtualize="true" FixedHeader="true" Height="@GridHeight"
                          MultiSelection="true" @bind-SelectedItems="_selectedMods">
@@ -301,7 +324,7 @@
 else
 {
     <MudGrid>
-        @foreach (var mod in _mods)
+        @foreach (var mod in FilteredMods)
         {
             <MudItem xs="12" sm="6" md="4" lg="3">
                 <div @onclick="@(() => ShowModDetails(mod))" style="cursor:pointer;">
@@ -757,6 +780,22 @@ else
     private int _pendingCount;
     private string _commentInput = "";
     private string _viewMode = "table";
+    private string _modSearchQuery = "";
+    private string _activeModFilter = "all";
+    private DateTime _lastProgressUiRefresh = DateTime.MinValue;
+    private bool _progressRefreshQueued;
+    private bool _isDisposed;
+
+    private static readonly (string Key, string Label, Color Color)[] _modFilters =
+    [
+        ("all", "All", Color.Default),
+        ("installed", "Installed", Color.Success),
+        ("updates", "Updates", Color.Warning),
+        ("errors", "Errors", Color.Error),
+        ("workshop", "Workshop", Color.Info),
+        ("local", "Local", Color.Secondary),
+        ("downloading", "Downloading", Color.Primary)
+    ];
 
     // Preset import
     private IBrowserFile? _presetFile;
@@ -802,6 +841,7 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _isDisposed = true;
         Broadcaster.OnModDownloadProgress -= HandleDownloadProgress;
         Broadcaster.OnModStatusChanged    -= HandleStatusChanged;
         foreach (var (_, (state, handler)) in _progressSubscriptions)
@@ -842,7 +882,7 @@ else
             _expandedDownloadModIds.Add(evt.ModId);
         }
 
-        _ = InvokeAsync(StateHasChanged);
+        RequestProgressRender();
     }
 
     private void HandleStatusChanged(ModStatusChangedEvent _)
@@ -915,6 +955,91 @@ else
                int.TryParse(key["mod:".Length..], out var modId)
             ? modId
             : null;
+    }
+
+    private IReadOnlyList<SteamMod> FilteredMods => _mods
+        .Where(MatchesActiveModFilter)
+        .Where(MatchesModSearch)
+        .ToList();
+
+    private bool MatchesActiveModFilter(SteamMod mod)
+    {
+        return _activeModFilter switch
+        {
+            "installed" => mod.Status == ModStatus.Installed,
+            "updates" => mod.Status == ModStatus.UpdateAvailable,
+            "errors" => mod.Status == ModStatus.Error,
+            "workshop" => mod.Source == ModSource.SteamWorkshop,
+            "local" => mod.Source is ModSource.LocalFolder or ModSource.LocalZip,
+            "downloading" => mod.Status is ModStatus.Downloading or ModStatus.Updating,
+            _ => true
+        };
+    }
+
+    private bool MatchesModSearch(SteamMod mod)
+    {
+        if (string.IsNullOrWhiteSpace(_modSearchQuery))
+            return true;
+
+        var q = _modSearchQuery.Trim();
+        return mod.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+               (mod.Author?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               mod.WorkshopId.ToString().Contains(q, StringComparison.OrdinalIgnoreCase) ||
+               (mod.Comment?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private int CountMods(string filterKey)
+    {
+        return _mods.Count(mod => MatchesFilterKey(mod, filterKey) && MatchesModSearch(mod));
+    }
+
+    private static bool MatchesFilterKey(SteamMod mod, string filterKey)
+    {
+        return filterKey switch
+        {
+            "installed" => mod.Status == ModStatus.Installed,
+            "updates" => mod.Status == ModStatus.UpdateAvailable,
+            "errors" => mod.Status == ModStatus.Error,
+            "workshop" => mod.Source == ModSource.SteamWorkshop,
+            "local" => mod.Source is ModSource.LocalFolder or ModSource.LocalZip,
+            "downloading" => mod.Status is ModStatus.Downloading or ModStatus.Updating,
+            _ => true
+        };
+    }
+
+    private void SetModFilter(string filterKey)
+    {
+        _activeModFilter = filterKey;
+        _selectedMods.Clear();
+    }
+
+    private void RequestProgressRender()
+    {
+        if (_isDisposed)
+            return;
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastProgressUiRefresh).TotalMilliseconds >= 100)
+        {
+            _lastProgressUiRefresh = now;
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_progressRefreshQueued)
+            return;
+
+        _progressRefreshQueued = true;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            if (_isDisposed)
+                return;
+
+            _progressRefreshQueued = false;
+            _lastProgressUiRefresh = DateTime.UtcNow;
+            await InvokeAsync(StateHasChanged);
+        });
     }
 
     private double GetModProgress(int modId)

@@ -1,4 +1,15 @@
 /* ── Mod drag items — ensure the full MudBlazor wrapper is grabbable ── */
+.mod-assignment-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--mud-palette-divider);
+    border-radius: 4px;
+    background: rgba(128, 128, 128, .04);
+}
+
 ::deep .mud-drop-item {
     cursor: grab;
     margin-bottom: 2px;

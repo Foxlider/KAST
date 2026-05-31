@@ -91,6 +91,38 @@
 </div>
 
 @* ════════════ TABLE VIEW ════════════ *@
+<div class="mod-assignment-summary mb-2">
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Icon="@Icons.Material.Filled.Extension">
+        @Instance.Mods.Count loaded
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info" Icon="@Icons.Material.Filled.People">
+        @ClientMods.Count clientside
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Icon="@Icons.Material.Filled.Storage">
+        @ServerMods.Count serverside
+    </MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Icon="@Icons.Material.Filled.VpnKey">
+        @WhitelistedMods.Count whitelisted
+    </MudChip>
+    @if (AssignmentWarnings.Count > 0)
+    {
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning">
+            @AssignmentWarnings.Count warning(s)
+        </MudChip>
+    }
+</div>
+
+@if (AssignmentWarnings.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+        @string.Join(" ", AssignmentWarnings.Take(2))
+        @if (AssignmentWarnings.Count > 2)
+        {
+            <span> +@(AssignmentWarnings.Count - 2) more.</span>
+        }
+    </MudAlert>
+}
+
 @if (_viewMode == "table")
 {
     <MudTable Items="_filteredTableRows" Hover="true" Dense="true" Elevation="1"
@@ -112,6 +144,10 @@
                 <MudText Typo="Typo.body2" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px;">
                     @context.Name
                 </MudText>
+                @if (GetAssignmentWarning(context) is { } warning)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Warning">@warning</MudText>
+                }
             </MudTd>
             <MudTd DataLabel="Zone">
                 <MudSelect T="string" Value="@context.Zone" ValueChanged="@(async v => await MoveModToZone(context, v))"
@@ -490,6 +526,47 @@
                                      r.Name.Contains(_modSearch, StringComparison.OrdinalIgnoreCase));
 
     private int CountInZone(string zone) => _tableRows.Count(r => r.Zone == zone);
+
+    private IReadOnlyList<string> AssignmentWarnings => Instance.Mods
+        .Select(GetAssignmentWarning)
+        .Where(w => w is not null)
+        .Select(w => w!)
+        .Distinct()
+        .ToList();
+
+    private SteamMod? GetModForRow(ModDragItem row)
+    {
+        return _availableMods.FirstOrDefault(m => m.Id == row.ModId) ??
+               Instance.Mods.FirstOrDefault(m => m.SteamModId == row.ModId)?.SteamMod;
+    }
+
+    private string? GetAssignmentWarning(ModDragItem row)
+    {
+        if (row.Zone == "available")
+            return null;
+
+        var mod = GetModForRow(row);
+        return mod is null ? "Mod data missing" : GetAssignmentWarning(mod);
+    }
+
+    private static string? GetAssignmentWarning(ServerInstanceMod instanceMod)
+    {
+        var mod = instanceMod.SteamMod;
+        return mod is null ? "Mod data missing" : GetAssignmentWarning(mod);
+    }
+
+    private static string? GetAssignmentWarning(SteamMod mod)
+    {
+        return mod.Status switch
+        {
+            ModStatus.NotInstalled => $"{mod.Name} is assigned but not installed.",
+            ModStatus.Downloading or ModStatus.Updating => $"{mod.Name} is still downloading.",
+            ModStatus.Error => $"{mod.Name} needs attention before launch.",
+            _ when string.IsNullOrWhiteSpace(mod.LocalPath) && mod.Source == ModSource.SteamWorkshop =>
+                $"{mod.Name} has no local path.",
+            _ => null
+        };
+    }
 
     private int GetLoadOrder(ModDragItem row)
     {

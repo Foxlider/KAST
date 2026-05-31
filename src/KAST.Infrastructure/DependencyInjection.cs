@@ -12,9 +12,12 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddKastInfrastructure(this IServiceCollection services, string connectionString)
     {
-        services.AddDbContext<KastDbContext>(options =>
+        services.AddSingleton<SqliteConnectionPragmaInterceptor>();
+
+        services.AddDbContext<KastDbContext>((sp, options) =>
             options.UseSqlite(connectionString,
-                o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
+                    o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+                .AddInterceptors(sp.GetRequiredService<SqliteConnectionPragmaInterceptor>()));
 
         // Steam services
         services.AddSingleton<ISteamService>(sp =>
