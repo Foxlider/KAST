@@ -3,6 +3,7 @@ using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Services.Content;
+using KAST.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -286,7 +287,7 @@ public class ContentOrchestratorTests
         var tracker = new ContentProgressTracker();
         var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
         var logger = Substitute.For<ILogger<ContentOrchestrator>>();
-        return new ContentOrchestrator(scopeFactory, tracker, installers, logger);
+        return new ContentOrchestrator(scopeFactory, tracker, installers, logger, new OutputSanitizer());
     }
 
     private static ServiceProvider BuildServiceProvider(string? dbName = null)

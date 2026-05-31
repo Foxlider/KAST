@@ -1,13 +1,10 @@
-@* General: basic settings, DLC, schedule, performance, launch command preview *@
+@* General: basic settings, DLC, schedule, performance *@
 
 <MudGrid Class="mt-3">
     <MudItem xs="12" sm="6">
         <MudTextField Value="@Instance.Name"
                       ValueChanged="@((string v) => { Instance.Name = v; _ = OnNameChanged.InvokeAsync(); })"
                       Label="Instance Name" FullWidth="true" />
-    </MudItem>
-    <MudItem xs="12" sm="6">
-        <MudTextField @bind-Value="Instance.InstallPath" Label="Install Path" FullWidth="true" />
     </MudItem>
     <MudItem xs="6" sm="3">
         <MudNumericField @bind-Value="Instance.Port" Label="Game Port" Min="1" Max="65535" />
@@ -97,31 +94,12 @@
     </MudItem>
 </MudGrid>
 
-@* Command line preview *@
-<div class="mt-4">
-    <div class="d-flex align-center gap-2 mb-1">
-        <MudText Typo="Typo.subtitle1">Launch Command</MudText>
-        <MudIconButton Icon="@(_cmdExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                       Size="Size.Small" OnClick="@(() => _cmdExpanded = !_cmdExpanded)" />
-    </div>
-    @if (_cmdExpanded && GetCommandLinePreview != null)
-    {
-        <MudPaper Elevation="0" Class="pa-2"
-                  Style="background:var(--mud-palette-background-grey); font-family:monospace; font-size:12px; overflow-x:auto; word-break:break-all;">
-            @GetCommandLinePreview()
-        </MudPaper>
-    }
-</div>
-
 @code {
     [Parameter, EditorRequired] public ServerInstance Instance { get; set; } = default!;
     [Parameter, EditorRequired] public ServerConfigData ServerConfig { get; set; } = default!;
     [Parameter] public bool IsNew { get; set; }
     [Parameter] public EventCallback OnNameChanged { get; set; }
     [Parameter] public EventCallback OnServerConfigChanged { get; set; }
-    [Parameter] public Func<string>? GetCommandLinePreview { get; set; }
-
-    private bool _cmdExpanded;
 
     private string _restartPolicyStr
     {

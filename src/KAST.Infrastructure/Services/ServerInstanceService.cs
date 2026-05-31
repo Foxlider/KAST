@@ -17,6 +17,7 @@ public class ServerInstanceService(
     IProcessManagerService processManager,
     IAppEventBroadcaster broadcaster,
     ILogger<ServerInstanceService> logger,
+    IOutputSanitizer sanitizer,
     IHostEnvironment? hostEnvironment = null) : IServerInstanceService
 {
     public async Task<IReadOnlyList<ServerInstance>> GetAllInstancesAsync(CancellationToken ct = default)
@@ -120,9 +121,6 @@ public class ServerInstanceService(
             && await db.ServerInstances
                 .AnyAsync(s => s.Id != id && s.InstallPath == installPath, ct);
 
-        activity?.SetTag("instance.install_path", installPath ?? "");
-        activity?.SetTag("instance.path_shared",  isInstallPathShared);
-
         db.ServerInstances.Remove(instance);
         await db.SaveChangesAsync(ct);
 
@@ -134,15 +132,15 @@ public class ServerInstanceService(
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
                 ["exception.type"]    = ex.GetType().Name,
-                ["exception.message"] = ex.Message
+                ["exception.message"] = sanitizer.Sanitize(ex.Message)
             }));
             logger.LogError(ex,
-                "Failed to clean up files for deleted instance {Id} ({Name}) at {Path}",
-                id, instance.Name, installPath);
+                "Failed to clean up files for deleted instance {Id} ({Name})",
+                id, instance.Name);
         }
     }
 
@@ -187,7 +185,7 @@ public class ServerInstanceService(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "Failed to remove mod symlink {Path}", linkPath);
+                    logger.LogWarning(ex, "Failed to remove mod symlink for instance {Id}", instance.Id);
                 }
             }
         }
@@ -197,14 +195,14 @@ public class ServerInstanceService(
         {
             TryDeleteDirectory(GetInstanceInstallDirectory(instance), recursive: true);
             logger.LogInformation(
-                "Wiped install directory {Path} for instance {Id}",
-                instance.InstallPath, instance.Id);
+                "Wiped install directory for instance {Id}",
+                instance.Id);
         }
         else
         {
             logger.LogInformation(
-                "Kept install directory {Path} (shared with other instances) for instance {Id}",
-                instance.InstallPath, instance.Id);
+                "Kept install directory shared with other instances for instance {Id}",
+                instance.Id);
         }
     }
 
@@ -219,7 +217,7 @@ public class ServerInstanceService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to delete directory {Path}", path);
+            logger.LogWarning(ex, "Failed to delete instance directory");
         }
     }
 
@@ -257,9 +255,9 @@ public class ServerInstanceService(
             var executable = GetServerExecutable(instance);
             var args = BuildLaunchArguments(instance);
 
-            activity?.SetTag("instance.executable", executable);
+            activity?.SetTag("instance.executable", sanitizer.ToDisplayPath(executable));
 
-            logger.LogInformation("Starting server {Name} with args: {Args}", instance.Name, args);
+            logger.LogInformation("Starting server {Name}", instance.Name);
 
             // Callbacks for stdout/stderr lines and process exit
             void OnOutputLine(int pid, string line)
@@ -314,11 +312,11 @@ public class ServerInstanceService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to start server instance {Id}", id);
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
                 ["exception.type"]    = ex.GetType().Name,
-                ["exception.message"] = ex.Message
+                ["exception.message"] = sanitizer.Sanitize(ex.Message)
             }));
             // If the process never got a PID the server never actually ran — reset to Stopped
             // so the user can try again. Crashed is reserved for processes that ran and then died.
@@ -396,11 +394,11 @@ public class ServerInstanceService(
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
                 ["exception.type"]    = ex.GetType().Name,
-                ["exception.message"] = ex.Message
+                ["exception.message"] = sanitizer.Sanitize(ex.Message)
             }));
             throw;
         }
@@ -498,7 +496,7 @@ public class ServerInstanceService(
             }
 
             Directory.CreateSymbolicLink(linkPath, mod.LocalPath);
-            logger.LogInformation("Linked mod {ModName} -> {LinkPath}", mod.Name, linkPath);
+            logger.LogInformation("Linked mod {ModName}", mod.Name);
             linkedCount++;
         }
 
@@ -739,7 +737,7 @@ public class ServerInstanceService(
             if (File.Exists(symlinkPath) || Directory.Exists(symlinkPath))
             {
                 File.Delete(symlinkPath);
-                logger.LogInformation("Removed Linux profile symlink {Path}", symlinkPath);
+                logger.LogInformation("Removed Linux profile symlink");
             }
         }
         catch (Exception ex)

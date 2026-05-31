@@ -3,6 +3,7 @@
 @inject IApiKeyService ApiKeyService
 @inject ISettingsService SettingsService
 @inject ISteamService SteamService
+@inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject ThemeService ThemeService
 @inject NavigationManager Navigation
@@ -350,7 +351,7 @@
         if (!string.IsNullOrEmpty(session.ErrorMessage))
         {
             _loggingIn = false;
-            Snackbar.Add($"QR error: {session.ErrorMessage}", Severity.Error);
+            Snackbar.Add($"QR error: {OutputSanitizer.Sanitize(session.ErrorMessage)}", Severity.Error);
             StateHasChanged();
             return;
         }
@@ -383,7 +384,7 @@
         if (!string.IsNullOrEmpty(session.ErrorMessage))
         {
             _loggingIn = false;
-            Snackbar.Add($"Credential login error: {session.ErrorMessage}", Severity.Error);
+            Snackbar.Add($"Credential login error: {OutputSanitizer.Sanitize(session.ErrorMessage)}", Severity.Error);
             StateHasChanged();
             return;
         }
@@ -494,10 +495,10 @@
         {
             if (!SteamService.IsConnected)
             { _benchmarkStatus = "Connecting to Steam..."; StateHasChanged(); await SteamService.LoginAnonymousAsync(); }
-            var log = new Progress<string>(msg => InvokeAsync(() => { _benchmarkStatus = msg; StateHasChanged(); }));
+            var log = new Progress<string>(msg => InvokeAsync(() => { _benchmarkStatus = OutputSanitizer.Sanitize(msg); StateHasChanged(); }));
             _benchmarkResults = await SteamService.BenchmarkDownloadAsync(log);
         }
-        catch (Exception ex) { Snackbar.Add($"Benchmark failed: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Benchmark failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { _benchmarkRunning = false; _benchmarkStatus = null; StateHasChanged(); }
     }
 

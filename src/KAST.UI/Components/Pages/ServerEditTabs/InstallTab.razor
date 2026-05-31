@@ -1,5 +1,6 @@
 @inject IContentOrchestrator ContentOrchestrator
 @inject ContentProgressTracker ContentTracker
+@inject IOutputSanitizer OutputSanitizer
 @inject ISettingsService SettingsService
 @inject IJSRuntime JS
 @inject IServerInstanceService ServerService
@@ -123,7 +124,7 @@
                                     }
                                     else if (step.Status == ContentStepStatus.Failed)
                                     {
-                                        <MudAlert Severity="Severity.Error" Dense="true">@(step.Error ?? "Step failed")</MudAlert>
+                                        <MudAlert Severity="Severity.Error" Dense="true">@(OutputSanitizer.Sanitize(step.Error) ?? "Step failed")</MudAlert>
                                     }
                                 </div>
                             </MudStep>
@@ -156,7 +157,7 @@
                      @ref="_installLogRef">
                     @foreach (var line in _installState.Log)
                     {
-                        <div>@line</div>
+                        <div>@OutputSanitizer.Sanitize(line)</div>
                     }
                 </div>
             </MudPaper>
@@ -201,7 +202,7 @@
                         <MudText Typo="Typo.body2">@r.Label</MudText>
                         @if (!string.IsNullOrEmpty(r.Detail))
                         {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@r.Detail</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@OutputSanitizer.Sanitize(r.Detail)</MudText>
                         }
                     </div>
                 </div>
@@ -336,13 +337,13 @@
         });
     }
 
-    private static string? GetStepSecondaryText(ContentStep step) => step.Status switch
+    private string? GetStepSecondaryText(ContentStep step) => step.Status switch
     {
         ContentStepStatus.InProgress => step.IsIndeterminate ? "running\u2026" : $"{step.Progress:F0}%",
         ContentStepStatus.Completed  => "done",
-        ContentStepStatus.Failed     => step.Error ?? "failed",
+        ContentStepStatus.Failed     => OutputSanitizer.Sanitize(step.Error) ?? "failed",
         ContentStepStatus.Skipped    => "skipped",
-        _                            => step.Detail
+        _                            => OutputSanitizer.Sanitize(step.Detail)
     };
 
     public ValueTask DisposeAsync()
