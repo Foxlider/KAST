@@ -200,6 +200,54 @@ public class ServerInstanceServiceTests : IDisposable
     }
 
     [Fact]
+    public void GetCommandLine_UsesAbsolutePerInstancePathsForArmaPathArguments()
+    {
+        var relativeInstallPath = Path.Combine("servers", "Server-20260528-202725");
+        var instance = new ServerInstance
+        {
+            Id = 2,
+            InstallPath = relativeInstallPath,
+            Port = 2302,
+            ServerCfgContent = "BattlEye = 0;",
+            ArmaProfileContent = "class DifficultyPresets {};",
+            BasicCfgContent = """
+                              // KAST Basic Server Configuration
+
+                              viewDistance = 2000;
+                              terrainGrid = 25;
+                              MaxMsgSend = 128;
+                              MaxSizeGuaranteed = 512;
+                              MaxSizeNonguaranteed = 256;
+                              MinBandwidth = 131072;
+                              MaxBandwidth = 10000000000;
+                              MinErrorToSend = 0.001;
+                              MinErrorToSendNear = 0.01;
+                              MaxCustomFileSize = 1024;
+                              class sockets
+                              {
+                                  maxPacketSize = 1400;
+                              };
+                              """
+        };
+
+        var commandLine = _sut.GetCommandLine(instance);
+
+        var fullInstallPath = Path.GetFullPath(relativeInstallPath, AppContext.BaseDirectory);
+        var configDir = Path.Combine(fullInstallPath, "KAST", instance.Id.ToString());
+        var executableName = OperatingSystem.IsWindows()
+            ? "arma3server_x64.exe"
+            : "arma3server_x64";
+
+        Assert.StartsWith(Path.Combine(fullInstallPath, executableName), commandLine);
+        if (!OperatingSystem.IsLinux())
+            Assert.Contains($"\"-profiles={configDir}\"", commandLine);
+        Assert.Contains($"\"-config={Path.Combine(configDir, "server.cfg")}\"", commandLine);
+        Assert.Contains($"\"-cfg={Path.Combine(configDir, "basic.cfg")}\"", commandLine);
+        Assert.DoesNotContain($"-config={relativeInstallPath}", commandLine);
+        Assert.DoesNotContain($"-cfg={relativeInstallPath}", commandLine);
+    }
+
+    [Fact]
     public async Task StartInstance_ProcessFails_SetsCrashedStatus()
     {
         var instance = await SeedInstanceAsync();

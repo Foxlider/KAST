@@ -129,7 +129,7 @@
             var settings = await SettingsService.GetSettingsAsync();
             _serversDirectory = settings.ServersDirectory;
             _instance.Name = $"Server-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
-            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
+            _instance.InstallPath = BuildInstallPath(_serversDirectory, _instance.Name);
             _serverConfig.Hostname = _instance.Name;
         }
 
@@ -141,7 +141,19 @@
     private void OnNameChanged()
     {
         if (_isNew && !string.IsNullOrWhiteSpace(_instance.Name))
-            _instance.InstallPath = Path.Combine(_serversDirectory, _instance.Name);
+            _instance.InstallPath = BuildInstallPath(_serversDirectory, _instance.Name);
+    }
+
+    private static string BuildInstallPath(string serversDirectory, string serverName)
+    {
+        var safeName = serverName.Trim();
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+            safeName = safeName.Replace(invalidChar, '_');
+        safeName = safeName
+            .Replace(Path.DirectorySeparatorChar, '_')
+            .Replace(Path.AltDirectorySeparatorChar, '_');
+
+        return Path.Join(serversDirectory, string.IsNullOrWhiteSpace(safeName) ? "Server" : safeName);
     }
 
     private void OnServerConfigChanged() => _serverCfgRaw = ConfigService.SerializeServerConfig(_serverConfig);
