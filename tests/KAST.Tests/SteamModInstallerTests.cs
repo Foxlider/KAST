@@ -2,6 +2,7 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Services.Content;
+using KAST.Infrastructure.Services;
 using NSubstitute;
 
 namespace KAST.Tests;
@@ -13,7 +14,7 @@ public class SteamModInstallerTests
     {
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs);
+        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -35,7 +36,7 @@ public class SteamModInstallerTests
         steam.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
 
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs);
+        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
 
         var request = new ContentInstallRequest
         {
@@ -71,7 +72,7 @@ public class SteamModInstallerTests
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize("/tmp/mod").Returns(8192L);
 
-        var sut = new SteamModInstaller(steam, fs);
+        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
 
         var request = new ContentInstallRequest
         {
@@ -111,7 +112,7 @@ public class SteamModInstallerTests
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize("/tmp/mod").Returns(1234L);
 
-        var sut = new SteamModInstaller(steam, fs);
+        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
         var request = new ContentInstallRequest
         {
             Type = ContentType.SteamMod,
@@ -139,7 +140,7 @@ public class SteamModInstallerTests
     {
         var steam = Substitute.For<ISteamService>();
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs);
+        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
 
         var results = sut.Validate(new ContentInstallRequest
         {
@@ -161,7 +162,7 @@ public class SteamModInstallerTests
             var steam = Substitute.For<ISteamService>();
             var fs = Substitute.For<IFileSystemService>();
             fs.GetDirectorySize(path).Returns(5555L);
-            var sut = new SteamModInstaller(steam, fs);
+            var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
 
             var results = sut.Validate(new ContentInstallRequest
             {

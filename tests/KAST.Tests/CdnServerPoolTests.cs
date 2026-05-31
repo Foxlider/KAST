@@ -1,3 +1,4 @@
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Steam;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -19,7 +20,7 @@ public class CdnServerPoolTests
         Assert.NotNull(steamContent);
 
         var logger = Substitute.For<ILogger>();
-        using var pool = new CdnServerPool(steamClient, steamContent!, logger, parent.Token);
+        using var pool = new CdnServerPool(steamClient, steamContent!, logger, new OutputSanitizer(), parent.Token);
 
         var server = CreateServerStub();
         pool.ReturnServer(server, isFaulty: false);
@@ -40,7 +41,7 @@ public class CdnServerPoolTests
         Assert.NotNull(steamContent);
 
         var logger = Substitute.For<ILogger>();
-        using var pool = new CdnServerPool(steamClient, steamContent!, logger, parent.Token);
+        using var pool = new CdnServerPool(steamClient, steamContent!, logger, new OutputSanitizer(), parent.Token);
 
         var server = CreateServerStub();
         pool.ReturnServer(server, isFaulty: true);
@@ -62,7 +63,7 @@ public class CdnServerPoolTests
         Assert.NotNull(steamContent);
 
         var logger = Substitute.For<ILogger>();
-        using var pool = new CdnServerPool(steamClient, steamContent!, logger, parent.Token);
+        using var pool = new CdnServerPool(steamClient, steamContent!, logger, new OutputSanitizer(), parent.Token);
 
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();

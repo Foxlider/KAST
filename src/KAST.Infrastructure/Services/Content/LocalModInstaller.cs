@@ -7,7 +7,7 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Installs a local mod: extracts a ZIP or validates an existing folder.
 /// </summary>
-public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
+public class LocalModInstaller(IFileSystemService fs, IOutputSanitizer sanitizer) : IContentInstaller
 {
     public ContentType Type => ContentType.LocalMod;
 
@@ -17,9 +17,9 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
         var steps = new List<ContentStep>();
 
         if (isZip)
-            steps.Add(new ContentStep { Name = "Extract archive", Detail = Path.GetFileName(request.SourcePath) });
+            steps.Add(new ContentStep { Name = "Extract archive", Detail = $"{sanitizer.ToDisplayPath(request.SourcePath)} → {sanitizer.ToDisplayPath(request.DestinationPath)}" });
 
-        steps.Add(new ContentStep { Name = "Calculate size", Detail = request.DestinationPath });
+        steps.Add(new ContentStep { Name = "Calculate size", Detail = sanitizer.ToDisplayPath(request.DestinationPath) });
 
         return steps;
     }
@@ -32,7 +32,7 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
         if (isZip)
         {
             state.BeginStep(stepIdx);
-            state.AddLog($"Extracting {Path.GetFileName(request.SourcePath)} → {request.DestinationPath}");
+            state.AddLog($"Extracting {sanitizer.ToDisplayPath(request.SourcePath)} to {sanitizer.ToDisplayPath(request.DestinationPath)}");
 
             var currentStep = stepIdx;
             var progress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
@@ -44,7 +44,7 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
         }
 
         state.BeginStep(stepIdx);
-        state.AddLog("Calculating size on disk...");
+        state.AddLog($"Calculating size on disk for {sanitizer.ToDisplayPath(request.DestinationPath)}...");
 
         long size = fs.GetDirectorySize(request.DestinationPath);
         state.AddLog($"Size: {size / (1024.0 * 1024.0):F1} MiB");
@@ -56,7 +56,8 @@ public class LocalModInstaller(IFileSystemService fs) : IContentInstaller
     {
         var results = new List<ContentValidationResult>();
         bool exists = Directory.Exists(request.DestinationPath);
-        results.Add(new("Mod directory", exists, request.DestinationPath));
+        var displayPath = sanitizer.ToDisplayPath(request.DestinationPath);
+        results.Add(new("Mod directory", exists, exists ? displayPath : $"Missing: {displayPath}"));
 
         if (!exists) return results;
 
