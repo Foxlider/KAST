@@ -73,7 +73,7 @@ public class ContentOrchestrator(
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps",  steps.Count);
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token), cts.Token);
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token));
         return state;
     }
 
@@ -121,7 +121,7 @@ public class ContentOrchestrator(
         activity?.SetTag("content.queued", true);
         activity?.SetTag("content.steps",  steps.Count);
 
-        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError), cts.Token);
+        _ = Task.Run(() => RunAsync(key, request, state, cts.Token, onComplete, onError));
         return state;
     }
 
