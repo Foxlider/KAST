@@ -57,10 +57,15 @@
                 skipAnimation = DateTime.UtcNow - ts < SuppressWindow;
             }
         }
-        catch
+        catch (InvalidOperationException)
         {
             // Storage may be unavailable during pre-rendering; default to
             // playing the animation (safe fallback).
+            skipAnimation = false;
+        }
+        catch (Microsoft.JSInterop.JSException)
+        {
+            skipAnimation = false;
         }
 
         if (skipAnimation)
@@ -76,7 +81,7 @@
         {
             await Storage.SetAsync(TimestampKey, DateTime.UtcNow.ToString("O"));
         }
-        catch
+        catch (InvalidOperationException)
         {
             // Non-critical — worst case the animation replays on reconnect.
         }

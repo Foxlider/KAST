@@ -42,8 +42,9 @@ public class KastApiPresetsEndpointsTests
     public async Task GetPresetById_NotFound_Returns404()
     {
         var presetService = Substitute.For<IModPresetService>();
+        ModPreset? missingPreset = null;
         presetService.GetPresetByIdAsync(999, Arg.Any<CancellationToken>())
-            .Returns((ModPreset?)null);
+            .Returns(missingPreset);
 
         await using var app = await CreateApiAppAsync(presetsService: presetService);
 

@@ -42,10 +42,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
 
         if (request.Instance is null) return steps;
 
-        foreach (var dlc in DlcTable)
+        foreach (var dlc in DlcTable.Where(dlc => dlc.Enabled(request.Instance)))
         {
-            if (!dlc.Enabled(request.Instance)) continue;
-
             string detail = dlc.Branch is not null ? $"branch: {dlc.Branch}"
                 : dlc.DepotId == 0 ? "no server depot"
                 : $"depot {dlc.DepotId}";
@@ -107,7 +105,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 ignorePlatformFilter: false, branch: "public",
                 maxParallelDownloads: maxPar, ct: ct);
 
-            var exe = Path.Combine(request.DestinationPath,
+            var exe = Path.Join(request.DestinationPath,
                 RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "arma3server_x64.exe" : "arma3server_x64");
             fs.SetExecutable(exe);
 
@@ -116,10 +114,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
             logger.LogInformation("Server install [{Instance}]: step 1 complete — base server done", instance.Name);
 
             // ── Steps 1..N: Creator DLC depots ───────────────────────────────────
-            foreach (var dlc in DlcTable)
+            foreach (var dlc in DlcTable.Where(dlc => dlc.Enabled(instance)))
             {
-                if (!dlc.Enabled(instance)) continue;
-
                 stepIdx++;
                 string branch = dlc.Branch ?? CreatorDlcBranch;
 
@@ -240,8 +236,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
             return;
         }
 
-        var tempRedist = Path.Combine(Path.GetTempPath(), "kast_directx_Jun2010_redist.exe");
-        var tempExtract = Path.Combine(Path.GetTempPath(), "kast_dxredist");
+        var tempRedist = Path.Join(Path.GetTempPath(), "kast_directx_Jun2010_redist.exe");
+        var tempExtract = Path.Join(Path.GetTempPath(), "kast_dxredist");
         try
         {
             bool isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
@@ -340,9 +336,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         // from the Windows directory to correctly handle WOW64 redirection.
         string sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
         string sys86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
-        return File.Exists(Path.Combine(sys, "D3DX9_43.dll"))
-            || File.Exists(Path.Combine(sys86, "D3DX9_43.dll"))
-            || File.Exists(Path.Combine(sys, "XINPUT1_3.dll"));
+        return File.Exists(Path.Join(sys, "D3DX9_43.dll"))
+            || File.Exists(Path.Join(sys86, "D3DX9_43.dll"))
+            || File.Exists(Path.Join(sys, "XINPUT1_3.dll"));
     }
 
     /// <summary>

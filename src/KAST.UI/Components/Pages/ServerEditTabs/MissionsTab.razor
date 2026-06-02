@@ -596,7 +596,11 @@
             _allTags = (await MissionService.GetTagsForInstanceAsync(Instance.Id)).ToList();
             ApplyFilter();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Failed to load missions: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Failed to load missions: {ex.Message}", Severity.Error);
         }
@@ -742,10 +746,20 @@
                 await MissionService.UploadMissionAsync(Instance.Id, file.Name, stream);
                 uploaded++;
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 failed++;
                 Snackbar.Add($"Failed: {file.Name} — {ex.Message}", Severity.Error);
+            }
+            catch (IOException ex)
+            {
+                failed++;
+                Snackbar.Add($"Failed: {file.Name}: {ex.Message}", Severity.Error);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                failed++;
+                Snackbar.Add($"Failed: {file.Name}: {ex.Message}", Severity.Error);
             }
         }
 
@@ -779,7 +793,7 @@
             Snackbar.Add($"Deleted {mission.DisplayName}", Severity.Success);
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
         }
@@ -813,7 +827,7 @@
             _showAddToCampaignDialog = false;
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
         }
@@ -827,7 +841,7 @@
             Snackbar.Add("Mission removed from campaign", Severity.Success);
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
         }
@@ -852,7 +866,7 @@
             _newCampaignDescription = "";
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed to create campaign: {ex.Message}", Severity.Error);
         }
@@ -869,7 +883,7 @@
             Snackbar.Add($"Campaign '{campaign.Title}' deleted", Severity.Success);
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
         }
@@ -893,7 +907,7 @@
             _showAddToSetDialog = false;
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
         }
@@ -907,7 +921,7 @@
             Snackbar.Add("Mission removed from set", Severity.Success);
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed: {ex.Message}", Severity.Error);
         }
@@ -932,7 +946,7 @@
             _newSetDescription = "";
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed to create set: {ex.Message}", Severity.Error);
         }
@@ -949,7 +963,7 @@
             Snackbar.Add($"Set '{set.Title}' deleted", Severity.Success);
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
         }
@@ -963,7 +977,14 @@
         {
             _availablePresets = (await ModPresetService.GetPresetsForInstanceAsync(Instance.Id)).ToList();
         }
-        catch { _availablePresets = []; }
+        catch (InvalidOperationException)
+        {
+            _availablePresets = [];
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            _availablePresets = [];
+        }
 
         _editingMission = mission;
         _editDisplayName = mission.DisplayName;
@@ -986,7 +1007,7 @@
             _showEditDialog = false;
             await RefreshAll();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Update failed: {ex.Message}", Severity.Error);
         }
@@ -1032,7 +1053,7 @@
                     await AssignTagToMission(newTag);
                     _tagSearchText = "";
                 }
-                catch (Exception ex)
+                catch (InvalidOperationException ex)
                 {
                     Snackbar.Add($"Failed to create tag: {ex.Message}", Severity.Error);
                 }
@@ -1050,7 +1071,7 @@
             await RefreshAll();
             StateHasChanged();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed to add tag: {ex.Message}", Severity.Error);
         }
@@ -1066,7 +1087,7 @@
             await RefreshAll();
             StateHasChanged();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Snackbar.Add($"Failed to remove tag: {ex.Message}", Severity.Error);
         }

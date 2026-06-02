@@ -52,7 +52,17 @@ public class MetricsBackgroundService(
                 {
                     break;
                 }
-                catch (Exception ex)
+                catch (InvalidOperationException ex)
+                {
+                    monitoringOk = false;
+                    logger.LogWarning(ex, "Error collecting metrics");
+                }
+                catch (IOException ex)
+                {
+                    monitoringOk = false;
+                    logger.LogWarning(ex, "Error collecting metrics");
+                }
+                catch (System.ComponentModel.Win32Exception ex)
                 {
                     monitoringOk = false;
                     logger.LogWarning(ex, "Error collecting metrics");
@@ -84,7 +94,11 @@ public class MetricsBackgroundService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             { break; }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
+            { logger.LogWarning(ex, "Error collecting metrics"); }
+            catch (IOException ex)
+            { logger.LogWarning(ex, "Error collecting metrics"); }
+            catch (System.ComponentModel.Win32Exception ex)
             { logger.LogWarning(ex, "Error collecting metrics"); }
         }
 
@@ -99,7 +113,11 @@ public class MetricsBackgroundService(
             var health = await healthChecks.CheckHealthAsync(ct);
             return health.Status;
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            return HealthStatus.Unhealthy;
+        }
+        catch (IOException)
         {
             return HealthStatus.Unhealthy;
         }
@@ -112,7 +130,11 @@ public class MetricsBackgroundService(
             var db = services.GetRequiredService<KastDbContext>();
             return await db.Database.CanConnectAsync(ct);
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
         {
             return false;
         }

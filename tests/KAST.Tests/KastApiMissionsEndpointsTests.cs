@@ -41,8 +41,9 @@ public class KastApiMissionsEndpointsTests
     public async Task GetMissionById_NotFound_Returns404()
     {
         var missionService = Substitute.For<IMissionService>();
+        Mission? missingMission = null;
         missionService.GetMissionByIdAsync(999, Arg.Any<CancellationToken>())
-            .Returns((Mission?)null);
+            .Returns(missingMission);
 
         await using var app = await CreateApiAppAsync(missionService: missionService);
 

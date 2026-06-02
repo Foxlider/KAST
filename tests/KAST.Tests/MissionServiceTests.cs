@@ -36,13 +36,13 @@ public class MissionServiceTests : IDisposable
 
     private async Task<ServerInstance> SeedInstance(string name = "Test Server", string? installPath = null)
     {
-        installPath ??= Path.Combine(Path.GetTempPath(), "kast-mission-tests", Guid.NewGuid().ToString("N"));
+        installPath ??= Path.Join(Path.GetTempPath(), "kast-mission-tests", Guid.NewGuid().ToString("N"));
         var instance = new ServerInstance { Name = name, InstallPath = installPath };
         _db.ServerInstances.Add(instance);
         await _db.SaveChangesAsync();
 
         // Setup mpmissions directory for upload tests
-        var mpmissionsDir = Path.Combine(installPath, "mpmissions");
+        var mpmissionsDir = Path.Join(installPath, "mpmissions");
         if (Directory.Exists(installPath))
             Directory.Delete(installPath, recursive: true);
         Directory.CreateDirectory(mpmissionsDir);
@@ -57,7 +57,7 @@ public class MissionServiceTests : IDisposable
     {
         var instance = await _db.ServerInstances.FindAsync(instanceId)
             ?? throw new InvalidOperationException($"Missing test instance {instanceId}");
-        var missionPath = Path.Combine(instance.InstallPath, "mpmissions", fileName);
+        var missionPath = Path.Join(instance.InstallPath, "mpmissions", fileName);
         Directory.CreateDirectory(Path.GetDirectoryName(missionPath)!);
         await File.WriteAllBytesAsync(missionPath, [0x00, 0x50, 0x42, 0x4F]);
 
@@ -162,11 +162,11 @@ public class MissionServiceTests : IDisposable
     public async Task UploadMission_DuplicateFilename_ReplacesExistingFileAndRecord()
     {
         var instance = await SeedInstance("DupServer", "/tmp/servers/dup-test");
-        var mpmissionsDir = Path.Combine(instance.InstallPath, "mpmissions");
+        var mpmissionsDir = Path.Join(instance.InstallPath, "mpmissions");
         Directory.CreateDirectory(mpmissionsDir);
 
         // Pre-create a file with the same name
-        var existingPath = Path.Combine(mpmissionsDir, "mission.pbo");
+        var existingPath = Path.Join(mpmissionsDir, "mission.pbo");
         File.WriteAllText(existingPath, "existing");
 
         var existingMission = new Mission

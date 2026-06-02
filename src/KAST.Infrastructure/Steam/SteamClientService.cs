@@ -1195,7 +1195,7 @@ public class SteamClientService : ISteamService, IDisposable
                     _logger.LogDebug("{Prefix}: downloading file {Path} ({Size:F2} MB)",
                         logPrefix, _sanitizer.ToDisplayPath(relativePath), fileSizeMb);
 
-                    var tempPath = Path.Combine(
+                    var tempPath = Path.Join(
                         dir ?? destinationPath,
                         $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
                     var downloadAttempt = 0;
@@ -1265,7 +1265,7 @@ public class SteamClientService : ISteamService, IDisposable
                             _logger.LogWarning("{Prefix}: hash mismatch for {File}, retry {Attempt}/{Max}",
                                 logPrefix, relativePath, downloadAttempt, maxHashRetries);
                             TryDeleteTempFile(tempPath);
-                            tempPath = Path.Combine(
+                            tempPath = Path.Join(
                                 dir ?? destinationPath,
                                 $".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.kastdownload");
                         }

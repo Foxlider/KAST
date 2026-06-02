@@ -35,7 +35,18 @@ public class KeyboardShortcutService : IAsyncDisposable
     {
         if (_initialized)
         {
-            try { await _js.InvokeVoidAsync("KAST.keyboard.dispose"); } catch { }
+            try
+            {
+                await _js.InvokeVoidAsync("KAST.keyboard.dispose");
+            }
+            catch (JSDisconnectedException)
+            {
+                _initialized = false;
+            }
+            catch (InvalidOperationException)
+            {
+                _initialized = false;
+            }
         }
         _dotNetRef?.Dispose();
     }

@@ -83,7 +83,11 @@ public sealed class ModDownloadManager(
             {
                 await StartDownloadAsync(modId, isUpdate);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
+            {
+                logger.LogError(ex, "Failed to queue mod download {ModId}.", modId);
+            }
+            catch (IOException ex)
             {
                 logger.LogError(ex, "Failed to queue mod download {ModId}.", modId);
             }
@@ -114,7 +118,7 @@ public sealed class ModDownloadManager(
         if (isUpdate && !string.IsNullOrWhiteSpace(mod.LocalPath))
             return mod.LocalPath;
 
-        return Path.Combine(modsDirectory, mod.WorkshopId.ToString());
+        return Path.Join(modsDirectory, mod.WorkshopId.ToString());
     }
 
     private static async Task MarkModStartedAsync(IServiceProvider sp, int modId, bool isUpdate)

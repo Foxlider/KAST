@@ -10,7 +10,7 @@ public class KastDbContextSqliteTests
     [Fact]
     public async Task SaveChangesAsync_WithConcurrentSqliteContexts_SerializesWrites()
     {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"kast-{Guid.NewGuid():N}.db");
+        var dbPath = Path.Join(Path.GetTempPath(), $"kast-{Guid.NewGuid():N}.db");
         var options = new DbContextOptionsBuilder<KastDbContext>()
             .UseSqlite($"Data Source={dbPath};Pooling=False")
             .Options;

@@ -903,6 +903,7 @@
         StateHasChanged();
 
         var desiredClientMods = new List<SteamMod>();
+        var failedPresetImports = 0;
 
         foreach (var (workshopId, _) in selectedPresetMods)
         {
@@ -918,11 +919,25 @@
 
                 desiredClientMods.Add(mod);
             }
-            catch { }
+            catch (InvalidOperationException)
+            {
+                failedPresetImports++;
+            }
+            catch (IOException)
+            {
+                failedPresetImports++;
+            }
+            catch (HttpRequestException)
+            {
+                failedPresetImports++;
+            }
 
             _presetImportDone++;
             StateHasChanged();
         }
+
+        if (failedPresetImports > 0)
+            Snackbar.Add($"Skipped {failedPresetImports} preset mod(s) that could not be resolved.", Severity.Warning);
 
         foreach (var clientMod in clientsToUnload)
         {
@@ -979,7 +994,11 @@
                 : _parsedPresetName;
             await ModPresetService.ImportFromArmaHtmlAsync(Instance.Id, presetName, _parsedPresetHtml);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Preset saved but failed to persist: {ex.Message}", Severity.Warning);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Preset saved but failed to persist: {ex.Message}", Severity.Warning);
         }
@@ -1001,7 +1020,11 @@
         {
             _presets = (await ModPresetService.GetPresetsForInstanceAsync(Instance.Id)).ToList();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Failed to load presets: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Failed to load presets: {ex.Message}", Severity.Error);
         }
@@ -1020,7 +1043,11 @@
             await LoadPresets();
             StateHasChanged();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Failed to save preset: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Failed to save preset: {ex.Message}", Severity.Error);
         }
@@ -1045,7 +1072,11 @@
             RefreshAllItems();
             await LoadPresets();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Failed to apply preset: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Failed to apply preset: {ex.Message}", Severity.Error);
         }
@@ -1065,7 +1096,11 @@
             await LoadPresets();
             StateHasChanged();
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Failed to delete preset: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Failed to delete preset: {ex.Message}", Severity.Error);
         }

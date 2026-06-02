@@ -47,9 +47,9 @@ public class MissionService(
             Directory.CreateDirectory(mpmissionsDir);
 
             var safeName = SanitizeMissionFileName(fileName);
-            var targetPath = Path.GetFullPath(Path.Combine(mpmissionsDir, safeName));
+            var targetPath = Path.GetFullPath(Path.Join(mpmissionsDir, safeName));
             EnsurePathInsideDirectory(mpmissionsDir, targetPath);
-            var tempPath = Path.Combine(mpmissionsDir, $".{safeName}.{Guid.NewGuid():N}.upload");
+            var tempPath = Path.Join(mpmissionsDir, $".{safeName}.{Guid.NewGuid():N}.upload");
 
             try
             {
@@ -140,7 +140,11 @@ public class MissionService(
                 File.Delete(mission.PhysicalPath);
                 logger.LogInformation("Deleted mission file: {Path}", mission.PhysicalPath);
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                logger.LogWarning(ex, "Failed to delete mission file: {Path}", mission.PhysicalPath);
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 logger.LogWarning(ex, "Failed to delete mission file: {Path}", mission.PhysicalPath);
             }
@@ -332,11 +336,12 @@ public class MissionService(
             .ToListAsync(ct);
 
         var nextOrder = 0;
-        foreach (var missionId in orderedMissionIds.Distinct())
+        foreach (var entry in orderedMissionIds
+                     .Distinct()
+                     .Select(missionId => entries.FirstOrDefault(e => e.MissionId == missionId))
+                     .Where(entry => entry is not null))
         {
-            var entry = entries.FirstOrDefault(e => e.MissionId == missionId);
-            if (entry != null)
-                entry.OrderIndex = nextOrder++;
+            entry!.OrderIndex = nextOrder++;
         }
 
         foreach (var entry in entries.Where(e => !orderedMissionIds.Contains(e.MissionId)).OrderBy(e => e.OrderIndex))
@@ -571,11 +576,8 @@ public class MissionService(
 
     private static IEnumerable<string> EnumerateMissionFiles(string installPath)
     {
-        foreach (var directory in GetMissionDirectories(installPath))
+        foreach (var directory in GetMissionDirectories(installPath).Where(Directory.Exists))
         {
-            if (!Directory.Exists(directory))
-                continue;
-
             foreach (var file in Directory.EnumerateFiles(directory, "*.pbo", SearchOption.TopDirectoryOnly))
                 yield return Path.GetFullPath(file);
         }
@@ -583,11 +585,8 @@ public class MissionService(
 
     private void CollapseAutoRenamedMissionDuplicates(string installPath)
     {
-        foreach (var directory in GetMissionDirectories(installPath))
+        foreach (var directory in GetMissionDirectories(installPath).Where(Directory.Exists))
         {
-            if (!Directory.Exists(directory))
-                continue;
-
             var files = Directory.EnumerateFiles(directory, "*.pbo", SearchOption.TopDirectoryOnly)
                 .Select(path => new FileInfo(path))
                 .ToList();
@@ -624,7 +623,7 @@ public class MissionService(
     {
         yield return GetCanonicalMissionsDirectory(installPath);
 
-        var legacyUnderscorePath = Path.Combine(installPath, "mp_missions");
+        var legacyUnderscorePath = Path.Join(installPath, "mp_missions");
         if (!Path.GetFullPath(legacyUnderscorePath).Equals(
                 Path.GetFullPath(GetCanonicalMissionsDirectory(installPath)),
                 StringComparison.OrdinalIgnoreCase))
@@ -634,7 +633,7 @@ public class MissionService(
     }
 
     private static string GetCanonicalMissionsDirectory(string installPath)
-        => Path.Combine(installPath, "mpmissions");
+        => Path.Join(installPath, "mpmissions");
 
     private static bool IsCanonicalMissionDirectory(string installPath, string missionPath)
     {
@@ -729,7 +728,11 @@ public class MissionService(
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch
+        catch (IOException)
+        {
+            // Best effort cleanup only.
+        }
+        catch (UnauthorizedAccessException)
         {
             // Best effort cleanup only.
         }

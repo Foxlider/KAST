@@ -139,20 +139,23 @@ else
     private async Task StartInstance(int id)
     {
         try { await ServerService.StartInstanceAsync(id); Nav.NavigateTo($"/servers/{id}"); }
-        catch (Exception ex) { Snackbar.Add($"Failed to start: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); await RefreshInstances(); }
+        catch (InvalidOperationException ex) { Snackbar.Add($"Failed to start: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); await RefreshInstances(); }
+        catch (System.ComponentModel.Win32Exception ex) { Snackbar.Add($"Failed to start: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); await RefreshInstances(); }
     }
 
     private async Task StopInstance(int id)
     {
         try { await ServerService.StopInstanceAsync(id); Snackbar.Add("Server stopped", Severity.Success); }
-        catch (Exception ex) { Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
+        catch (InvalidOperationException ex) { Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
+        catch (System.ComponentModel.Win32Exception ex) { Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { await RefreshInstances(); }
     }
 
     private async Task RestartInstance(int id)
     {
         try { await ServerService.RestartInstanceAsync(id); Snackbar.Add("Server restarted", Severity.Success); }
-        catch (Exception ex) { Snackbar.Add($"Failed to restart: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
+        catch (InvalidOperationException ex) { Snackbar.Add($"Failed to restart: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
+        catch (System.ComponentModel.Win32Exception ex) { Snackbar.Add($"Failed to restart: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { await RefreshInstances(); }
     }
 
@@ -186,7 +189,15 @@ else
             await JS.InvokeVoidAsync("KAST.downloadFile", filename, json);
             Snackbar.Add($"Exported {instance.Name}", Severity.Success);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.JSInterop.JSException ex)
         {
             Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
         }
@@ -243,7 +254,19 @@ else
             await RefreshInstances();
             Snackbar.Add("Instance imported successfully", Severity.Success);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        catch (IOException ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
         }

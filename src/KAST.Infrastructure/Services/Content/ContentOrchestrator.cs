@@ -80,12 +80,20 @@ public class ContentOrchestrator(
 
         var cts = new CancellationTokenSource();
         var operation = new ActiveInstall(cts, state);
-        if (!_active.TryAdd(key, operation))
+        try
+        {
+            if (!_active.TryAdd(key, operation))
+            {
+                cts.Dispose();
+                activity?.SetTag("content.queued", false);
+                activity?.AddEvent(new ActivityEvent("install.already_running"));
+                return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+            }
+        }
+        catch
         {
             cts.Dispose();
-            activity?.SetTag("content.queued", false);
-            activity?.AddEvent(new ActivityEvent("install.already_running"));
-            return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+            throw;
         }
 
         tracker.Set(state);
@@ -151,12 +159,20 @@ public class ContentOrchestrator(
 
         var cts = new CancellationTokenSource();
         var operation = new ActiveInstall(cts, state);
-        if (!_active.TryAdd(key, operation))
+        try
+        {
+            if (!_active.TryAdd(key, operation))
+            {
+                cts.Dispose();
+                activity?.SetTag("content.queued", false);
+                activity?.AddEvent(new ActivityEvent("install.already_running"));
+                return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+            }
+        }
+        catch
         {
             cts.Dispose();
-            activity?.SetTag("content.queued", false);
-            activity?.AddEvent(new ActivityEvent("install.already_running"));
-            return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+            throw;
         }
 
         tracker.Set(state);

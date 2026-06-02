@@ -116,7 +116,9 @@
         if (_scrollConsole)
         {
             _scrollConsole = false;
-            try { await JS.InvokeVoidAsync("KAST.scrollToBottom", _consoleRef); } catch { }
+            try { await JS.InvokeVoidAsync("KAST.scrollToBottom", _consoleRef); }
+            catch (Microsoft.JSInterop.JSException) { _scrollConsole = false; }
+            catch (InvalidOperationException) { _scrollConsole = false; }
         }
     }
 
@@ -201,7 +203,18 @@
             _monitoringError = null;
             await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            _monitoringConnected = false;
+            _monitoringError = ex.Message;
+            Logger.LogWarning(ex, "Failed to connect to monitoring SignalR hub.");
+            if (_hubConnection is not null)
+            {
+                await _hubConnection.DisposeAsync();
+                _hubConnection = null;
+            }
+        }
+        catch (HttpRequestException ex)
         {
             _monitoringConnected = false;
             _monitoringError = ex.Message;

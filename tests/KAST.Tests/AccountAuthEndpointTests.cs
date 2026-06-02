@@ -43,11 +43,12 @@ public class AccountAuthEndpointTests
     {
         await using var app = await AuthApp.CreateAsync();
 
-        var setup = await app.Client.PostAsync("/auth/setup", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var setupContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "secret"
-        }));
+        });
+        var setup = await app.Client.PostAsync("/auth/setup", setupContent);
         app.UseCookieFrom(setup);
 
         var api = await app.Client.GetAsync("/api/mods/");
@@ -64,19 +65,21 @@ public class AccountAuthEndpointTests
         await using var app = await AuthApp.CreateAsync();
         await app.CreateUserAsync("admin", "secret");
 
-        var invalid = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var invalidContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "wrong",
             ["returnUrl"] = "/api/mods/"
-        }));
+        });
+        var invalid = await app.Client.PostAsync("/auth/login", invalidContent);
 
-        var valid = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var validContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "secret",
             ["returnUrl"] = "/"
-        }));
+        });
+        var valid = await app.Client.PostAsync("/auth/login", validContent);
 
         Assert.Equal(HttpStatusCode.Redirect, invalid.StatusCode);
         Assert.StartsWith("/login?error=", invalid.Headers.Location?.OriginalString);
@@ -102,11 +105,12 @@ public class AccountAuthEndpointTests
         await using var app = await AuthApp.CreateAsync();
         await app.CreateUserAsync("admin", "secret");
 
-        var login = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "secret"
-        }));
+        });
+        var login = await app.Client.PostAsync("/auth/login", loginContent);
         app.UseCookieFrom(login);
 
         var beforeLogout = await app.Client.GetAsync("/api/mods/");
@@ -125,11 +129,12 @@ public class AccountAuthEndpointTests
         await using var app = await AuthApp.CreateAsync();
         await app.CreateUserAsync("admin", "secret");
 
-        var login = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "secret"
-        }));
+        });
+        var login = await app.Client.PostAsync("/auth/login", loginContent);
         app.UseCookieFrom(login);
 
         await app.DeleteAllUsersAsync();
@@ -153,12 +158,13 @@ public class AccountAuthEndpointTests
             ["Auth:Oidc:ClientSecret"] = "secret"
         });
 
-        var response = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
             ["password"] = "secret",
             ["returnUrl"] = "/settings"
-        }));
+        });
+        var response = await app.Client.PostAsync("/auth/login", loginContent);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("/auth/oidc/login?returnUrl=", response.Headers.Location?.OriginalString);

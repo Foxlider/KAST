@@ -75,9 +75,11 @@ public class ModPresetService(
             @"<tr\s+data-type=""ModContainer"">(.*?)</tr>",
             System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-        foreach (System.Text.RegularExpressions.Match row in matches)
+        foreach (var rowHtml in matches
+                     .Cast<System.Text.RegularExpressions.Match>()
+                     .Select(row => row.Groups[1].Value))
         {
-            var idMatch = System.Text.RegularExpressions.Regex.Match(row.Groups[1].Value,
+            var idMatch = System.Text.RegularExpressions.Regex.Match(rowHtml,
                 @"[?&]id=(\d+)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -98,7 +100,15 @@ public class ModPresetService(
                     LoadOrder = preset.Entries.Count
                 });
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Failed to resolve mod {WorkshopId} for Arma preset import", workshopId);
+            }
+            catch (IOException ex)
+            {
+                logger.LogWarning(ex, "Failed to resolve mod {WorkshopId} for Arma preset import", workshopId);
+            }
+            catch (HttpRequestException ex)
             {
                 logger.LogWarning(ex, "Failed to resolve mod {WorkshopId} for Arma preset import", workshopId);
             }

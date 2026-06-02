@@ -174,12 +174,12 @@ public class UserAccountServiceTests
     [Fact]
     public async Task AvatarUpload_StoresAllowedImageAndRejectsInvalidExtension()
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), $"kast-user-tests-{Guid.NewGuid():N}");
+        var tempRoot = Path.Join(Path.GetTempPath(), $"kast-user-tests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
         try
         {
             using var db = DbHelper.CreateInMemoryDb();
-            var sut = new UserAccountService(db, BuildConfig(Path.Combine(tempRoot, "kast.db")));
+            var sut = new UserAccountService(db, BuildConfig(Path.Join(tempRoot, "kast.db")));
 
             await using var image = new MemoryStream([1, 2, 3]);
             var user = await sut.CreateInitialAdminAsync("admin", "secret", image, "avatar.png", image.Length);

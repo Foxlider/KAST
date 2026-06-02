@@ -37,7 +37,7 @@ public class ModDownloadManagerTests
         orchestrator.Received(1).StartModInstall(
             12,
             ContentType.SteamMod,
-            Path.Combine("mods", "101"),
+            Path.Join("mods", "101"),
             101,
             null,
             Arg.Any<long>(),

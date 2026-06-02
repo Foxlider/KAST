@@ -206,7 +206,7 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
         if (!IsSafeStoredAvatarFileName(fileName))
             return Task.FromResult<string?>(null);
 
-        var path = Path.Combine(GetAvatarDirectory(), fileName);
+        var path = Path.Join(GetAvatarDirectory(), fileName);
         return Task.FromResult(File.Exists(path) ? path : null);
     }
 
@@ -226,7 +226,7 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
         Directory.CreateDirectory(directory);
 
         var storedName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
-        var path = Path.Combine(directory, storedName);
+        var path = Path.Join(directory, storedName);
 
         await using var output = File.Create(path);
         await stream.CopyToAsync(output, ct);
@@ -246,7 +246,7 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
 
         return string.IsNullOrWhiteSpace(dbDirectory)
             ? Path.GetFullPath("./avatars")
-            : Path.Combine(dbDirectory, "avatars");
+            : Path.Join(dbDirectory, "avatars");
     }
 
     private static string? ExtractSqliteDataSource(string connectionString)

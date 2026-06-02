@@ -285,8 +285,9 @@ public class ModPresetServiceTests : IDisposable
     {
         var instance = await SeedInstance();
 
+        SteamMod? missingMod = null;
         _modService.GetModByWorkshopIdAsync(999999, Arg.Any<CancellationToken>())
-            .Returns((SteamMod?)null);
+            .Returns(missingMod);
         _modService.AddWorkshopModAsync(999999, Arg.Any<CancellationToken>())
             .Returns(Task.FromException<SteamMod>(new Exception("Not found")));
 
