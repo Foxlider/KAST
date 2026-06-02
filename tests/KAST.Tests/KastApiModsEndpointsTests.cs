@@ -4,6 +4,7 @@ using KAST.Core.Enums;
 using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Services.Content;
 using KAST.UI.Api;
 using KAST.UI.Services;
@@ -245,6 +246,7 @@ public class KastApiModsEndpointsTests
             sp.GetRequiredService<IContentOrchestrator>(),
             sp.GetRequiredService<ContentProgressTracker>(),
             NullLogger<ModDownloadManager>.Instance));
+        builder.Services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
 
         var app = builder.Build();
         app.MapGroup("/api").MapKastApi();

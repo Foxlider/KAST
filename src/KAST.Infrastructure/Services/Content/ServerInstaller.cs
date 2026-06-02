@@ -13,7 +13,7 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Installs the Arma 3 dedicated server + Creator DLC depots via SteamKit2.
 /// </summary>
-public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpClientFactory httpClientFactory, ILogger<ServerInstaller> logger) : IContentInstaller
+public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpClientFactory httpClientFactory, ILogger<ServerInstaller> logger, IOutputSanitizer sanitizer) : IContentInstaller
 {
     public const uint Arma3ServerAppId = 233780;
     private const string CreatorDlcBranch = "creatordlc";
@@ -37,7 +37,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
     {
         var steps = new List<ContentStep>
         {
-            new() { Name = "Arma 3 Dedicated Server", Detail = "branch: public" }
+            new() { Name = "Arma 3 Dedicated Server", Detail = $"branch: public → {sanitizer.ToDisplayPath(request.DestinationPath)}" }
         };
 
         if (request.Instance is null) return steps;
@@ -83,11 +83,12 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 throw new InvalidOperationException("Failed to connect to Steam.");
 
             state.AddLog(steam.IsAuthenticated ? $"Signed in as {steam.CurrentUsername}." : "Connected anonymously.");
-            state.AddLog($"Parallel workers: {maxPar}.");
-            logger.LogInformation("Server install [{Instance}]: steam ready, {Auth}, {Par} workers, dest={Path}",
+            state.AddLog($"Install target: {sanitizer.ToDisplayPath(request.DestinationPath)}.");
+            state.AddLog($"Parallel downloads: {maxPar}.");
+            logger.LogInformation("Server install [{Instance}]: steam ready, {Auth}, {Par} workers",
                 instance.Name,
                 steam.IsAuthenticated ? $"authenticated as {steam.CurrentUsername}" : "anonymous",
-                maxPar, request.DestinationPath);
+                maxPar);
 
             int stepIdx = 0;
 
@@ -166,7 +167,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             throw;
         }
     }
@@ -177,16 +178,17 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         var installPath = request.DestinationPath;
 
         bool dirExists = Directory.Exists(installPath);
-        results.Add(new("Install directory", dirExists, dirExists ? installPath : "Not found"));
+        var displayPath = sanitizer.ToDisplayPath(installPath);
+        results.Add(new("Install directory", dirExists, dirExists ? displayPath : $"Not found: {displayPath}"));
 
         if (!dirExists) return results;
 
         var exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "arma3server_x64.exe" : "arma3server_x64";
         var exePath = Path.Combine(installPath, exeName);
-        results.Add(new("Server executable", File.Exists(exePath), exeName));
+        results.Add(new("Server executable", File.Exists(exePath), sanitizer.ToDisplayPath(exePath)));
 
         results.AddRange(new[] { "addons", "dta", "keys" }.Select(dir =>
-            new ContentValidationResult(dir, Directory.Exists(Path.Combine(installPath, dir)))));
+            new ContentValidationResult(dir, Directory.Exists(Path.Combine(installPath, dir)), sanitizer.ToDisplayPath(Path.Combine(installPath, dir)))));
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && File.Exists(exePath))
         {
@@ -200,7 +202,8 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 .Where(d => d.Enabled(request.Instance))
                 .Select(dlc => new ContentValidationResult(
                     $"{dlc.Name} ({dlc.Folder}/)",
-                    Directory.Exists(Path.Combine(installPath, dlc.Folder)))));
+                    Directory.Exists(Path.Combine(installPath, dlc.Folder)),
+                    sanitizer.ToDisplayPath(Path.Combine(installPath, dlc.Folder)))));
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -214,7 +217,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 Path.Combine(sys,   "XINPUT1_3.dll"),
             }.FirstOrDefault(File.Exists);
             results.Add(new("DirectX", found is not null,
-                found ?? $"D3DX9_43.dll not found in {sys} or {sys86}"));
+                found is not null ? "Installed" : "Required DirectX files were not found"));
         }
 
         return results;
@@ -307,10 +310,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
                 }
                 else
                 {
-                    string sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
-                    state.FailStep(stepIdx, "DXSETUP.exe reported success but D3DX9_43.dll was not found.");
-                    state.AddLog($"⚠ D3DX9_43.dll not found in {sys} after DXSETUP.exe.");
-                    logger.LogError("Server install [{Instance}]: DXSETUP.exe exited 0 but D3DX9_43.dll absent", instance.Name);
+                    state.FailStep(stepIdx, "DXSETUP.exe reported success but required DirectX files were not found.");
+                    state.AddLog("⚠ Required DirectX files were not found after DXSETUP.exe.");
+                    logger.LogError("Server install [{Instance}]: DXSETUP.exe exited 0 but required DirectX files are absent", instance.Name);
                 }
             }
             else

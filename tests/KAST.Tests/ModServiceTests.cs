@@ -29,7 +29,7 @@ public class ModServiceTests : IDisposable
             .Returns(new KastSettings { ModsDirectory = ".KAST_DATA/mods" });
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
         _logger = Substitute.For<ILogger<ModService>>();
-        _sut = new ModService(_db, _steamService, _settingsService, _broadcaster, _logger);
+        _sut = new ModService(_db, _steamService, _settingsService, _broadcaster, _logger, new OutputSanitizer());
     }
 
     ~ModServiceTests()

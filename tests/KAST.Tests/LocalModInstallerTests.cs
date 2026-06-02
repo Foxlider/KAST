@@ -1,6 +1,7 @@
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Services.Content;
 using NSubstitute;
 
@@ -9,6 +10,8 @@ namespace KAST.Tests;
 public class LocalModInstallerTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"kast-local-installer-tests-{Guid.NewGuid():N}");
+
+    private static OutputSanitizer Sanitizer() => new();
 
     public LocalModInstallerTests()
     {
@@ -31,7 +34,7 @@ public class LocalModInstallerTests : IDisposable
     public void PlanSteps_Zip_IncludesExtractAndSize()
     {
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -49,7 +52,7 @@ public class LocalModInstallerTests : IDisposable
     public void PlanSteps_Folder_IncludesOnlySize()
     {
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -74,7 +77,7 @@ public class LocalModInstallerTests : IDisposable
                 return Task.CompletedTask;
             });
 
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
 
         var request = new ContentInstallRequest
         {
@@ -104,7 +107,7 @@ public class LocalModInstallerTests : IDisposable
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize(Arg.Any<string>()).Returns(2048L);
 
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
 
         var request = new ContentInstallRequest
         {
@@ -135,7 +138,7 @@ public class LocalModInstallerTests : IDisposable
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize(Arg.Any<string>()).Returns(4096L);
 
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
         var path = Path.Combine(_root, "mod-dir");
         Directory.CreateDirectory(path);
 
@@ -153,7 +156,7 @@ public class LocalModInstallerTests : IDisposable
     public void Validate_WhenDirectoryMissing_ReturnsSingleFailure()
     {
         var fs = Substitute.For<IFileSystemService>();
-        var sut = new LocalModInstaller(fs);
+        var sut = new LocalModInstaller(fs, Sanitizer());
 
         var results = sut.Validate(new ContentInstallRequest
         {

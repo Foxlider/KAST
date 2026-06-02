@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 
 # Visual Studio Code files for those working on multiple tools
 .vscode
+
+# Graphify output
+graphify-out/

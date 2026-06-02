@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Steam;
 
-public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient> logger)
+public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient> logger, IOutputSanitizer sanitizer)
 {
     private const string BaseUrl = "https://api.steampowered.com";
 
@@ -71,11 +71,12 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            var safeMessage = sanitizer.Sanitize(ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"] = ex.GetType().Name,
-                ["exception.message"] = ex.Message
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = safeMessage
             }));
             throw;
         }
@@ -103,7 +104,7 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to discover CDN servers via Web API");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             return null;
         }
     }

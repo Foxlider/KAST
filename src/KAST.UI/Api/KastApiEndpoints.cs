@@ -3,6 +3,7 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Services.Content;
 using KAST.UI.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -32,25 +33,25 @@ public static class KastApiEndpoints
     {
         var g = root.MapGroup("/servers").WithTags("Servers");
 
-        g.MapGet("/", async (IServerInstanceService svc, CancellationToken ct) =>
-            Results.Ok(await svc.GetAllInstancesAsync(ct)));
+        g.MapGet("/", async (IServerInstanceService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
+            Results.Ok((await svc.GetAllInstancesAsync(ct)).Select(instance => ToServerDto(instance, sanitizer))));
 
-        g.MapGet("/{id:int}", async (int id, IServerInstanceService svc, CancellationToken ct) =>
+        g.MapGet("/{id:int}", async (int id, IServerInstanceService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             var inst = await svc.GetInstanceByIdAsync(id, ct);
-            return inst is null ? Results.NotFound() : Results.Ok(inst);
+            return inst is null ? Results.NotFound() : Results.Ok(ToServerDto(inst, sanitizer));
         });
 
-        g.MapPost("/", async (ServerInstance instance, IServerInstanceService svc, CancellationToken ct) =>
+        g.MapPost("/", async (ServerInstance instance, IServerInstanceService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             var created = await svc.CreateInstanceAsync(instance, ct);
-            return Results.Created($"/api/servers/{created.Id}", created);
+            return Results.Created($"/api/servers/{created.Id}", ToServerDto(created, sanitizer));
         });
 
-        g.MapPut("/{id:int}", async (int id, ServerInstance instance, IServerInstanceService svc, CancellationToken ct) =>
+        g.MapPut("/{id:int}", async (int id, ServerInstance instance, IServerInstanceService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             instance.Id = id;
-            return Results.Ok(await svc.UpdateInstanceAsync(instance, ct));
+            return Results.Ok(ToServerDto(await svc.UpdateInstanceAsync(instance, ct), sanitizer));
         });
 
         g.MapDelete("/{id:int}", async (int id, IServerInstanceService svc, CancellationToken ct) =>
@@ -96,25 +97,25 @@ public static class KastApiEndpoints
     {
         var g = root.MapGroup("/mods").WithTags("Mods");
 
-        g.MapGet("/", async (IModService svc, CancellationToken ct) =>
-            Results.Ok(await svc.GetAllModsAsync(ct)));
+        g.MapGet("/", async (IModService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
+            Results.Ok((await svc.GetAllModsAsync(ct)).Select(mod => ToModDto(mod, sanitizer))));
 
-        g.MapGet("/{id:int}", async (int id, IModService svc, CancellationToken ct) =>
+        g.MapGet("/{id:int}", async (int id, IModService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             var mod = await svc.GetModByIdAsync(id, ct);
-            return mod is null ? Results.NotFound() : Results.Ok(mod);
+            return mod is null ? Results.NotFound() : Results.Ok(ToModDto(mod, sanitizer));
         });
 
-        g.MapPost("/workshop/{workshopId:long}", async (long workshopId, IModService svc, CancellationToken ct) =>
+        g.MapPost("/workshop/{workshopId:long}", async (long workshopId, IModService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             var mod = await svc.AddWorkshopModAsync(workshopId, ct);
-            return Results.Created($"/api/mods/{mod.Id}", mod);
+            return Results.Created($"/api/mods/{mod.Id}", ToModDto(mod, sanitizer));
         });
 
-        g.MapPost("/local", async (ImportLocalModRequest req, IModService svc, CancellationToken ct) =>
+        g.MapPost("/local", async (ImportLocalModRequest req, IModService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
         {
             var mod = await svc.ImportLocalModAsync(req.Path, req.Name, ct);
-            return Results.Created($"/api/mods/{mod.Id}", mod);
+            return Results.Created($"/api/mods/{mod.Id}", ToModDto(mod, sanitizer));
         });
 
         g.MapDelete("/{id:int}", async (int id, IModService svc, CancellationToken ct) =>
@@ -407,8 +408,8 @@ public static class KastApiEndpoints
     {
         var g = root.MapGroup("/settings").WithTags("Settings");
 
-        g.MapGet("/", async (ISettingsService svc, CancellationToken ct) =>
-            Results.Ok(await svc.GetSettingsAsync(ct)));
+        g.MapGet("/", async (ISettingsService svc, [FromServices] IOutputSanitizer sanitizer, CancellationToken ct) =>
+            Results.Ok(ToSettingsDto(await svc.GetSettingsAsync(ct), sanitizer)));
 
         g.MapPut("/", async (KastSettings settings, ISettingsService svc, CancellationToken ct) =>
         {
@@ -431,6 +432,169 @@ public static class KastApiEndpoints
             return Results.NoContent();
         });
     }
+
+    private static SafeServerInstanceDto ToServerDto(ServerInstance instance, IOutputSanitizer sanitizer) => new(
+        instance.Id,
+        instance.Name,
+        sanitizer.ToDisplayPath(instance.InstallPath),
+        instance.Port,
+        instance.SteamQueryPort,
+        instance.Status,
+        instance.RestartPolicy,
+        instance.MaxRestartAttempts,
+        instance.AutoStartTime,
+        instance.AutoStopTime,
+        instance.ScheduleEnabled,
+        instance.ServerCfgContent,
+        instance.BasicCfgContent,
+        instance.ArmaProfileContent,
+        instance.AdditionalParameters,
+        instance.ContactDlc,
+        instance.GmDlc,
+        instance.PfDlc,
+        instance.CslaDlc,
+        instance.WsDlc,
+        instance.SpeDlc,
+        instance.RfDlc,
+        instance.EfDlc,
+        instance.InstalledAt,
+        instance.InstalledBuildId,
+        instance.ProcessId,
+        instance.StartedAt,
+        instance.HeadlessClientCount,
+        instance.CreatedAt,
+        instance.LastModified,
+        instance.Mods.Select(mod => ToServerModDto(mod, sanitizer)).ToList(),
+        instance.HeadlessClients.Select(ToHeadlessClientDto).ToList());
+
+    private static SafeServerInstanceModDto ToServerModDto(ServerInstanceMod mod, IOutputSanitizer sanitizer) => new(
+        mod.ServerInstanceId,
+        mod.SteamModId,
+        mod.IsClientSide,
+        mod.IsServerSide,
+        mod.LoadOrder,
+        mod.AddedAt,
+        ToModDto(mod.SteamMod, sanitizer));
+
+    private static SafeHeadlessClientDto ToHeadlessClientDto(HeadlessClient client) => new(
+        client.Id,
+        client.ServerInstanceId,
+        client.ProcessId,
+        client.Status,
+        client.StartedAt);
+
+    private static SafeSteamModDto ToModDto(SteamMod mod, IOutputSanitizer sanitizer) => new(
+        mod.Id,
+        mod.WorkshopId,
+        sanitizer.ToDisplayPath(mod.LocalPath),
+        mod.Name,
+        mod.Description,
+        mod.ThumbnailUrl,
+        mod.Author,
+        mod.SizeBytes,
+        mod.ExpectedSizeBytes,
+        mod.Source,
+        mod.Status,
+        mod.LastUpdatedSteam,
+        mod.LastUpdatedLocal,
+        mod.LastChecked,
+        mod.Comment,
+        mod.CreatedAt,
+        mod.InstalledManifestId,
+        mod.SteamManifestId,
+        mod.IsClientSide,
+        mod.IsServerSide);
+
+    private static SafeKastSettingsDto ToSettingsDto(KastSettings settings, IOutputSanitizer sanitizer) => new(
+        settings.Id,
+        settings.Arma3ServerAppId,
+        sanitizer.ToDisplayPath(settings.ModsDirectory),
+        sanitizer.ToDisplayPath(settings.ServersDirectory),
+        settings.ThemeMode,
+        settings.MetricsIntervalSeconds,
+        settings.ParallelDownloads);
+
+    public record SafeServerInstanceDto(
+        int Id,
+        string Name,
+        string InstallPath,
+        int Port,
+        int SteamQueryPort,
+        ServerInstanceStatus Status,
+        RestartPolicy RestartPolicy,
+        int MaxRestartAttempts,
+        string? AutoStartTime,
+        string? AutoStopTime,
+        bool ScheduleEnabled,
+        string? ServerCfgContent,
+        string? BasicCfgContent,
+        string? ArmaProfileContent,
+        string? AdditionalParameters,
+        bool ContactDlc,
+        bool GmDlc,
+        bool PfDlc,
+        bool CslaDlc,
+        bool WsDlc,
+        bool SpeDlc,
+        bool RfDlc,
+        bool EfDlc,
+        DateTime? InstalledAt,
+        string? InstalledBuildId,
+        int? ProcessId,
+        DateTime? StartedAt,
+        int HeadlessClientCount,
+        DateTime CreatedAt,
+        DateTime? LastModified,
+        IReadOnlyList<SafeServerInstanceModDto> Mods,
+        IReadOnlyList<SafeHeadlessClientDto> HeadlessClients);
+
+    public record SafeServerInstanceModDto(
+        int ServerInstanceId,
+        int SteamModId,
+        bool IsClientSide,
+        bool IsServerSide,
+        int LoadOrder,
+        DateTime AddedAt,
+        SafeSteamModDto SteamMod);
+
+    public record SafeHeadlessClientDto(
+        int Id,
+        int ServerInstanceId,
+        int? ProcessId,
+        ServerInstanceStatus Status,
+        DateTime? StartedAt);
+
+    public record SafeSteamModDto(
+        int Id,
+        long WorkshopId,
+        string LocalPath,
+        string Name,
+        string? Description,
+        string? ThumbnailUrl,
+        string? Author,
+        long SizeBytes,
+        long ExpectedSizeBytes,
+        ModSource Source,
+        ModStatus Status,
+        DateTime? LastUpdatedSteam,
+        DateTime? LastUpdatedLocal,
+        DateTime? LastChecked,
+        string? Comment,
+        DateTime CreatedAt,
+        ulong InstalledManifestId,
+        ulong SteamManifestId,
+        bool IsClientSide,
+        bool IsServerSide);
+
+    public record SafeKastSettingsDto(
+        int Id,
+        int Arma3ServerAppId,
+        string ModsDirectory,
+        string ServersDirectory,
+        string ThemeMode,
+        int MetricsIntervalSeconds,
+        int ParallelDownloads);
+
 }
 
 public record ImportLocalModRequest(string Path, string Name);

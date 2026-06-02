@@ -25,7 +25,7 @@ public class ServerInstanceServiceTests : IDisposable
         _processManager = Substitute.For<IProcessManagerService>();
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
         _logger = Substitute.For<ILogger<ServerInstanceService>>();
-        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger);
+        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger, new OutputSanitizer());
     }
 
     public void Dispose()

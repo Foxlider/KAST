@@ -4,6 +4,7 @@
 @using KAST.UI.Components.Pages.ServerEditTabs
 @inject IServerConfigService ConfigService
 @inject ISettingsService SettingsService
+@inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -71,8 +72,7 @@
                     ServerConfig="_serverConfig"
                     IsNew="_isNew"
                     OnNameChanged="OnNameChanged"
-                    OnServerConfigChanged="OnServerConfigChanged"
-                    GetCommandLinePreview="GetCommandLinePreview" />
+                    OnServerConfigChanged="OnServerConfigChanged" />
     </MudTabPanel>
 
     @* ════════════ SERVER CONFIG ════════════ *@
@@ -294,7 +294,7 @@
             _activeTab = MonitorTabIndex;
             StateHasChanged();
         }
-        catch (Exception ex) { Snackbar.Add($"Failed to launch: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Failed to launch: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
     }
 
     private async Task StopServer()
@@ -309,7 +309,7 @@
         catch (Exception ex)
         {
             await RefreshCurrentInstance();
-            Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Failed to stop: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
         }
     }
 

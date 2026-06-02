@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Steam;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -14,7 +15,7 @@ public class SteamWebApiClientTests
         var handler = new RecordingHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsBatchAsync([]);
 
@@ -67,7 +68,7 @@ public class SteamWebApiClientTests
         });
 
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsBatchAsync([333310405]);
 
@@ -110,7 +111,7 @@ public class SteamWebApiClientTests
             }));
 
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsAsync(123);
 
@@ -123,7 +124,7 @@ public class SteamWebApiClientTests
         var handler = new RecordingHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)));
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
             sut.GetPublishedFileDetailsBatchAsync([333310405]));
@@ -154,7 +155,7 @@ public class SteamWebApiClientTests
         });
 
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var host = await sut.DiscoverCdnServerAsync();
 
@@ -166,7 +167,7 @@ public class SteamWebApiClientTests
     {
         var handler = new RecordingHandler((_, _) => throw new HttpRequestException("boom"));
         var client = new HttpClient(handler);
-        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>());
+        var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var host = await sut.DiscoverCdnServerAsync();
 

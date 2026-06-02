@@ -286,6 +286,7 @@ public class AccountAuthEndpointTests
             builder.Services.AddSingleton(BuildSettingsService());
             builder.Services.AddSingleton(Substitute.For<IFileSystemService>());
             builder.Services.AddSingleton(BuildBroadcaster());
+            builder.Services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
             builder.Services.AddSingleton(sp => new ModDownloadManager(
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<IContentOrchestrator>(),

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService, ISettingsService settingsService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger) : IModService
+public class ModService(KastDbContext db, ISteamService steamService, ISettingsService settingsService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger, IOutputSanitizer sanitizer) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -65,11 +65,11 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
             {
-                ["exception.type"] = ex.GetType().Name,
-                ["exception.message"] = ex.Message
+                ["exception.type"]    = ex.GetType().Name,
+                ["exception.message"] = sanitizer.Sanitize(ex.Message)
             }));
             throw;
         }
@@ -80,7 +80,6 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         using var activity = KastActivitySources.Mods.StartActivity(
             "kast.mod.import_local", ActivityKind.Internal);
         activity?.SetTag("mod.name", name);
-        activity?.SetTag("mod.path", path);
 
         var isZip = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
         activity?.SetTag("mod.source", isZip ? "zip" : "folder");
@@ -111,7 +110,6 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         if (mod != null)
         {
             activity?.SetTag("mod.name", mod.Name);
-            activity?.SetTag("mod.local_path", mod.LocalPath ?? "");
 
             // Delete mod files from disk
             if (!string.IsNullOrEmpty(mod.LocalPath) && Directory.Exists(mod.LocalPath))
@@ -119,16 +117,15 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 try
                 {
                     Directory.Delete(mod.LocalPath, recursive: true);
-                    logger.LogInformation("Deleted mod files at {Path}", mod.LocalPath);
+                    logger.LogInformation("Deleted mod files for mod {Id}", mod.Id);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "Failed to delete mod files at {Path}", mod.LocalPath);
+                    logger.LogWarning(ex, "Failed to delete mod files for mod {Id}", mod.Id);
                     activity?.AddEvent(new ActivityEvent("files.delete_failed", tags: new ActivityTagsCollection
                     {
-                        ["path"] = mod.LocalPath,
-                        ["exception.type"] = ex.GetType().Name,
-                        ["exception.message"] = ex.Message
+                        ["exception.type"]    = ex.GetType().Name,
+                        ["exception.message"] = sanitizer.Sanitize(ex.Message)
                     }));
                 }
             }
@@ -194,7 +191,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             mod.Status = ModStatus.Error;
             mod.LocalPath = string.Empty;
             mod.SizeBytes = 0;
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             throw;
         }
         finally
@@ -252,7 +249,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             logger.LogError(ex, "Update failed for mod {Id} (WorkshopId={WorkshopId})", id, mod.WorkshopId);
             mod.Status = ModStatus.Error;
             mod.SizeBytes = 0;
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             throw;
         }
         finally

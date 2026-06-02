@@ -5,6 +5,7 @@ using KAST.Infrastructure.Services.Content;
 using KAST.Infrastructure.Steam;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace KAST.Infrastructure;
 
@@ -20,10 +21,12 @@ public static class DependencyInjection
                 .AddInterceptors(sp.GetRequiredService<SqliteConnectionPragmaInterceptor>()));
 
         // Steam services
+        services.TryAddSingleton<IOutputSanitizer, OutputSanitizer>();
         services.AddSingleton<ISteamService>(sp =>
         {
             var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SteamClientService>>();
-            return new SteamClientService(logger);
+            var sanitizer = sp.GetRequiredService<IOutputSanitizer>();
+            return new SteamClientService(logger, sanitizer);
         });
 
         services.AddSingleton<IProcessManagerService, ProcessManagerService>();

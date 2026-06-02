@@ -15,6 +15,7 @@ namespace KAST.Infrastructure.Steam;
 public class SteamClientService : ISteamService, IDisposable
 {
     private readonly ILogger<SteamClientService> _logger;
+    private readonly IOutputSanitizer _sanitizer;
     private readonly SteamClient _steamClient;
     private readonly CallbackManager _callbackManager;
     private readonly SteamUser _steamUser;
@@ -127,9 +128,10 @@ public class SteamClientService : ISteamService, IDisposable
     public SteamUserProfile? Profile => _profile;
     public event Action? AuthStateChanged;
 
-    public SteamClientService(ILogger<SteamClientService> logger)
+    public SteamClientService(ILogger<SteamClientService> logger, IOutputSanitizer sanitizer)
     {
         _logger = logger;
+        _sanitizer = sanitizer;
         _steamClient = new SteamClient();
         _callbackManager = new CallbackManager(_steamClient);
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
@@ -368,10 +370,11 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            var safeMessage = _sanitizer.Sanitize(ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             RecordExceptionEvent(activity, ex);
             _logger.LogError(ex, "Failed to begin QR auth session");
-            return new SteamQrAuthSession { ErrorMessage = ex.Message };
+            return new SteamQrAuthSession { ErrorMessage = safeMessage };
         }
         finally
         {
@@ -427,10 +430,11 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            var safeMessage = _sanitizer.Sanitize(ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             RecordExceptionEvent(activity, ex);
             _logger.LogError(ex, "Failed to begin credential auth session for {Username}", username);
-            return new SteamCredentialAuthSession { ErrorMessage = ex.Message };
+            return new SteamCredentialAuthSession { ErrorMessage = safeMessage };
         }
         finally
         {
@@ -497,12 +501,13 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            var safeMessage = _sanitizer.Sanitize(ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, safeMessage);
             RecordExceptionEvent(activity, ex);
             _logger.LogWarning(ex, "Credential auth polling failed");
             _activeCredentialSession = null;
             _activeCredentialAuthenticator = null;
-            session.ErrorMessage = ex.Message;
+            session.ErrorMessage = safeMessage;
             session.StateChanged?.Invoke();
             return false;
         }
@@ -552,7 +557,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(activity, ex);
             _logger.LogWarning(ex, "QR auth polling failed");
             _activeQrSession = null;
@@ -569,9 +574,9 @@ public class SteamClientService : ISteamService, IDisposable
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
 
-        using var activity = KastActivitySources.Steam.StartActivity(
+        using var activity = KastActivitySources.Content.StartActivity(
             "kast.steam.unified.workshop_details", ActivityKind.Client);
-        activity?.SetTag("workshop.id", workshopId);
+        activity?.SetTag("workshop.id",          workshopId);
 
         try
         {
@@ -621,7 +626,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(activity, ex);
             throw;
         }
@@ -654,7 +659,6 @@ public class SteamClientService : ISteamService, IDisposable
         using var workshopActivity = KastActivitySources.Content.StartActivity(
             "kast.steam.workshop_download", ActivityKind.Internal);
         workshopActivity?.SetTag("workshop.id", workshopId);
-        workshopActivity?.SetTag("workshop.destination", destinationPath);
 
         try
         {
@@ -752,15 +756,15 @@ public class SteamClientService : ISteamService, IDisposable
             workshopActivity?.SetTag("workshop.files_skipped", skippedFiles.Count);
             workshopActivity?.SetTag("workshop.files_pruned", prunedFiles);
 
-            _logger.LogInformation("Workshop item {Id} download complete → {Path}  ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
-                workshopId, destinationPath, totalMbDownloaded, dlElapsed.TotalSeconds, avgMbps);
+            _logger.LogInformation("Workshop item {Id} download complete ({Mb:F1} MB in {Sec:F1}s, {Mbps:F1} MB/s avg)",
+                workshopId, totalMbDownloaded, dlElapsed.TotalSeconds, avgMbps);
             progress?.Report(100);
             statusProgress?.Report("Download complete");
             return manifestId;
         }
         catch (Exception ex)
         {
-            workshopActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            workshopActivity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(workshopActivity, ex);
             throw;
         }
@@ -1011,7 +1015,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            depotActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            depotActivity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(depotActivity, ex);
             throw;
         }
@@ -1028,14 +1032,13 @@ public class SteamClientService : ISteamService, IDisposable
 
     /// Records an exception as a span event using the OTel semantic convention,
     /// equivalent to Activity.RecordException() from the OpenTelemetry SDK.
-    private static void RecordExceptionEvent(Activity? activity, Exception ex)
+    private void RecordExceptionEvent(Activity? activity, Exception ex)
     {
         if (activity is null) return;
         activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
         {
-            ["exception.type"] = ex.GetType().FullName ?? ex.GetType().Name,
-            ["exception.message"] = ex.Message,
-            ["exception.stacktrace"] = ex.StackTrace ?? string.Empty
+            ["exception.type"]    = ex.GetType().FullName ?? ex.GetType().Name,
+            ["exception.message"] = _sanitizer.Sanitize(ex.Message)
         }));
     }
 
@@ -1092,8 +1095,8 @@ public class SteamClientService : ISteamService, IDisposable
                 server.Host, depotId);
             spanActivity?.AddEvent(new ActivityEvent("manifest.server_fallback", tags: new ActivityTagsCollection
             {
-                ["cdn.server"] = server.Host,
-                ["exception.message"] = ex.Message
+                ["cdn.server"]        = server.Host,
+                ["exception.message"] = _sanitizer.Sanitize(ex.Message)
             }));
             pool.ReturnServer(server, true);
 
@@ -1179,9 +1182,9 @@ public class SteamClientService : ISteamService, IDisposable
                     "kast.steam.file_download",
                     ActivityKind.Internal,
                     parentSpanContext);
-                fileActivity?.SetTag("file.name", relativePath);
                 fileActivity?.SetTag("file.size_mb", Math.Round(fileSizeMb, 2));
                 fileActivity?.SetTag("file.chunk_count", file.Chunks.Count);
+                fileActivity?.SetTag("file.relative_path", _sanitizer.ToDisplayPath(relativePath));
                 fileActivity?.SetTag("depot.id", depotId);
 
                 try
@@ -1189,7 +1192,8 @@ public class SteamClientService : ISteamService, IDisposable
                     var dir = Path.GetDirectoryName(filePath);
                     if (dir != null) Directory.CreateDirectory(dir);
 
-                    _logger.LogDebug("{Prefix}: downloading {File} ({Size:F2} MB)", logPrefix, relativePath, fileSizeMb);
+                    _logger.LogDebug("{Prefix}: downloading file {Path} ({Size:F2} MB)",
+                        logPrefix, _sanitizer.ToDisplayPath(relativePath), fileSizeMb);
 
                     var tempPath = Path.Combine(
                         dir ?? destinationPath,
@@ -1315,7 +1319,8 @@ public class SteamClientService : ISteamService, IDisposable
                     }
 
                     var done = Interlocked.Increment(ref filesDone);
-                    _logger.LogDebug("{Prefix}: [{Done}/{Total}] {File}", logPrefix, done, files.Count, relativePath);
+                    _logger.LogDebug("{Prefix}: [{Done}/{Total}] file downloaded: {Path}",
+                        logPrefix, done, files.Count, _sanitizer.ToDisplayPath(relativePath));
 
                     // Speed + progress report: every 10 files, large files (≥ 50 MB), last file, or every 5 s
                     var nowBytes = Interlocked.Read(ref bytesDownloaded);
@@ -1328,7 +1333,7 @@ public class SteamClientService : ISteamService, IDisposable
                         var mbps = secSinceReport > 0 ? (deltaBytes / 1_048_576.0) / secSinceReport : 0;
                         var totalMbDone = nowBytes / 1_048_576.0;
 
-                        var report = $"  [{done}/{files.Count}] {relativePath}  —  {totalMbDone:F0}/{downloadMb:F0} MB  ({mbps:F1} MB/s)";
+                        var report = $"  [{done}/{files.Count}] {_sanitizer.ToDisplayPath(relativePath)}  —  {totalMbDone:F0}/{downloadMb:F0} MB  ({mbps:F1} MB/s)";
                         logProgress?.Report(report);
                         // When no logProgress channel exists (e.g. workshop download), surface via logger.
                         if (logProgress is null)
@@ -1349,7 +1354,7 @@ public class SteamClientService : ISteamService, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    fileActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    fileActivity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
                     RecordExceptionEvent(fileActivity, ex);
                     throw;
                 }
@@ -1520,11 +1525,10 @@ public class SteamClientService : ISteamService, IDisposable
                 {
                     ["chunk.id"] = chunk.ChunkID is { Length: > 0 } ? Convert.ToHexString(chunk.ChunkID) : "unknown",
                     ["chunk.attempt"] = attempt + 1,
-                    ["cdn.server"] = server.Host,
-                    ["error"] = ex.Message,
+                    ["cdn.server"]    = server.Host,
+                    ["error"]         = _sanitizer.Sanitize(ex.Message),
                     ["error.transient"] = transient
                 }));
-
                 pool.ReturnServer(server, true); // faulty — permanently discard it
 
                 if (attempt < MaxChunkRetries - 1)
@@ -1598,14 +1602,13 @@ public class SteamClientService : ISteamService, IDisposable
 
         using var appActivity = KastActivitySources.Content.StartActivity(
             "kast.steam.app_download", ActivityKind.Internal);
-        appActivity?.SetTag("app.id", appId);
-        appActivity?.SetTag("app.branch", branch);
-        appActivity?.SetTag("app.destination", destinationPath);
+                appActivity?.SetTag("app.id", appId);
+                appActivity?.SetTag("app.branch", branch);
         appActivity?.SetTag("app.parallel_workers", maxParallelDownloads);
 
         try
         {
-            _logger.LogInformation("Starting app download for AppId {AppId} → {Path}", appId, destinationPath);
+            _logger.LogInformation("Starting app download for AppId {AppId}", appId);
             logProgress?.Report($"Starting download for AppId {appId}...");
             progress?.Report(0);
 
@@ -1744,7 +1747,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            appActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            appActivity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(appActivity, ex);
             throw;
         }
@@ -1797,7 +1800,7 @@ public class SteamClientService : ISteamService, IDisposable
         if (_cdnPool is not null)
             return Task.FromResult(_cdnPool);
 
-        _cdnPool = new CdnServerPool(_steamClient, _steamContent, _logger);
+        _cdnPool = new CdnServerPool(_steamClient, _steamContent, _logger, _sanitizer);
         _logger.LogInformation("CDN server pool created");
         return Task.FromResult(_cdnPool);
     }
@@ -1944,7 +1947,7 @@ public class SteamClientService : ISteamService, IDisposable
         }
         catch (Exception ex)
         {
-            benchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            benchActivity?.SetStatus(ActivityStatusCode.Error, _sanitizer.Sanitize(ex.Message));
             RecordExceptionEvent(benchActivity, ex);
             throw;
         }
