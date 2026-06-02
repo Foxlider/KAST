@@ -171,6 +171,9 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<int>("Arma3ServerAppId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("AutoUpdateCheckEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("MetricsIntervalSeconds")
                         .HasColumnType("INTEGER");
 
@@ -189,6 +192,10 @@ namespace KAST.Infrastructure.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ThemeMode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdateChannelId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

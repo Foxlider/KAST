@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();
+        services.AddHttpClient<IAppUpdateService, AppUpdateService>();
 
         // Content install system — lives entirely in Infrastructure
         services.AddHttpClient<SteamWebApiClient>();
