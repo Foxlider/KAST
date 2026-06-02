@@ -279,6 +279,39 @@ public class ServerInstanceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StopInstance_StopProcessThrowsButProcessExited_ClearsStaleProcessInfo()
+    {
+        var instance = await SeedInstanceAsync(status: ServerInstanceStatus.Running, processId: 42);
+
+        _processManager.StopProcessAsync(42, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("process already exited"));
+        _processManager.IsProcessRunning(42).Returns(false);
+
+        await _sut.StopInstanceAsync(instance.Id);
+
+        var updated = await _db.ServerInstances.FindAsync(instance.Id);
+        Assert.Equal(ServerInstanceStatus.Stopped, updated!.Status);
+        Assert.Null(updated.ProcessId);
+        Assert.Null(updated.StartedAt);
+    }
+
+    [Fact]
+    public async Task StopInstance_StopProcessThrowsAndProcessStillRuns_LeavesRunning()
+    {
+        var instance = await SeedInstanceAsync(status: ServerInstanceStatus.Running, processId: 42);
+
+        _processManager.StopProcessAsync(42, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("access denied"));
+        _processManager.IsProcessRunning(42).Returns(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.StopInstanceAsync(instance.Id));
+
+        var updated = await _db.ServerInstances.FindAsync(instance.Id);
+        Assert.Equal(ServerInstanceStatus.Running, updated!.Status);
+        Assert.Equal(42, updated.ProcessId);
+    }
+
+    [Fact]
     public async Task StopInstance_NonExistentId_Throws()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(

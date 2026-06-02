@@ -1,9 +1,9 @@
 ﻿@using Microsoft.AspNetCore.SignalR.Client
-@inject IServerInstanceService ServerService
 @inject NavigationManager Nav
 @inject KastInternalUrlProvider InternalUrls
 @inject InternalHubTokenService InternalHubToken
 @inject ILogger<NavMenu> Logger
+@inject IServiceScopeFactory ScopeFactory
 @implements IAsyncDisposable
 
 <MudNavMenu>
@@ -121,7 +121,11 @@
     }
 
     private async Task RefreshAsync()
-        => _servers = await ServerService.GetAllInstancesAsync();
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var serverService = scope.ServiceProvider.GetRequiredService<IServerInstanceService>();
+        _servers = await serverService.GetAllInstancesAsync();
+    }
 
     public async ValueTask DisposeAsync()
     {

@@ -2,18 +2,23 @@
 @page "/servers/{Id:int}"
 @attribute [Authorize]
 @using KAST.UI.Components.Pages.ServerEditTabs
-@inject IServerInstanceService ServerService
 @inject IServerConfigService ConfigService
 @inject ISettingsService SettingsService
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject IServiceScopeFactory ScopeFactory
 @implements IDisposable
 
 <PageTitle>KAST -- @(_isNew ? "New Server" : _instance.Name)</PageTitle>
 
 @* ── Toolbar ── *@
 <div class="d-flex align-center gap-2 mb-4 flex-wrap">
+    <MudTooltip Text="Back to server instances">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                       Color="Color.Default"
+                       OnClick="@(() => Nav.NavigateTo("/servers"))" />
+    </MudTooltip>
     <MudIcon Icon="@UiHelpers.GetStatusIcon(_instance.Status)" Color="@UiHelpers.GetStatusColor(_instance.Status)" />
     <MudText Typo="Typo.h5" Class="mr-2" Style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;">
         @(_isNew ? "New Server Instance" : _instance.Name)
@@ -23,6 +28,21 @@
         <MudChip T="string" Size="Size.Small" Color="@UiHelpers.GetStatusColor(_instance.Status)" Variant="Variant.Filled">@_instance.Status</MudChip>
     }
     <MudSpacer />
+    @if (!_isNew && _instances.Count > 1)
+    {
+        <MudSelect T="int"
+                   Value="@_instance.Id"
+                   ValueChanged="NavigateToInstance"
+                   Dense="true"
+                   Variant="Variant.Outlined"
+                   Label="Instance"
+                   Style="min-width:220px;">
+            @foreach (var instance in _instances)
+            {
+                <MudSelectItem Value="@instance.Id">@instance.Name</MudSelectItem>
+            }
+        </MudSelect>
+    }
     <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled" DropShadow="true">
         <MudButton StartIcon="@Icons.Material.Filled.Save" OnClick="Save">Save</MudButton>
         @if (!_isNew)
@@ -113,6 +133,10 @@
     private bool _isNew => Id == null || Id == 0;
     private int _activeTab;
     private string _serversDirectory = "./servers";
+    private const int MonitorTabIndex = 7;
+    private IReadOnlyList<ServerInstance> _instances = [];
+    private int? _loadedId;
+    private bool _hasLoadedParameters;
 
     private ServerConfigData _serverConfig = new();
     private BasicConfigData _basicConfig = new();
@@ -124,11 +148,25 @@
     private bool _isDirty;
     private IDisposable? _locationChangingRegistration;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
+        _locationChangingRegistration = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_hasLoadedParameters && _loadedId == Id)
+            return;
+
+        _hasLoadedParameters = true;
+        _loadedId = Id;
+        _instances = await WithServerServiceAsync(s => s.GetAllInstancesAsync());
+        ResetEditorState();
+
         if (!_isNew)
         {
-            var instance = await ServerService.GetInstanceByIdAsync(Id!.Value);
+            var instance = await WithServerServiceAsync(s => s.GetInstanceByIdAsync(Id!.Value));
             if (instance == null) { Nav.NavigateTo("/servers"); return; }
             _instance = instance;
 
@@ -152,7 +190,18 @@
         if (string.IsNullOrEmpty(_basicCfgRaw)) _basicCfgRaw = ConfigService.SerializeBasicConfig(_basicConfig);
         if (string.IsNullOrEmpty(_profileRaw)) _profileRaw = ConfigService.SerializeArma3Profile(_profileData);
 
-        _locationChangingRegistration = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+        _isDirty = false;
+    }
+
+    private void ResetEditorState()
+    {
+        _instance = new ServerInstance();
+        _serverConfig = new ServerConfigData();
+        _basicConfig = new BasicConfigData();
+        _profileData = new Arma3ProfileData();
+        _serverCfgRaw = "";
+        _basicCfgRaw = "";
+        _profileRaw = "";
     }
 
     private void OnNameChanged()
@@ -183,30 +232,53 @@
 
     private async Task HandleInstallComplete()
     {
-        var fresh = await ServerService.GetInstanceByIdAsync(_instance.Id);
+        var fresh = await WithServerServiceAsync(s => s.GetInstanceByIdAsync(_instance.Id));
         if (fresh != null) _instance = fresh;
         StateHasChanged();
     }
 
     private async Task Save()
+        => await SaveAsync();
+
+    private async Task<bool> SaveAsync()
     {
-        _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
-        _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
-        _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
-
-        if (_isNew) await ServerService.CreateInstanceAsync(_instance);
-        else await ServerService.UpdateInstanceAsync(_instance);
-
-        if (!string.IsNullOrEmpty(_instance.InstallPath))
+        try
         {
-            await ServerService.LinkModsAsync(_instance.Id);
-            ServerService.WriteConfigFiles(_instance);
+            _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
+            _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
+            _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
+
+            var isRunning = await IsRuntimeActive();
+
+            if (_isNew) await WithServerServiceAsync(s => s.CreateInstanceAsync(_instance));
+            else await WithServerServiceAsync(s => s.UpdateInstanceAsync(_instance));
+
+            if (!string.IsNullOrEmpty(_instance.InstallPath) && !isRunning)
+            {
+                await WithServerServiceAsync(async s =>
+                {
+                    await s.LinkModsAsync(_instance.Id);
+                    s.WriteConfigFiles(_instance);
+                    return true;
+                });
+            }
+
+            Snackbar.Add(
+                isRunning
+                    ? "Server saved in KAST. Stop or restart the server to apply config file changes."
+                    : "Server saved",
+                isRunning ? Severity.Warning : Severity.Success);
+            _isDirty = false;
+
+            if (Id == null || Id == 0) Nav.NavigateTo($"/servers/{_instance.Id}", replace: true);
+            return true;
         }
-
-        Snackbar.Add("Server saved", Severity.Success);
-        _isDirty = false;
-
-        if (Id == null || Id == 0) Nav.NavigateTo($"/servers/{_instance.Id}", replace: true);
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save: {ex.Message}", Severity.Error);
+            await RefreshCurrentInstance();
+            return false;
+        }
     }
 
     private async Task LaunchServer()
@@ -214,10 +286,12 @@
         if (_isNew) return;
         try
         {
-            await Save();
-            await ServerService.StartInstanceAsync(_instance.Id);
-            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
-            _activeTab = 6; // Monitor tab
+            if (!await SaveAsync())
+                return;
+
+            await WithServerServiceAsync(s => s.StartInstanceAsync(_instance.Id));
+            _instance = (await WithServerServiceAsync(s => s.GetInstanceByIdAsync(_instance.Id)))!;
+            _activeTab = MonitorTabIndex;
             StateHasChanged();
         }
         catch (Exception ex) { Snackbar.Add($"Failed to launch: {ex.Message}", Severity.Error); }
@@ -228,11 +302,53 @@
         if (_isNew) return;
         try
         {
-            await ServerService.StopInstanceAsync(_instance.Id);
-            _instance = (await ServerService.GetInstanceByIdAsync(_instance.Id))!;
+            await WithServerServiceAsync(s => s.StopInstanceAsync(_instance.Id));
+            await RefreshCurrentInstance();
             Snackbar.Add("Server stopped", Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error); }
+        catch (Exception ex)
+        {
+            await RefreshCurrentInstance();
+            Snackbar.Add($"Failed to stop: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RefreshCurrentInstance()
+    {
+        if (_isNew || _instance.Id <= 0)
+            return;
+
+        var fresh = await WithServerServiceAsync(s => s.GetInstanceByIdAsync(_instance.Id));
+        if (fresh != null)
+            _instance = fresh;
+    }
+
+    private void NavigateToInstance(int id)
+    {
+        if (id != _instance.Id)
+            Nav.NavigateTo($"/servers/{id}");
+    }
+
+    private async Task<bool> IsRuntimeActive()
+    {
+        if (_isNew)
+            return false;
+
+        var current = await WithServerServiceAsync(s => s.GetInstanceByIdAsync(_instance.Id));
+        if (current is null)
+            return _instance.Status is ServerInstanceStatus.Running
+                or ServerInstanceStatus.Starting
+                or ServerInstanceStatus.Restarting
+                or ServerInstanceStatus.Stopping;
+
+        _instance.Status = current.Status;
+        _instance.ProcessId = current.ProcessId;
+        _instance.StartedAt = current.StartedAt;
+
+        return current.Status is ServerInstanceStatus.Running
+            or ServerInstanceStatus.Starting
+            or ServerInstanceStatus.Restarting
+            or ServerInstanceStatus.Stopping;
     }
 
     private string GetCommandLinePreview()
@@ -240,7 +356,28 @@
         _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
         _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
         _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);
-        return ServerService.GetCommandLine(_instance);
+        return WithServerService(s => s.GetCommandLine(_instance));
+    }
+
+    private async Task<TResult> WithServerServiceAsync<TResult>(Func<IServerInstanceService, Task<TResult>> action)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var serverService = scope.ServiceProvider.GetRequiredService<IServerInstanceService>();
+        return await action(serverService);
+    }
+
+    private async Task WithServerServiceAsync(Func<IServerInstanceService, Task> action)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var serverService = scope.ServiceProvider.GetRequiredService<IServerInstanceService>();
+        await action(serverService);
+    }
+
+    private TResult WithServerService<TResult>(Func<IServerInstanceService, TResult> action)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var serverService = scope.ServiceProvider.GetRequiredService<IServerInstanceService>();
+        return action(serverService);
     }
 
     private async ValueTask OnLocationChanging(LocationChangingContext context)

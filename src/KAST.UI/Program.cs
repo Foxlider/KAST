@@ -9,7 +9,11 @@ using KAST.UI.Hubs;
 using KAST.UI.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using System.Text.Json;
 using MudBlazor;
 using MudBlazor.Services;
 using OpenTelemetry.Resources;
@@ -48,7 +52,8 @@ builder.Services.AddScoped<KastInternalUrlProvider>();
 builder.Services.AddSingleton<ModDownloadManager>();
 builder.Services.AddScoped<KeyboardShortcutService>();
 builder.Services.AddSingleton<InternalHubTokenService>();
-builder.Services.AddAuthentication(options =>
+var authSettings = builder.Configuration.GetKastAuthSettings();
+var authenticationBuilder = builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -100,6 +105,62 @@ builder.Services.AddAuthentication(options =>
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, InternalHubAuthenticationHandler>(
         InternalHubAuthenticationDefaults.AuthenticationScheme,
         _ => { });
+
+if (authSettings.IsOidcConfigured)
+{
+    authenticationBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, authSettings.DisplayName, options =>
+    {
+        options.Authority = authSettings.Authority;
+        options.ClientId = authSettings.ClientId;
+        options.ClientSecret = authSettings.ClientSecret;
+        options.ResponseType = "code";
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.CallbackPath = "/auth/oidc/callback";
+        options.SignedOutCallbackPath = "/auth/oidc/signed-out";
+        options.SaveTokens = true;
+        options.GetClaimsFromUserInfoEndpoint = true;
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters.NameClaimType = authSettings.NameClaim;
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+        options.Scope.Add("email");
+        options.ClaimActions.MapJsonKey(authSettings.GroupClaim, authSettings.GroupClaim);
+        options.ClaimActions.MapJsonKey(authSettings.NameClaim, authSettings.NameClaim);
+        options.ClaimActions.MapJsonKey("name", "name");
+        options.ClaimActions.MapJsonKey("email", "email");
+        options.Events.OnTokenValidated = async context =>
+        {
+            var principal = context.Principal
+                ?? throw new InvalidOperationException("OIDC token validation produced no principal.");
+            var issuer = FirstNonBlank(
+                principal.FindFirstValue("iss"),
+                context.SecurityToken?.Issuer,
+                authSettings.Authority);
+            var subject = principal.FindFirstValue("sub");
+            var displayName = FirstClaimValue(principal, authSettings.NameClaim, "preferred_username", "name", "email", "sub");
+            var email = principal.FindFirstValue("email");
+            var groups = ReadClaimValues(principal, authSettings.GroupClaim);
+
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<IUserAccountService>();
+            var user = await accounts.ProvisionOidcAdminAsync(
+                new KAST.Core.Models.OidcProvisioningRequest(issuer, subject, displayName, email, groups),
+                context.HttpContext.RequestAborted);
+
+            context.Principal = AccountClaims.CreatePrincipal(user);
+        };
+        options.Events.OnRemoteFailure = context =>
+        {
+            context.HandleResponse();
+            var message = string.IsNullOrWhiteSpace(context.Failure?.Message)
+                ? "OpenID Connect sign-in failed."
+                : context.Failure.Message;
+            context.Response.Redirect($"/login?error={Uri.EscapeDataString(message)}");
+            return Task.CompletedTask;
+        };
+    });
+}
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOrInternalHub", policy =>
@@ -224,6 +285,15 @@ app.UseWhen(
                !context.Request.Path.StartsWithSegments("/hubs") &&
                !context.Request.Path.StartsWithSegments("/_blazor"),
     branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor |
+                       ForwardedHeaders.XForwardedHost |
+                       ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.UseAuthentication();
@@ -278,3 +348,40 @@ _ = Task.Run(async () =>
 });
 
 app.Run();
+
+static string? FirstClaimValue(ClaimsPrincipal principal, params string[] claimTypes)
+    => claimTypes
+        .Select(principal.FindFirstValue)
+        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+static string? FirstNonBlank(params string?[] values)
+    => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+static IReadOnlyCollection<string> ReadClaimValues(ClaimsPrincipal principal, string claimType)
+    => principal.FindAll(claimType)
+        .SelectMany(claim => SplitClaimValue(claim.Value))
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Select(value => value.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+static IEnumerable<string> SplitClaimValue(string value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return [];
+
+    var trimmed = value.Trim();
+    if (trimmed.StartsWith('['))
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(trimmed) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [trimmed];
+        }
+    }
+
+    return [trimmed];
+}

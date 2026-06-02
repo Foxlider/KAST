@@ -11,6 +11,8 @@ namespace KAST.Infrastructure.Services;
 public class UserAccountService(KastDbContext db, IConfiguration configuration) : IUserAccountService
 {
     private const int MaxAvatarBytes = 2 * 1024 * 1024;
+    private const string DefaultOidcDisplayName = "OpenID Connect";
+    private const string DefaultOidcAllowedGroup = "KAST Admins";
     private static readonly HashSet<string> AllowedAvatarExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png",
@@ -30,6 +32,13 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
         var normalized = NormalizeUsername(username);
         return db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.NormalizedUsername == normalized && u.IsActive, ct);
     }
+
+    public Task<KastUser?> GetByExternalLoginAsync(string issuer, string subject, CancellationToken ct = default)
+        => db.Users.AsNoTracking().FirstOrDefaultAsync(
+            u => u.ExternalIssuer == issuer &&
+                 u.ExternalSubject == subject &&
+                 u.IsActive,
+            ct);
 
     public async Task<IReadOnlyList<KastUser>> GetAllUsersAsync(CancellationToken ct = default)
         => await db.Users.AsNoTracking().OrderBy(u => u.Username).ToListAsync(ct);
@@ -68,6 +77,7 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
             Username = username.Trim(),
             NormalizedUsername = normalized,
             PasswordHash = HashPassword(password),
+            AuthSource = KastUser.LocalAuthSource,
             AvatarFileName = await SaveAvatarAsync(avatarStream, avatarFileName, avatarLength, ct),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -80,11 +90,71 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
         return user;
     }
 
+    public async Task<KastUser> ProvisionOidcAdminAsync(OidcProvisioningRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Issuer))
+            throw new InvalidOperationException("OIDC issuer claim is required.");
+
+        if (string.IsNullOrWhiteSpace(request.Subject))
+            throw new InvalidOperationException("OIDC subject claim is required.");
+
+        var allowedGroups = GetConfiguredOidcAllowedGroups();
+        if (!request.Groups.Any(group => allowedGroups.Contains(group)))
+            throw new InvalidOperationException("OIDC user is not a member of an allowed KAST administrator group.");
+
+        var issuer = request.Issuer.Trim();
+        var subject = request.Subject.Trim();
+        var displayName = FirstNonBlank(request.DisplayName, request.Email, subject);
+        var providerName = FirstNonBlank(configuration["Auth:Oidc:DisplayName"], DefaultOidcDisplayName);
+
+        var existing = await db.Users.FirstOrDefaultAsync(
+            u => u.ExternalIssuer == issuer &&
+                 u.ExternalSubject == subject &&
+                 u.IsActive,
+            ct);
+
+        if (existing is not null)
+        {
+            existing.Username = await GetUniqueUsernameAsync(displayName, existing.Id, ct);
+            existing.NormalizedUsername = NormalizeUsername(existing.Username);
+            existing.AuthSource = KastUser.OidcAuthSource;
+            existing.ExternalProvider = providerName;
+            existing.LastLoginAt = DateTime.UtcNow;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var username = await GetUniqueUsernameAsync(displayName, existingUserId: null, ct);
+        var user = new KastUser
+        {
+            Username = username,
+            NormalizedUsername = NormalizeUsername(username),
+            PasswordHash = string.Empty,
+            AuthSource = KastUser.OidcAuthSource,
+            ExternalProvider = providerName,
+            ExternalIssuer = issuer,
+            ExternalSubject = subject,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            LastLoginAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(ct);
+        return user;
+    }
+
     public async Task<KastUser?> ValidateCredentialsAsync(string username, string password, CancellationToken ct = default)
     {
         var normalized = NormalizeUsername(username);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.NormalizedUsername == normalized && u.IsActive, ct);
-        if (user is null || !VerifyPassword(password, user.PasswordHash))
+        var user = await db.Users.FirstOrDefaultAsync(
+            u => u.NormalizedUsername == normalized &&
+                 u.AuthSource == KastUser.LocalAuthSource &&
+                 u.IsActive,
+            ct);
+        if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash) || !VerifyPassword(password, user.PasswordHash))
             return null;
 
         user.LastLoginAt = DateTime.UtcNow;
@@ -103,6 +173,9 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive, ct)
             ?? throw new InvalidOperationException("User account was not found.");
+
+        if (user.IsExternallyManaged)
+            throw new InvalidOperationException("Externally managed accounts cannot be edited in KAST.");
 
         var normalized = NormalizeUsername(username);
         ValidateUsername(username, normalized);
@@ -191,6 +264,61 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
 
         return value.Trim().Trim('"');
     }
+
+    private async Task<string> GetUniqueUsernameAsync(string preferredUsername, int? existingUserId, CancellationToken ct)
+    {
+        var baseUsername = NormalizeExternalUsername(preferredUsername);
+
+        for (var suffixNumber = 0; suffixNumber < 1_000; suffixNumber++)
+        {
+            var suffix = suffixNumber == 0 ? string.Empty : $"-{suffixNumber + 1}";
+            var maxBaseLength = 64 - suffix.Length;
+            var candidate = baseUsername.Length > maxBaseLength
+                ? baseUsername[..maxBaseLength]
+                : baseUsername;
+            candidate += suffix;
+
+            var normalized = NormalizeUsername(candidate);
+            var exists = await db.Users.AnyAsync(
+                u => u.NormalizedUsername == normalized &&
+                     (!existingUserId.HasValue || u.Id != existingUserId.Value),
+                ct);
+            if (!exists)
+                return candidate;
+        }
+
+        throw new InvalidOperationException("Could not allocate a unique username for the OIDC account.");
+    }
+
+    private HashSet<string> GetConfiguredOidcAllowedGroups()
+    {
+        var groups = configuration.GetSection("Auth:Oidc:AllowedGroups")
+            .GetChildren()
+            .Select(child => child.Value)
+            .Concat(SplitConfigList(configuration["Auth:Oidc:AllowedGroups"]))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim());
+
+        var allowedGroups = new HashSet<string>(groups, StringComparer.OrdinalIgnoreCase);
+        if (allowedGroups.Count == 0)
+            allowedGroups.Add(DefaultOidcAllowedGroup);
+
+        return allowedGroups;
+    }
+
+    private static IEnumerable<string> SplitConfigList(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string NormalizeExternalUsername(string username)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(username) ? "oidc-user" : username.Trim();
+        return trimmed.Length > 64 ? trimmed[..64] : trimmed;
+    }
+
+    private static string FirstNonBlank(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
     private static void ValidateUsername(string username, string normalized)
     {

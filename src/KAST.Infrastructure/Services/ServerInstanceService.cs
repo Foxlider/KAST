@@ -354,25 +354,67 @@ public class ServerInstanceService(
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
 
+        var stopFailures = new List<Exception>();
+
         // Stop headless clients first
         foreach (var hc in instance.HeadlessClients.Where(h => h.ProcessId.HasValue))
         {
-            await processManager.StopProcessAsync(hc.ProcessId!.Value, ct);
+            var pid = hc.ProcessId!.Value;
+            try
+            {
+                await processManager.StopProcessAsync(pid, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to stop headless client process {Pid} for instance {Id}", pid, id);
+                if (processManager.IsProcessRunning(pid))
+                {
+                    hc.Status = ServerInstanceStatus.Running;
+                    stopFailures.Add(ex);
+                    continue;
+                }
+            }
+
             hc.ProcessId = null;
             hc.Status = ServerInstanceStatus.Stopped;
             activity?.AddEvent(new ActivityEvent("instance.headless_client_stopped"));
         }
 
+        var serverStillRunning = false;
         if (instance.ProcessId.HasValue)
         {
-            await processManager.StopProcessAsync(instance.ProcessId.Value, ct);
+            var pid = instance.ProcessId.Value;
+            try
+            {
+                await processManager.StopProcessAsync(pid, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to stop server process {Pid} for instance {Id}", pid, id);
+                serverStillRunning = processManager.IsProcessRunning(pid);
+                if (serverStillRunning)
+                    stopFailures.Add(ex);
+            }
         }
 
-        instance.ProcessId = null;
-        instance.Status = ServerInstanceStatus.Stopped;
-        instance.StartedAt = null;
+        if (!serverStillRunning)
+        {
+            instance.ProcessId = null;
+            instance.Status = ServerInstanceStatus.Stopped;
+            instance.StartedAt = null;
+        }
+        else
+        {
+            instance.Status = ServerInstanceStatus.Running;
+        }
+
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastServerStatusChangedAsync(new ServerStatusChangedEvent(instance.Id, instance.Status.ToString()));
+
+        if (stopFailures.Count > 0)
+            throw new InvalidOperationException(
+                $"Failed to stop server instance {id}. One or more processes are still running.",
+                stopFailures[0]);
     }
 
     public async Task RestartInstanceAsync(int id, CancellationToken ct = default)

@@ -207,7 +207,24 @@ namespace KAST.Infrastructure.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AuthSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalIssuer")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalProvider")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalSubject")
+                        .HasMaxLength(255)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsActive")
@@ -236,6 +253,9 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedUsername")
+                        .IsUnique();
+
+                    b.HasIndex("ExternalIssuer", "ExternalSubject")
                         .IsUnique();
 
                     b.ToTable("Users");

@@ -23,10 +23,10 @@
             <MudCardContent>
                 <MudText Typo="Typo.subtitle1" Class="mb-2">Joining Rules</MudText>
                 <MudGrid Spacing="2">
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.BattlEye" Label="BattlEye" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.KickDuplicate" Label="Kick Duplicates" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.Loopback" Label="LAN Mode" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.Upnp" Label="UPnP" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.BattlEye" ValueChanged="@((bool v) => SetBool(v, x => Config.BattlEye = x))" Label="BattlEye" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.KickDuplicate" ValueChanged="@((bool v) => SetBool(v, x => Config.KickDuplicate = x))" Label="Kick Duplicates" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.Loopback" ValueChanged="@((bool v) => SetBool(v, x => Config.Loopback = x))" Label="LAN Mode" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.Upnp" ValueChanged="@((bool v) => SetBool(v, x => Config.Upnp = x))" Label="UPnP" Color="Color.Primary" /></MudItem>
                     <MudItem xs="6" sm="4">
                         <MudSelect Value="@Config.VerifySignatures.ToString()"
                                    ValueChanged="@((string v) => { Config.VerifySignatures = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
@@ -57,7 +57,7 @@
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.MaxPacketLoss" ValueChanged="@((int v) => { Config.MaxPacketLoss = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Max Packet Loss" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.DisconnectTimeout" ValueChanged="@((int v) => { Config.DisconnectTimeout = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Disconnect Timeout" Min="5" Max="90" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="int" Value="@Config.LobbyIdleTimeout" ValueChanged="@((int v) => { Config.LobbyIdleTimeout = v; _ = OnConfigChanged.InvokeAsync(); })" Label="Lobby Idle Timeout" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.KickClientOnSlowNetwork" Label="Kick on Slow Network" Color="Color.Warning" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.KickClientOnSlowNetwork" ValueChanged="@((bool v) => SetBool(v, x => Config.KickClientOnSlowNetwork = x))" Label="Kick on Slow Network" Color="Color.Warning" /></MudItem>
                 </MudGrid>
             </MudCardContent>
         </MudCard>
@@ -65,7 +65,7 @@
             <MudCardContent>
                 <MudText Typo="Typo.subtitle1" Class="mb-2">VoN &amp; Audio</MudText>
                 <MudGrid Spacing="2">
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.DisableVoN" Label="Disable VoN" Color="Color.Error" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.DisableVoN" ValueChanged="@((bool v) => SetBool(v, x => Config.DisableVoN = x))" Label="Disable VoN" Color="Color.Error" /></MudItem>
                     <MudItem xs="6">
                         <MudSelect Value="@Config.VonCodec.ToString()"
                                    ValueChanged="@((string v) => { Config.VonCodec = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
@@ -82,12 +82,12 @@
             <MudCardContent>
                 <MudText Typo="Typo.subtitle1" Class="mb-2">Advanced</MudText>
                 <MudGrid Spacing="2">
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.PersistentBattlefield" Label="Persistent" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.DrawingInMap" Label="Drawing in Map" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.SkipLobby" Label="Skip Lobby" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.EnablePlayerDiag" Label="Player Diagnostics" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.StatisticsEnabled" Label="Statistics" Color="Color.Primary" /></MudItem>
-                    <MudItem xs="6"><MudSwitch @bind-Value="Config.AllowProfileGlasses" Label="Profile Glasses" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.PersistentBattlefield" ValueChanged="@((bool v) => SetBool(v, x => Config.PersistentBattlefield = x))" Label="Persistent" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.DrawingInMap" ValueChanged="@((bool v) => SetBool(v, x => Config.DrawingInMap = x))" Label="Drawing in Map" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.SkipLobby" ValueChanged="@((bool v) => SetBool(v, x => Config.SkipLobby = x))" Label="Skip Lobby" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.EnablePlayerDiag" ValueChanged="@((bool v) => SetBool(v, x => Config.EnablePlayerDiag = x))" Label="Player Diagnostics" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.StatisticsEnabled" ValueChanged="@((bool v) => SetBool(v, x => Config.StatisticsEnabled = x))" Label="Statistics" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudSwitch Value="@Config.AllowProfileGlasses" ValueChanged="@((bool v) => SetBool(v, x => Config.AllowProfileGlasses = x))" Label="Profile Glasses" Color="Color.Primary" /></MudItem>
                     <MudItem xs="6">
                         <MudSelect Value="@Config.ForceRotorLibSimulation.ToString()"
                                    ValueChanged="@((string v) => { Config.ForceRotorLibSimulation = int.Parse(v); _ = OnConfigChanged.InvokeAsync(); })"
@@ -134,4 +134,10 @@
     [Parameter] public string RawContent { get; set; } = "";
     [Parameter] public EventCallback OnConfigChanged { get; set; }
     [Parameter] public EventCallback<string> OnRawContentChanged { get; set; }
+
+    private async Task SetBool(bool value, Action<bool> setValue)
+    {
+        setValue(value);
+        await OnConfigChanged.InvokeAsync();
+    }
 }

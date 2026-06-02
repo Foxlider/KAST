@@ -2,6 +2,7 @@
 @layout AuthLayout
 @attribute [AllowAnonymous]
 @inject NavigationManager Navigation
+@inject IConfiguration Configuration
 
 <PageTitle>KAST -- Login</PageTitle>
 
@@ -16,20 +17,36 @@
         <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
     }
 
-    <form method="post" action="/auth/login" enctype="multipart/form-data" data-enhance="false">
-        <input type="hidden" name="returnUrl" value="@_returnUrl" />
-        <div class="d-flex flex-column gap-3">
-            <label class="kast-auth-field">
-                <span>Username</span>
-                <input name="username" autocomplete="username" autofocus />
-            </label>
-            <label class="kast-auth-field">
-                <span>Password</span>
-                <input name="password" type="password" autocomplete="current-password" />
-            </label>
-            <button type="submit" class="kast-auth-submit">Sign in</button>
-        </div>
-    </form>
+    @if (_authSettings.IsOidcConfigured)
+    {
+        <a class="kast-auth-submit kast-auth-link" href="@OidcLoginUrl">
+            Continue with @_authSettings.DisplayName
+        </a>
+    }
+
+    @if (_authSettings.IsOidcConfigured && _authSettings.IsLocalEnabled)
+    {
+        <MudDivider Class="my-4" />
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">Local administrator account</MudText>
+    }
+
+    @if (_authSettings.IsLocalEnabled)
+    {
+        <form method="post" action="/auth/login" enctype="multipart/form-data" data-enhance="false">
+            <input type="hidden" name="returnUrl" value="@_returnUrl" />
+            <div class="d-flex flex-column gap-3">
+                <label class="kast-auth-field">
+                    <span>Username</span>
+                    <input name="username" autocomplete="username" autofocus="@(!_authSettings.IsOidcConfigured)" />
+                </label>
+                <label class="kast-auth-field">
+                    <span>Password</span>
+                    <input name="password" type="password" autocomplete="current-password" />
+                </label>
+                <button type="submit" class="kast-auth-submit">Sign in</button>
+            </div>
+        </form>
+    }
 </MudPaper>
 
 <style>
@@ -66,14 +83,24 @@
         font-weight: 600;
         text-transform: uppercase;
     }
+
+    .kast-auth-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+    }
 </style>
 
 @code {
     private string _returnUrl = "/";
     private string? _error;
+    private KastAuthSettings _authSettings = new(KastAuthMode.Local, "OpenID Connect", null, null, null, "groups", "preferred_username", ["KAST Admins"]);
+    private string OidcLoginUrl => $"/auth/oidc/login?returnUrl={Uri.EscapeDataString(_returnUrl)}";
 
     protected override void OnInitialized()
     {
+        _authSettings = Configuration.GetKastAuthSettings();
         var uri = new Uri(Navigation.Uri);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
         _returnUrl = NormalizeReturnUrl(query["returnUrl"]);

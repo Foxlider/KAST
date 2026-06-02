@@ -108,8 +108,13 @@ public class KastDbContext : DbContext
         modelBuilder.Entity<KastUser>(entity =>
         {
             entity.HasIndex(e => e.NormalizedUsername).IsUnique();
+            entity.HasIndex(e => new { e.ExternalIssuer, e.ExternalSubject }).IsUnique();
             entity.Property(e => e.Username).HasMaxLength(64);
             entity.Property(e => e.NormalizedUsername).HasMaxLength(64);
+            entity.Property(e => e.AuthSource).HasMaxLength(32);
+            entity.Property(e => e.ExternalProvider).HasMaxLength(64);
+            entity.Property(e => e.ExternalIssuer).HasMaxLength(512);
+            entity.Property(e => e.ExternalSubject).HasMaxLength(255);
             entity.Property(e => e.AvatarFileName).HasMaxLength(255);
         });
 

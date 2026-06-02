@@ -10,14 +10,18 @@ using KAST.UI.Api;
 using KAST.UI.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using System.Text.Encodings.Web;
 
 namespace KAST.Tests;
 
@@ -138,6 +142,65 @@ public class AccountAuthEndpointTests
         Assert.Equal(HttpStatusCode.Unauthorized, apiRequest.StatusCode);
     }
 
+    [Fact]
+    public async Task OidcOnly_LocalLoginPostRedirectsToOidc()
+    {
+        await using var app = await AuthApp.CreateAsync(new Dictionary<string, string?>
+        {
+            ["Auth:Mode"] = "Oidc",
+            ["Auth:Oidc:Authority"] = "https://auth.example.test",
+            ["Auth:Oidc:ClientId"] = "kast",
+            ["Auth:Oidc:ClientSecret"] = "secret"
+        });
+
+        var response = await app.Client.PostAsync("/auth/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "admin",
+            ["password"] = "secret",
+            ["returnUrl"] = "/settings"
+        }));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("/auth/oidc/login?returnUrl=", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task OidcLogin_WhenConfigured_ChallengesOidcScheme()
+    {
+        await using var app = await AuthApp.CreateAsync(new Dictionary<string, string?>
+        {
+            ["Auth:Mode"] = "LocalAndOidc",
+            ["Auth:Oidc:Authority"] = "https://auth.example.test",
+            ["Auth:Oidc:ClientId"] = "kast",
+            ["Auth:Oidc:ClientSecret"] = "secret"
+        });
+
+        var response = await app.Client.GetAsync("/auth/oidc/login?returnUrl=%2Fsettings");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/fake-oidc/challenge?returnUrl=%2Fsettings", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task Logout_WithOidcCookie_UsesFederatedSignOut()
+    {
+        await using var app = await AuthApp.CreateAsync(new Dictionary<string, string?>
+        {
+            ["Auth:Mode"] = "LocalAndOidc",
+            ["Auth:Oidc:Authority"] = "https://auth.example.test",
+            ["Auth:Oidc:ClientId"] = "kast",
+            ["Auth:Oidc:ClientSecret"] = "secret"
+        });
+
+        var signIn = await app.Client.GetAsync("/test/sign-in-oidc");
+        app.UseCookieFrom(signIn);
+
+        var logout = await app.Client.PostAsync("/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Redirect, logout.StatusCode);
+        Assert.Equal("/fake-oidc/logout?redirectUri=%2Flogin", logout.Headers.Location?.OriginalString);
+    }
+
     private sealed class AuthApp : IAsyncDisposable
     {
         private AuthApp(WebApplication app, HttpClient client)
@@ -149,7 +212,7 @@ public class AccountAuthEndpointTests
         public WebApplication App { get; }
         public HttpClient Client { get; }
 
-        public static async Task<AuthApp> CreateAsync()
+        public static async Task<AuthApp> CreateAsync(Dictionary<string, string?>? configuration = null)
         {
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions
             {
@@ -157,10 +220,18 @@ public class AccountAuthEndpointTests
             });
 
             builder.WebHost.UseTestServer();
-            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var config = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Default"] = "Data Source=kast-auth-tests.db"
-            });
+                ["ConnectionStrings:Default"] = "Data Source=kast-auth-tests.db",
+                ["Auth:Mode"] = "Local",
+                ["Auth:Oidc:AllowedGroups:0"] = "KAST Admins"
+            };
+            if (configuration is not null)
+            {
+                foreach (var pair in configuration)
+                    config[pair.Key] = pair.Value;
+            }
+            builder.Configuration.AddInMemoryCollection(config);
 
             var dbName = Guid.NewGuid().ToString();
             builder.Services.AddDbContext<KastDbContext>(options =>
@@ -198,7 +269,10 @@ public class AccountAuthEndpointTests
                         context.Response.Redirect(context.RedirectUri);
                         return Task.CompletedTask;
                     };
-                });
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestOidcAuthenticationHandler>(
+                    OpenIdConnectDefaults.AuthenticationScheme,
+                    _ => { });
             builder.Services.AddAuthorization();
 
             builder.Services.AddSingleton(BuildModService());
@@ -220,9 +294,22 @@ public class AccountAuthEndpointTests
 
             var app = builder.Build();
             app.UseAuthentication();
-            app.UseKastAccountGate();
+            app.UseWhen(
+                context => !context.Request.Path.StartsWithSegments("/test"),
+                branch => branch.UseKastAccountGate());
             app.UseAuthorization();
             app.MapGet("/", () => Results.Ok("ok")).RequireAuthorization();
+            app.MapGet("/test/sign-in-oidc", async (HttpContext http, IUserAccountService accounts) =>
+            {
+                var user = await accounts.ProvisionOidcAdminAsync(new OidcProvisioningRequest(
+                    "https://auth.example.test",
+                    "user-123",
+                    "External Admin",
+                    null,
+                    ["KAST Admins"]));
+                await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, AccountClaims.CreatePrincipal(user));
+                return Results.Ok();
+            });
             app.MapAccountEndpoints();
             app.MapGroup("/api").MapKastApi().RequireAuthorization();
 
@@ -286,6 +373,30 @@ public class AccountAuthEndpointTests
             events.BroadcastInstanceMetricsAsync(Arg.Any<InstanceMetricsUpdatedEvent>()).Returns(Task.CompletedTask);
             events.BroadcastLogEntryAsync(Arg.Any<LogEntryEvent>()).Returns(Task.CompletedTask);
             return events;
+        }
+    }
+
+    private sealed class TestOidcAuthenticationHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder), IAuthenticationSignOutHandler
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+            => Task.FromResult(AuthenticateResult.NoResult());
+
+        protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            var returnUrl = Uri.EscapeDataString(properties.RedirectUri ?? "/");
+            Response.Redirect($"/fake-oidc/challenge?returnUrl={returnUrl}");
+            return Task.CompletedTask;
+        }
+
+        public Task SignOutAsync(AuthenticationProperties? properties)
+        {
+            var redirectUri = Uri.EscapeDataString(properties?.RedirectUri ?? "/login");
+            Response.Redirect($"/fake-oidc/logout?redirectUri={redirectUri}");
+            return Task.CompletedTask;
         }
     }
 }

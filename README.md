@@ -117,6 +117,49 @@ volumes:
   kast-data:
 ```
 
+### **Authentication and OIDC**
+
+KAST uses local administrator accounts by default. OpenID Connect can be enabled
+through configuration or environment variables and is compatible with Authentik
+and other OIDC providers.
+
+Supported auth modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `Local` | Local KAST username/password sign-in only. |
+| `Oidc` | OIDC sign-in only. The first allowed OIDC user bootstraps the first KAST administrator. |
+| `LocalAndOidc` | OIDC sign-in with local administrator passwords kept as a fallback. |
+
+Example Docker environment:
+
+```yaml
+environment:
+  - Auth__Mode=LocalAndOidc
+  - Auth__Oidc__Authority=https://auth.example.com/application/o/kast/
+  - Auth__Oidc__ClientId=kast
+  - Auth__Oidc__ClientSecret=replace-with-provider-secret
+  - Auth__Oidc__DisplayName=OpenID Connect
+  - Auth__Oidc__GroupClaim=groups
+  - Auth__Oidc__NameClaim=preferred_username
+  - Auth__Oidc__AllowedGroups__0=KAST Admins
+```
+
+For Authentik, configure the application/provider with:
+
+| Setting | Value |
+| --- | --- |
+| Redirect URI | `https://<kast-host>/auth/oidc/callback` |
+| Logout/signed-out URI | `https://<kast-host>/auth/oidc/signed-out` |
+| Scopes | `openid profile email` |
+| Group claim | `groups` |
+| Required group value | `KAST Admins` |
+
+Authentik application assignment alone is not enough for KAST access. The OIDC
+user must also have at least one configured allowed group in the configured
+group claim. KAST links external accounts by OIDC issuer plus `sub`, so email or
+username changes in Authentik do not break the account link.
+
 ## **VERSIONING**
 
 KAST uses [MinVer](https://github.com/adamralph/minver) to derive the version from git tags at build time.

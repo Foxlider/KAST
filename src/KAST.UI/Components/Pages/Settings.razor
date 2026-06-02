@@ -9,6 +9,7 @@
 @inject ThemeService ThemeService
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IConfiguration Configuration
 @using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
@@ -124,6 +125,33 @@
 
     <MudTabPanel Text="Accounts">
         <MudGrid Class="mt-3" Spacing="3">
+            <MudItem xs="12">
+                <MudCard Elevation="1">
+                    <MudCardContent>
+                        <div class="d-flex align-center justify-space-between gap-3 flex-wrap">
+                            <div>
+                                <MudText Typo="Typo.subtitle1">Authentication</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Mode: @_authSettings.Mode
+                                </MudText>
+                            </div>
+                            <MudChip T="string" Color="@(_authSettings.IsOidcConfigured ? Color.Success : Color.Default)"
+                                     Variant="Variant.Outlined">
+                                @(_authSettings.IsOidcConfigured ? "OIDC configured" : "OIDC not configured")
+                            </MudChip>
+                        </div>
+                        <MudSimpleTable Dense="true" Class="mt-3">
+                            <tbody>
+                                <tr><td>Provider</td><td>@_authSettings.DisplayName</td></tr>
+                                <tr><td>Callback URL</td><td>@OidcCallbackUrl</td></tr>
+                                <tr><td>Group claim</td><td>@_authSettings.GroupClaim</td></tr>
+                                <tr><td>Allowed groups</td><td>@string.Join(", ", _authSettings.AllowedGroups)</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
             <MudItem xs="12" md="5">
                 <MudCard Elevation="1">
                     <MudCardContent>
@@ -143,21 +171,30 @@
                                 }
                                 <div>
                                     <MudText Typo="Typo.subtitle2">@_currentUser.Username</MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Administrator</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@AccountTypeLabel(_currentUser)</MudText>
                                 </div>
                             </div>
 
-                            <div class="d-flex flex-column gap-3">
-                                <MudTextField @bind-Value="_profileUsername" Label="Username" Variant="Variant.Outlined" />
-                                <MudTextField @bind-Value="_profilePassword" Label="New password" Variant="Variant.Outlined" InputType="InputType.Password" />
-                                <div>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
-                                    <InputFile OnChange="OnProfileAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                            @if (_currentUser.IsExternallyManaged)
+                            {
+                                <MudAlert Severity="Severity.Info" Dense="true">
+                                    This account is managed by @_currentUser.ExternalProvider.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-column gap-3">
+                                    <MudTextField @bind-Value="_profileUsername" Label="Username" Variant="Variant.Outlined" />
+                                    <MudTextField @bind-Value="_profilePassword" Label="New password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                                    <div>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
+                                        <InputFile OnChange="OnProfileAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                                    </div>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile">
+                                        Save Profile
+                                    </MudButton>
                                 </div>
-                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile">
-                                    Save Profile
-                                </MudButton>
-                            </div>
+                            }
                         }
                     </MudCardContent>
                 </MudCard>
@@ -186,6 +223,9 @@
                                         </CellTemplate>
                                     </TemplateColumn>
                                     <PropertyColumn Property="u => u.Username" Title="Username" />
+                                    <TemplateColumn Title="Source">
+                                        <CellTemplate>@AccountTypeLabel(context.Item)</CellTemplate>
+                                    </TemplateColumn>
                                     <TemplateColumn Title="Created">
                                         <CellTemplate>@context.Item.CreatedAt.ToLocalTime().ToString("g")</CellTemplate>
                                     </TemplateColumn>
@@ -197,18 +237,27 @@
                         }
 
                         <MudDivider Class="my-3" />
-                        <MudText Typo="Typo.subtitle2" Class="mb-3">Create administrator</MudText>
-                        <div class="d-flex flex-column gap-3">
-                            <MudTextField @bind-Value="_newAdminUsername" Label="Username" Variant="Variant.Outlined" />
-                            <MudTextField @bind-Value="_newAdminPassword" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" />
-                            <div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
-                                <InputFile OnChange="OnNewAdminAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                        @if (_authSettings.IsLocalEnabled)
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mb-3">Create administrator</MudText>
+                            <div class="d-flex flex-column gap-3">
+                                <MudTextField @bind-Value="_newAdminUsername" Label="Username" Variant="Variant.Outlined" />
+                                <MudTextField @bind-Value="_newAdminPassword" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                                <div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Avatar image</MudText>
+                                    <InputFile OnChange="OnNewAdminAvatarSelected" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                                </div>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAdmin">
+                                    Create Administrator
+                                </MudButton>
                             </div>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAdmin">
-                                Create Administrator
-                            </MudButton>
-                        </div>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Local administrator creation is disabled by the current auth mode.
+                            </MudText>
+                        }
                     </MudCardContent>
                 </MudCard>
             </MudItem>
@@ -418,6 +467,8 @@
     private string _newAdminPassword = "";
     private IBrowserFile? _newAdminAvatar;
     private const long MaxAvatarBytes = 2 * 1024 * 1024;
+    private KastAuthSettings _authSettings = new(KastAuthMode.Local, "OpenID Connect", null, null, null, "groups", "preferred_username", ["KAST Admins"]);
+    private string OidcCallbackUrl => new Uri(new Uri(Navigation.BaseUri), "auth/oidc/callback").ToString();
 
     private bool _benchmarkRunning;
     private string? _benchmarkStatus;
@@ -428,6 +479,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _authSettings = Configuration.GetKastAuthSettings();
         SteamService.AuthStateChanged += OnAuthStateChanged;
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
         await LoadAccountsAsync();
@@ -473,6 +525,8 @@
     private async Task SaveProfile()
     {
         if (_currentUser is null)
+            return;
+        if (_currentUser.IsExternallyManaged)
             return;
 
         try
@@ -525,6 +579,11 @@
         => string.IsNullOrWhiteSpace(username)
             ? "?"
             : username.Trim()[0].ToString().ToUpperInvariant();
+
+    private static string AccountTypeLabel(KastUser user)
+        => user.IsExternallyManaged
+            ? $"{user.ExternalProvider ?? "External"} administrator"
+            : "Local administrator";
 
     private async Task StartQrLogin()
     {
