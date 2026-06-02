@@ -29,6 +29,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install SonarCloud scanner
+        if: env.SONAR_TOKEN != ''
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: Install Coverlet tool
@@ -38,6 +39,7 @@ jobs:
         run: dotnet restore
 
       - name: Begin SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
         run: |
           dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" \
             /d:sonar.token="${{ env.SONAR_TOKEN }}" \
@@ -63,7 +65,7 @@ jobs:
 
       - name: End SonarCloud analysis
         run: dotnet sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
-        if: always()
+        if: always() && env.SONAR_TOKEN != ''
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
