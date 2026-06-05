@@ -11,6 +11,7 @@ using KAST.UI.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -45,6 +46,16 @@ builder.Services.AddHealthChecks()
 // ── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db";
 builder.Services.AddKastInfrastructure(connectionString);
+
+// Persist Data Protection keys so cookies and ProtectedBrowserStorage survive
+// restarts, reinstalls, and Windows service account/context changes.
+var dataProtectionKeysDirectory = ResolveDataProtectionKeysDirectory(
+    contentRoot,
+    builder.Configuration["Kast:DataProtectionKeysDirectory"]);
+Directory.CreateDirectory(dataProtectionKeysDirectory);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysDirectory))
+    .SetApplicationName("KAST.UI");
 
 // ── MudBlazor + Blazor Server ────────────────────────────────────────────────
 builder.Services.AddMudServices(config =>
@@ -395,3 +406,14 @@ static IEnumerable<string> SplitClaimValue(string value)
 
 static string ResolveConfiguredPath(string contentRoot, string path) =>
     Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(contentRoot, path));
+
+static string ResolveDataProtectionKeysDirectory(string contentRoot, string? configuredPath)
+{
+    if (!string.IsNullOrWhiteSpace(configuredPath))
+        return ResolveConfiguredPath(contentRoot, configuredPath);
+
+    var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+    return !string.IsNullOrWhiteSpace(commonAppData)
+        ? Path.Combine(commonAppData, "KAST", "DataProtection-Keys")
+        : Path.Combine(contentRoot, ".KAST_DATA", "DataProtection-Keys");
+}

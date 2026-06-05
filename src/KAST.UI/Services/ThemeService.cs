@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
+using System.Security.Cryptography;
 
 namespace KAST.UI.Services;
 
@@ -31,6 +32,10 @@ public class ThemeService(ProtectedLocalStorage storage) : IDisposable
             var darkResult = await storage.GetAsync<bool>(DarkModeKey);
             if (darkResult.Success)
                 IsDarkMode = darkResult.Value;
+        }
+        catch (CryptographicException)
+        {
+            await TryDeleteThemeStorageAsync();
         }
         catch { /* ignore during pre-render or when storage is unavailable */ }
 
@@ -86,6 +91,16 @@ public class ThemeService(ProtectedLocalStorage storage) : IDisposable
             }
         }
         catch (TaskCanceledException) { /* Ignore */ }
+    }
+
+    private async Task TryDeleteThemeStorageAsync()
+    {
+        try
+        {
+            await storage.DeleteAsync(AccentKey);
+            await storage.DeleteAsync(DarkModeKey);
+        }
+        catch { }
     }
 
     protected virtual void Dispose(bool disposing)
