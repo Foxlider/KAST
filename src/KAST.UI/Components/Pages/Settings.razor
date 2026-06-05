@@ -4,6 +4,7 @@
 @inject IApiKeyService ApiKeyService
 @inject IUserAccountService AccountService
 @inject ISettingsService SettingsService
+@inject IAppUpdateService AppUpdateService
 @inject ISteamService SteamService
 @inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
@@ -438,6 +439,117 @@
             </MudCardContent>
         </MudCard>
     </MudTabPanel>
+
+    <MudTabPanel Text="Updates">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <div class="d-flex align-center justify-space-between gap-3 flex-wrap mb-3">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">KAST Updates</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Native updater for Windows and Linux executable installs.
+                        </MudText>
+                    </div>
+                    @if (_updateCheck is not null)
+                    {
+                        <MudChip T="string" Color="@UpdateStatusColor" Variant="Variant.Outlined">
+                            @_updateCheck.Message
+                        </MudChip>
+                    }
+                </div>
+
+                <div class="d-flex gap-3 flex-wrap align-end mb-3">
+                    <MudSelect T="string" @bind-Value="_updateChannelId" Label="Channel" Style="min-width:220px;">
+                        @foreach (var channel in _updateChannels)
+                        {
+                            <MudSelectItem T="string" Value="@channel.Id">@channel.Label</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSwitch @bind-Value="_autoUpdateCheckEnabled" Label="Check automatically" Color="Color.Primary" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="SaveUpdateSettings">
+                        Save
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="@(() => CheckForUpdate())" Disabled="@_checkingUpdate">
+                        Check
+                    </MudButton>
+                </div>
+
+                @if (_checkingUpdate)
+                {
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body2">Checking GitHub releases...</MudText>
+                    </div>
+                }
+
+                @if (_updateCheck is not null)
+                {
+                    <MudSimpleTable Dense="true" Hover="false" Class="mb-3">
+                        <tbody>
+                            <tr><td>Current version</td><td>@_updateCheck.CurrentVersion</td></tr>
+                            <tr><td>Source</td><td>@($"{_updateCheck.Channel.Owner}/{_updateCheck.Channel.Repository}")</td></tr>
+                            <tr><td>Release</td><td>@($"{_updateCheck.ReleaseName ?? "Unavailable"} ({_updateCheck.ReleaseTag ?? "no tag"})")</td></tr>
+                            <tr><td>Published</td><td>@(_updateCheck.PublishedAt?.ToLocalTime().ToString("g") ?? "Unknown")</td></tr>
+                            <tr><td>Runtime</td><td>@_updateCheck.RuntimeIdentifier</td></tr>
+                            <tr><td>Asset</td><td>@(_updateCheck.Asset is null ? "No matching asset" : $"{_updateCheck.Asset.Name} ({FormatBytes(_updateCheck.Asset.SizeBytes)})")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+
+                    @if (_updateCheck.IsDocker)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                            KAST is running in Docker. Pull the selected channel's image and recreate the container to update.
+                        </MudAlert>
+                    }
+                    else if (!_updateCheck.IsChannelAvailable)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                            @_updateCheck.Message
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <div class="d-flex gap-2 flex-wrap align-center mb-3">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.FileDownload"
+                                       Disabled="@(!_updateCheck.IsChannelAvailable || !_updateCheck.IsUpdateAvailable || _downloadingUpdate)"
+                                       OnClick="DownloadUpdate">
+                                Download and Stage
+                            </MudButton>
+                            @if (_downloadResult?.Success == true)
+                            {
+                                <MudCheckBox T="bool" @bind-Value="_confirmApplyUpdate" Color="Color.Warning"
+                                             Label="I understand KAST will stop and restart to apply the staged update." />
+                                <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                                           StartIcon="@Icons.Material.Filled.SystemUpdateAlt"
+                                           Disabled="@(!_confirmApplyUpdate || _applyingUpdate)"
+                                           OnClick="ApplyStagedUpdate">
+                                    Apply Staged Update
+                                </MudButton>
+                            }
+                        </div>
+                    }
+                }
+
+                @if (_downloadingUpdate)
+                {
+                    <div class="mb-3">
+                        <MudProgressLinear Value="@(_updateProgressPercent ?? 0)" Indeterminate="@(!_updateProgressPercent.HasValue)" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_updateProgressMessage</MudText>
+                    </div>
+                }
+
+                @if (_downloadResult is not null)
+                {
+                    <MudAlert Severity="@(_downloadResult.Success ? Severity.Success : Severity.Error)" Dense="true">
+                        @_downloadResult.Message
+                    </MudAlert>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
 </MudTabs>
 
 @code {
@@ -458,6 +570,17 @@
     private string _newRawKey = "";
     private int _parallelDownloads = 4;
     private int _parallelModDownloads = 1;
+    private IReadOnlyList<AppUpdateChannel> _updateChannels = [];
+    private string _updateChannelId = "stable";
+    private bool _autoUpdateCheckEnabled = true;
+    private AppUpdateCheckResult? _updateCheck;
+    private AppUpdateDownloadResult? _downloadResult;
+    private bool _checkingUpdate;
+    private bool _downloadingUpdate;
+    private bool _applyingUpdate;
+    private bool _confirmApplyUpdate;
+    private string? _updateProgressMessage;
+    private double? _updateProgressPercent;
 
     private KastUser? _currentUser;
     private IReadOnlyList<KastUser> _accounts = [];
@@ -487,6 +610,9 @@
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
         _parallelModDownloads = settings.ParallelModDownloads;
+        _updateChannels = AppUpdateService.GetChannels();
+        _updateChannelId = settings.UpdateChannelId;
+        _autoUpdateCheckEnabled = settings.AutoUpdateCheckEnabled;
         _accentMud  = ThemeService.AccentColor;
         _isDarkMode = ThemeService.IsDarkMode;
 
@@ -498,8 +624,12 @@
             "accounts" => 1,
             "steam" => 2,
             "api-keys" => 3,
+            "updates" => 4,
             _ => _activePanelIndex
         };
+
+        if (_autoUpdateCheckEnabled)
+            await CheckForUpdate(showSnackbar: false);
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
@@ -734,6 +864,118 @@
         settings.ParallelModDownloads = Math.Clamp(_parallelModDownloads, 1, 16);
         await SettingsService.UpdateSettingsAsync(settings);
         Snackbar.Add("Settings saved", Severity.Success);
+    }
+
+    private Color UpdateStatusColor =>
+        _updateCheck is null ? Color.Default :
+        !_updateCheck.IsChannelAvailable ? Color.Warning :
+        _updateCheck.IsUpdateAvailable ? Color.Success :
+        Color.Default;
+
+    private async Task SaveUpdateSettings()
+    {
+        var settings = await SettingsService.GetSettingsAsync();
+        settings.UpdateChannelId = _updateChannelId;
+        settings.AutoUpdateCheckEnabled = _autoUpdateCheckEnabled;
+        await SettingsService.UpdateSettingsAsync(settings);
+        _downloadResult = null;
+        _confirmApplyUpdate = false;
+        Snackbar.Add("Update settings saved", Severity.Success);
+    }
+
+    private async Task CheckForUpdate(bool showSnackbar = true)
+    {
+        _checkingUpdate = true;
+        _downloadResult = null;
+        _confirmApplyUpdate = false;
+        StateHasChanged();
+
+        try
+        {
+            _updateCheck = await AppUpdateService.CheckForUpdatesAsync(_updateChannelId);
+            if (showSnackbar)
+                Snackbar.Add(_updateCheck.Message, _updateCheck.IsChannelAvailable ? Severity.Info : Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Update check failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+        }
+        finally
+        {
+            _checkingUpdate = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadUpdate()
+    {
+        _downloadingUpdate = true;
+        _downloadResult = null;
+        _confirmApplyUpdate = false;
+        _updateProgressPercent = null;
+        _updateProgressMessage = "Preparing...";
+        StateHasChanged();
+
+        try
+        {
+            var progress = new Progress<AppUpdateProgress>(p => InvokeAsync(() =>
+            {
+                _updateProgressPercent = p.Percent;
+                _updateProgressMessage = p.Message;
+                StateHasChanged();
+            }));
+
+            _downloadResult = await AppUpdateService.DownloadUpdateAsync(_updateChannelId, progress);
+            Snackbar.Add(_downloadResult.Message, _downloadResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _downloadResult = new(false, $"Update download failed: {OutputSanitizer.SanitizeException(ex)}", null, null, false);
+            Snackbar.Add(_downloadResult.Message, Severity.Error);
+        }
+        finally
+        {
+            _downloadingUpdate = false;
+            _updateProgressPercent = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApplyStagedUpdate()
+    {
+        if (_downloadResult?.StagedUpdateId is null)
+            return;
+
+        _applyingUpdate = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AppUpdateService.ApplyStagedUpdateAsync(_downloadResult.StagedUpdateId);
+            Snackbar.Add(result.Message, result.Success ? Severity.Info : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Applying update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+        }
+        finally
+        {
+            _applyingUpdate = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        double value = bytes;
+        var suffix = 0;
+        while (value >= 1024 && suffix < suffixes.Length - 1)
+        {
+            value /= 1024;
+            suffix++;
+        }
+        return $"{value:0.0} {suffixes[suffix]}";
     }
 
     private async Task RunBenchmark()
