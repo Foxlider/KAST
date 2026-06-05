@@ -112,6 +112,10 @@ public class ModPresetService(
             {
                 logger.LogWarning(ex, "Failed to resolve mod {WorkshopId} for Arma preset import", workshopId);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to resolve mod {WorkshopId} for Arma preset import", workshopId);
+            }
         }
 
         await db.SaveChangesAsync(ct);

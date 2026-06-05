@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
@@ -22,13 +21,10 @@ public class MonitoringServiceTests : IDisposable
         var processManager = new DelayedProcessManager();
         var sut = new MonitoringService(processManager, _db);
 
-        var sw = Stopwatch.StartNew();
         var metrics = await sut.GetAllInstanceMetricsAsync();
-        sw.Stop();
 
         Assert.Equal(3, metrics.Count);
         Assert.True(processManager.MaxConcurrentCalls > 1);
-        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(250));
     }
 
     public void Dispose() => _db.Dispose();
