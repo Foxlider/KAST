@@ -18,4 +18,6 @@ public class KastSettings
     public int MetricsIntervalSeconds { get; set; } = 5;
     public int ParallelDownloads { get; set; } = 4;
     public int ParallelModDownloads { get; set; } = 1;
+    public string UpdateChannelId { get; set; } = "stable";
+    public bool AutoUpdateCheckEnabled { get; set; } = true;
 }

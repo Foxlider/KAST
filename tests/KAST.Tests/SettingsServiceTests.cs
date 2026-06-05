@@ -57,6 +57,8 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(233780, settings.Arma3ServerAppId);
         Assert.Equal("dark", settings.ThemeMode);
         Assert.Equal(5, settings.MetricsIntervalSeconds);
+        Assert.Equal("stable", settings.UpdateChannelId);
+        Assert.True(settings.AutoUpdateCheckEnabled);
     }
 
     [Fact]
@@ -126,6 +128,8 @@ public class SettingsServiceTests : IDisposable
         settings.ThemeMode = "light";
         settings.MetricsIntervalSeconds = 10;
         settings.ModsDirectory = "/updated/mods";
+        settings.UpdateChannelId = "dev";
+        settings.AutoUpdateCheckEnabled = false;
 
         await sut.UpdateSettingsAsync(settings);
 
@@ -134,6 +138,8 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("light", updated.ThemeMode);
         Assert.Equal(10, updated.MetricsIntervalSeconds);
         Assert.Equal("/updated/mods", updated.ModsDirectory);
+        Assert.Equal("dev", updated.UpdateChannelId);
+        Assert.False(updated.AutoUpdateCheckEnabled);
     }
 
     [Fact]

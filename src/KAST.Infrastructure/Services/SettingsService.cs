@@ -18,7 +18,10 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
             {
                 ModsDirectory = configuration["Kast:ModsDirectory"] ?? "./mods",
                 ServersDirectory = configuration["Kast:ServersDirectory"] ?? "./servers",
-                Arma3ServerAppId = int.TryParse(configuration["Kast:Arma3AppId"], out var appId) ? appId : 233780
+                Arma3ServerAppId = int.TryParse(configuration["Kast:Arma3AppId"], out var appId) ? appId : 233780,
+                UpdateChannelId = configuration["Kast:UpdateChannelId"] ?? "stable",
+                AutoUpdateCheckEnabled = !bool.TryParse(configuration["Kast:AutoUpdateCheckEnabled"], out var autoCheck)
+                    || autoCheck
             };
             db.Settings.Add(settings);
             await db.SaveChangesAsync(ct);
@@ -50,6 +53,8 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
             existing.MetricsIntervalSeconds = settings.MetricsIntervalSeconds;
             existing.ParallelDownloads = settings.ParallelDownloads;
             existing.ParallelModDownloads = settings.ParallelModDownloads;
+            existing.UpdateChannelId = settings.UpdateChannelId;
+            existing.AutoUpdateCheckEnabled = settings.AutoUpdateCheckEnabled;
         }
         await db.SaveChangesAsync(ct);
     }
