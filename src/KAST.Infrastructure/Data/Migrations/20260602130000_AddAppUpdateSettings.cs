@@ -1,3 +1,5 @@
+using KAST.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +7,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace KAST.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(KastDbContext))]
+    [Migration("20260602130000_AddAppUpdateSettings")]
     public partial class AddAppUpdateSettings : Migration
     {
         /// <inheritdoc />
