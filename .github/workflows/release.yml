@@ -9,9 +9,56 @@ env:
   DOTNET_VERSION: '10.0.x'
 
 jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+      publish_latest: ${{ steps.version.outputs.publish_latest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate SemVer tag on caster
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Stable release tags must match vX.Y.Z. Got: $TAG" >&2
+            exit 1
+          fi
+
+          TAG_COMMIT="$(git rev-list -n 1 "$TAG")"
+          git fetch --no-tags origin +caster:refs/remotes/origin/caster
+
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/caster; then
+            echo "Stable release tag $TAG must point to a commit reachable from origin/caster." >&2
+            echo "Resolved tag commit: $TAG_COMMIT" >&2
+            exit 1
+          fi
+
+          PUBLISH_LATEST="true"
+          TAG_TYPE="$(git cat-file -t "$TAG")"
+          if [ "$TAG_TYPE" = "tag" ] && git tag -l --format='%(contents)' "$TAG" | grep -Eiq '^Publish-Latest:[[:space:]]*false[[:space:]]*$'; then
+            PUBLISH_LATEST="false"
+          fi
+
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$TAG_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "publish_latest=$PUBLISH_LATEST" >> "$GITHUB_OUTPUT"
+
   # ── 1. Gate: run tests before publishing anything ──────────────────────────
   test:
     name: Test
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,6 +136,17 @@ jobs:
           cd publish/${{ matrix.rid }}
           zip -r ../../kast-${{ matrix.rid }}-v${{ steps.version.outputs.version }}.zip .
 
+      - name: Generate checksum
+        run: |
+          archive="$(find . -maxdepth 1 -type f \( -name 'kast-${{ matrix.rid }}-v${{ steps.version.outputs.version }}.tar.gz' -o -name 'kast-${{ matrix.rid }}-v${{ steps.version.outputs.version }}.zip' \) -print -quit)"
+
+          if [ -z "$archive" ]; then
+            echo "Release archive was not found for ${{ matrix.rid }}." >&2
+            exit 1
+          fi
+
+          sha256sum "$archive" > "$archive.sha256"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -139,13 +197,14 @@ jobs:
           tags: |
             ghcr.io/${{ steps.repo.outputs.owner }}/kast:${{ steps.version.outputs.version }}
             ghcr.io/${{ steps.repo.outputs.owner }}/kast:latest
+            ghcr.io/${{ steps.repo.outputs.owner }}/kast:stable
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
   # ── 4. GitHub Release (waits for all binaries + Docker) ───────────────────
   release:
     name: GitHub Release
-    needs: [publish, docker]
+    needs: [validate, publish, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -183,24 +242,27 @@ jobs:
           tag_name:    ${{ steps.version.outputs.tag }}
           name:        "KAST ${{ steps.version.outputs.tag }}"
           body_path:   RELEASE_NOTES.md
-          make_latest: true
+          make_latest: ${{ needs.validate.outputs.publish_latest }}
           files: |
             kast-linux-x64-v*.tar.gz
+            kast-linux-x64-v*.tar.gz.sha256
             kast-linux-arm64-v*.tar.gz
+            kast-linux-arm64-v*.tar.gz.sha256
             kast-win-x64-v*.zip
+            kast-win-x64-v*.zip.sha256
 
-      - name: Update CHANGELOG.md on main
+      - name: Update CHANGELOG.md on caster
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
-          git checkout main
+          git fetch origin +caster:refs/remotes/origin/caster
+          git checkout -B caster origin/caster
 
           git cliff --output CHANGELOG.md
           git add CHANGELOG.md
 
           git diff --staged --quiet && echo "No changelog changes." && exit 0
 
-          git commit -m "chore: update CHANGELOG for ${{ steps.version.outputs.tag }} [skip ci]"
-          git push origin main
+          git commit -m "chore(release): update changelog for ${{ steps.version.outputs.tag }} [skip ci]"
+          git push origin caster

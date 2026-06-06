@@ -83,7 +83,7 @@ Download the latest release for your platform from the [Releases page](https://g
 | Linux x64 | `kast-linux-x64-v*.tar.gz` |
 | Linux arm64 | `kast-linux-arm64-v*.tar.gz` |
 | Windows x64 | `kast-win-x64-v*.zip` |
-| Docker | `ghcr.io/foxlider/kast:latest` |
+| Docker | `ghcr.io/foxlider/kast:latest` or `ghcr.io/foxlider/kast:stable` |
 
 Extract and run the `KAST.UI` executable. On Linux you may need to `chmod +x KAST.UI` first.
 
@@ -202,5 +202,6 @@ KAST uses [MinVer](https://github.com/adamralph/minver) to derive the version fr
 | Nightly (develop) | `1.2.3-nightly.20260522.abc1234` |
 | Local dev build | `1.2.3-alpha.0.5` |
 
-To create a release, push a tag matching `v*` (e.g. `git tag v1.2.3 && git push --tags`).  
-The CI pipeline will run tests, build native binaries for all platforms, push the Docker image, and publish a GitHub Release with all assets attached.
+To create a stable release, run the **Promote Stable Release** workflow from GitHub Actions or push an annotated tag matching `vX.Y.Z` from a commit reachable from `caster`. The release pipeline runs tests, builds native binaries for all platforms, publishes checksum assets, pushes Docker image tags, and publishes a non-prerelease GitHub Release.
+
+Maintainer release steps are documented in [docs/release-runbook.md](docs/release-runbook.md).

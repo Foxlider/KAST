@@ -1,0 +1,81 @@
+name: Promote Stable Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version to publish, for example 1.2.3 or v1.2.3.
+        required: true
+        type: string
+      target_ref:
+        description: Branch, tag, or commit to promote.
+        required: true
+        default: caster
+        type: string
+      publish_latest:
+        description: Mark the GitHub release as the latest stable release.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stable-release-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Create stable release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Validate promotion target
+        id: release
+        shell: bash
+        run: |
+          RAW_VERSION="${{ inputs.version }}"
+          VERSION="${RAW_VERSION#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Stable release versions must match X.Y.Z or vX.Y.Z. Got: $RAW_VERSION" >&2
+            exit 1
+          fi
+
+          TAG="v$VERSION"
+          TARGET_COMMIT="$(git rev-parse HEAD)"
+
+          git fetch --tags origin
+          if git rev-parse --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists. Choose a new stable version." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin +caster:refs/remotes/origin/caster
+          if ! git merge-base --is-ancestor "$TARGET_COMMIT" origin/caster; then
+            echo "Stable releases must promote a commit reachable from origin/caster." >&2
+            echo "Requested target ref: ${{ inputs.target_ref }}" >&2
+            echo "Resolved commit: $TARGET_COMMIT" >&2
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$TARGET_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${{ steps.release.outputs.tag }}" "${{ steps.release.outputs.commit }}" \
+            -m "KAST ${{ steps.release.outputs.tag }}" \
+            -m "Target-Ref: ${{ inputs.target_ref }}" \
+            -m "Publish-Latest: ${{ inputs.publish_latest }}"
+
+          git push origin "refs/tags/${{ steps.release.outputs.tag }}"
