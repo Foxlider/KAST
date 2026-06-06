@@ -364,7 +364,7 @@ public sealed class ModDownloadQueueService(
                 return FailModInstallAsync(sp, mod.Id, ex);
             },
             maxParallelDownloads: Math.Clamp(settings.ParallelDownloads, 1, 64),
-            maxParallelModDownloads: 1,
+            maxParallelModDownloads: Math.Clamp(settings.ParallelModDownloads, 1, 16),
             ct: ct);
 
         var persistTask = PersistProgressUntilCompleteAsync(taskId, mod.Id, installTask, ct);

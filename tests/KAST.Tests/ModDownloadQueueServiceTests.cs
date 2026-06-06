@@ -62,6 +62,7 @@ public class ModDownloadQueueServiceTests
         Assert.Equal(150, completed);
         Assert.Equal(0, failed);
         Assert.True(orchestrator.MaxObserved <= 2, $"Observed {orchestrator.MaxObserved} concurrent downloads.");
+        Assert.Equal(2, orchestrator.MaxParallelModDownloadsRequested);
     }
 
     [Fact]
@@ -189,6 +190,7 @@ public class ModDownloadQueueServiceTests
         private int _startedCount;
         private int _completedCount;
         public int MaxObserved { get; private set; }
+        public int MaxParallelModDownloadsRequested { get; private set; }
         public int StartedCount => _startedCount;
         public int CompletedCount => _completedCount;
 
@@ -205,6 +207,7 @@ public class ModDownloadQueueServiceTests
             var nowActive = Interlocked.Increment(ref _active);
             Interlocked.Increment(ref _startedCount);
             MaxObserved = Math.Max(MaxObserved, nowActive);
+            MaxParallelModDownloadsRequested = Math.Max(MaxParallelModDownloadsRequested, maxParallelModDownloads);
             try
             {
                 await Task.Delay(delay, ct);
