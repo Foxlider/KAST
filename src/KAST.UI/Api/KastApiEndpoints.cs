@@ -57,7 +57,7 @@ public static class KastApiEndpoints
 
         g.MapDelete("/{id:int}", async (int id, IServerInstanceService svc, CancellationToken ct) =>
         {
-            await svc.DeleteInstanceAsync(id, ct);
+            await svc.DeleteInstanceAsync(id, ct: ct);
             return Results.NoContent();
         });
 
@@ -121,7 +121,7 @@ public static class KastApiEndpoints
 
         g.MapDelete("/{id:int}", async (int id, IModService svc, CancellationToken ct) =>
         {
-            await svc.DeleteModAsync(id, ct);
+            await svc.DeleteModAsync(id, ct: ct);
             return Results.NoContent();
         });
 

@@ -469,8 +469,11 @@ if not errorlevel 1 (
   goto wait
 )
 mkdir "%BACKUP%" >nul 2>nul
+mkdir "%BACKUP%\preserve-config" >nul 2>nul
 xcopy "%DEST%" "%BACKUP%\" /E /I /Y /H /C >nul
+copy "%DEST%\appsettings*.json" "%BACKUP%\preserve-config\" >nul 2>nul
 xcopy "%SRC%" "%DEST%\" /E /I /Y /H /C >nul
+copy "%BACKUP%\preserve-config\appsettings*.json" "%DEST%\" >nul 2>nul
 start "" "%EXE%"
 endlocal
 """;
@@ -487,8 +490,11 @@ while kill -0 "$PID" 2>/dev/null; do
   sleep 1
 done
 mkdir -p "$BACKUP"
+mkdir -p "$BACKUP/preserve-config"
 cp -a "$DEST"/. "$BACKUP"/
+cp -p "$DEST"/appsettings*.json "$BACKUP/preserve-config"/ 2>/dev/null || true
 cp -a "$SRC"/. "$DEST"/
+cp -p "$BACKUP"/preserve-config/appsettings*.json "$DEST"/ 2>/dev/null || true
 chmod +x "$EXE" 2>/dev/null || true
 nohup "$EXE" >/dev/null 2>&1 &
 """;

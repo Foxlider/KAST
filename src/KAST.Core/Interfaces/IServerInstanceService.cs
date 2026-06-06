@@ -8,7 +8,7 @@ public interface IServerInstanceService
     Task<ServerInstance?> GetInstanceByIdAsync(int id, CancellationToken ct = default);
     Task<ServerInstance> CreateInstanceAsync(ServerInstance instance, CancellationToken ct = default);
     Task<ServerInstance> UpdateInstanceAsync(ServerInstance instance, CancellationToken ct = default);
-    Task DeleteInstanceAsync(int id, CancellationToken ct = default);
+    Task DeleteInstanceAsync(int id, bool deleteFiles = false, CancellationToken ct = default);
 
     Task StartInstanceAsync(int id, CancellationToken ct = default);
     Task StopInstanceAsync(int id, CancellationToken ct = default);

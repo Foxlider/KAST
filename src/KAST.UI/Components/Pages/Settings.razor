@@ -4,6 +4,7 @@
 @inject IApiKeyService ApiKeyService
 @inject IUserAccountService AccountService
 @inject ISettingsService SettingsService
+@inject IStorageService StorageService
 @inject IAppUpdateService AppUpdateService
 @inject IHostServiceManager HostServiceManager
 @inject ICrashReportService CrashReportService
@@ -14,6 +15,7 @@
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IConfiguration Configuration
+@inject IHostEnvironment HostEnvironment
 @using MudBlazor.Utilities
 
 <PageTitle>KAST -- Settings</PageTitle>
@@ -26,6 +28,20 @@
     <MudTabPanel Text="General">
         <MudCard Elevation="1" Class="mt-3">
             <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Storage</MudText>
+                <div class="d-flex align-end gap-4 flex-wrap">
+                    <MudTextField @bind-Value="_modsDirectory" Label="Mods directory"
+                                  Variant="Variant.Outlined" Style="min-width:320px; flex:1 1 320px;" />
+                    <MudTextField @bind-Value="_serversDirectory" Label="Servers directory"
+                                  Variant="Variant.Outlined" Style="min-width:320px; flex:1 1 320px;" />
+                </div>
+                <MudSwitch @bind-Value="_migrateStorage"
+                           Label="Copy existing servers and mods to the new directories"
+                           Color="Color.Primary"
+                           Class="mt-2" />
+
+                <MudDivider Class="my-4" />
+
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Downloads</MudText>
                 <div class="d-flex align-center gap-4 flex-wrap">
                     <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel workers"
@@ -156,6 +172,77 @@
                 </MudCard>
             </MudItem>
 
+            <MudItem xs="12">
+                <MudCard Elevation="1">
+                    <MudCardContent>
+                        <div class="d-flex align-center justify-space-between gap-3 flex-wrap mb-3">
+                            <div>
+                                <MudText Typo="Typo.subtitle1">System Accounts</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Provider: @(_systemAccountStatus?.Provider ?? "Loading")
+                                </MudText>
+                            </div>
+                            <MudChip T="string" Color="@SystemAuthChipColor" Variant="Variant.Outlined">
+                                @SystemAuthChipText
+                            </MudChip>
+                        </div>
+
+                        @if (_systemAccountStatus is { IsSupported: false })
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true">
+                                @_systemAccountStatus.UnsupportedReason
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <div class="d-flex align-center gap-3 flex-wrap">
+                                <MudSwitch @bind-Value="_systemAuthEnabled" Label="@(_systemAuthEnabled ? "Enabled" : "Disabled")" Color="Color.Primary" />
+                                @if (_systemAccountStatus?.SupportsDomain == true)
+                                {
+                                    <MudTextField @bind-Value="_systemAuthDomain" Label="Domain (optional)" Variant="Variant.Outlined" Style="min-width:260px;" />
+                                }
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSystemAuthSettings">
+                                    Save System Auth
+                                </MudButton>
+                            </div>
+
+                            <MudDivider Class="my-4" />
+
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Allow system account</MudText>
+                            <div class="d-flex gap-2 flex-wrap align-end">
+                                <MudTextField @bind-Value="_systemAccountSearch" Label="Search accounts" Variant="Variant.Outlined" Style="min-width:260px;" />
+                                <MudButton Variant="Variant.Outlined" OnClick="SearchSystemAccounts" Disabled="@_systemAccountSearchBusy">
+                                    @(_systemAccountSearchBusy ? "Searching..." : "Search")
+                                </MudButton>
+                            </div>
+
+                            @if (_systemSearchResults.Count > 0)
+                            {
+                                <MudSimpleTable Dense="true" Hover="true" Class="mt-3">
+                                    <thead><tr><th>Username</th><th>Name</th><th>Source</th><th></th></tr></thead>
+                                    <tbody>
+                                        @foreach (var account in _systemSearchResults)
+                                        {
+                                            <tr>
+                                                <td>@account.Username</td>
+                                                <td>@account.DisplayName</td>
+                                                <td>@account.Provider</td>
+                                                <td>
+                                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                                               OnClick="@(() => AllowSystemAccount(account))">
+                                                        Allow
+                                                    </MudButton>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </MudSimpleTable>
+                            }
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
             <MudItem xs="12" md="5">
                 <MudCard Elevation="1">
                     <MudCardContent>
@@ -235,6 +322,17 @@
                                     </TemplateColumn>
                                     <TemplateColumn Title="Last Login">
                                         <CellTemplate>@(context.Item.LastLoginAt?.ToLocalTime().ToString("g") ?? "Never")</CellTemplate>
+                                    </TemplateColumn>
+                                    <TemplateColumn Title="">
+                                        <CellTemplate>
+                                            @if (context.Item.AuthSource == KastUser.SystemAuthSource)
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                                           OnClick="@(() => RemoveSystemAccount(context.Item.Id))">
+                                                    Remove
+                                                </MudButton>
+                                            }
+                                        </CellTemplate>
                                     </TemplateColumn>
                                 </Columns>
                             </MudDataGrid>
@@ -696,6 +794,86 @@
     </MudTabPanel>
 </MudTabs>
 
+<MudDialog @bind-Visible="_storageDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Storage" />
+            <MudText Typo="Typo.h6">Storage Changes</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_storageBusy)
+        {
+            <div class="d-flex align-center gap-2">
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                <MudText Typo="Typo.body2">Working...</MudText>
+            </div>
+        }
+        else if (_storageScan is not null)
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Path</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var candidate in _storageScan.Servers.Concat(_storageScan.Mods))
+                    {
+                        <tr>
+                            <td>@candidate.Kind</td>
+                            <td>@candidate.Name</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Color="@StorageStatusColor(candidate.Status)" Variant="Variant.Outlined">
+                                    @StorageStatusText(candidate.Status)
+                                </MudChip>
+                            </td>
+                            <td><code style="font-size:11px;">@OutputSanitizer.ToDisplayPath(candidate.Path)</code></td>
+                            <td>
+                                <MudSelect T="StorageResolutionAction"
+                                           Value="@GetStorageAction(candidate)"
+                                           ValueChanged="@((StorageResolutionAction action) => SetStorageAction(candidate, action))"
+                                           Dense="true"
+                                           Style="min-width:160px;">
+                                    @foreach (var action in GetStorageActions(candidate))
+                                    {
+                                        <MudSelectItem Value="@action">@StorageActionText(action)</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                        </tr>
+                    }
+                    @if (!_storageScan.HasFindings)
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No existing servers or mods were found in the selected directories.</MudText>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            @if (_migrateStorage)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                    Migration will copy current data to the selected directories, verify the copy, then switch KAST to the new paths. Old files stay in place.
+                </MudAlert>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _storageDialogOpen = false)" Disabled="_storageBusy">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ApplyStorageChanges" Disabled="_storageBusy">
+            Apply
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     private bool _loggingIn;
     private string? _qrCodeBase64;
@@ -742,8 +920,30 @@
     private string _newAdminPassword = "";
     private IBrowserFile? _newAdminAvatar;
     private const long MaxAvatarBytes = 2 * 1024 * 1024;
+    private string _modsDirectory = "";
+    private string _serversDirectory = "";
+    private bool _migrateStorage;
+    private bool _storageDialogOpen;
+    private bool _storageBusy;
+    private StorageScanResult? _storageScan;
+    private readonly Dictionary<string, StorageResolutionAction> _storageActions = new(StringComparer.OrdinalIgnoreCase);
     private KastAuthSettings _authSettings = new(KastAuthMode.Local, "OpenID Connect", null, null, null, "groups", "preferred_username", ["KAST Admins"]);
+    private SystemAccountProviderStatus? _systemAccountStatus;
+    private bool _systemAuthEnabled;
+    private string? _systemAuthDomain;
+    private string _systemAccountSearch = "";
+    private bool _systemAccountSearchBusy;
+    private IReadOnlyList<SystemAccount> _systemSearchResults = [];
     private string OidcCallbackUrl => new Uri(new Uri(Navigation.BaseUri), "auth/oidc/callback").ToString();
+    private Color SystemAuthChipColor =>
+        _systemAccountStatus?.IsSupported != true ? Color.Warning :
+        _systemAuthEnabled ? Color.Success :
+        Color.Default;
+
+    private string SystemAuthChipText =>
+        _systemAccountStatus?.IsSupported != true ? "Unavailable" :
+        _systemAuthEnabled ? "Enabled" :
+        "Disabled";
 
     private bool _benchmarkRunning;
     private string? _benchmarkStatus;
@@ -759,8 +959,13 @@
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
         await LoadAccountsAsync();
         var settings = await SettingsService.GetSettingsAsync();
+        _modsDirectory = settings.ModsDirectory;
+        _serversDirectory = settings.ServersDirectory;
         _parallelDownloads = settings.ParallelDownloads;
         _parallelModDownloads = settings.ParallelModDownloads;
+        _systemAuthEnabled = settings.SystemAuthEnabled;
+        _systemAuthDomain = settings.SystemAuthDomain;
+        _systemAccountStatus = await AccountService.GetSystemAccountProviderStatusAsync();
         _updateChannels = AppUpdateService.GetChannels();
         _updateChannelId = settings.UpdateChannelId;
         _autoUpdateCheckEnabled = settings.AutoUpdateCheckEnabled;
@@ -855,6 +1060,75 @@
             Snackbar.Add("Administrator account created", Severity.Success);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task SaveSystemAuthSettings()
+    {
+        try
+        {
+            var settings = await SettingsService.GetSettingsAsync();
+            settings.SystemAuthEnabled = _systemAuthEnabled;
+            settings.SystemAuthDomain = _systemAccountStatus?.SupportsDomain == true
+                ? _systemAuthDomain
+                : null;
+            settings.SystemAuthSource = _systemAccountStatus?.Provider ?? "Auto";
+            await SettingsService.UpdateSettingsAsync(settings);
+            Snackbar.Add("System authentication settings saved", Severity.Success);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task SearchSystemAccounts()
+    {
+        _systemAccountSearchBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            _systemSearchResults = await AccountService.SearchSystemAccountsAsync(_systemAccountSearch);
+            if (_systemSearchResults.Count == 0)
+                Snackbar.Add("No system accounts found", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"System account search failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+        }
+        finally
+        {
+            _systemAccountSearchBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AllowSystemAccount(SystemAccount account)
+    {
+        try
+        {
+            await AccountService.AllowSystemAccountAsync(account);
+            await LoadAccountsAsync();
+            Snackbar.Add("System account allowed", Severity.Success);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RemoveSystemAccount(int userId)
+    {
+        try
+        {
+            await AccountService.RemoveSystemAccountAsync(userId);
+            await LoadAccountsAsync();
+            Snackbar.Add("System account removed", Severity.Success);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException)
         {
             Snackbar.Add(ex.Message, Severity.Error);
         }
@@ -1013,12 +1287,178 @@
 
     private async Task SaveGeneralSettings()
     {
-        var settings = await SettingsService.GetSettingsAsync();
-        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
-        settings.ParallelModDownloads = Math.Clamp(_parallelModDownloads, 1, 16);
-        await SettingsService.UpdateSettingsAsync(settings);
-        Snackbar.Add("Settings saved", Severity.Success);
+        if (string.IsNullOrWhiteSpace(_modsDirectory) || string.IsNullOrWhiteSpace(_serversDirectory))
+        {
+            Snackbar.Add("Storage directories are required", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            var modsDirectory = ResolveStoragePath(_modsDirectory);
+            var serversDirectory = ResolveStoragePath(_serversDirectory);
+            var settings = await SettingsService.GetSettingsAsync();
+
+            if (!PathsEqual(settings.ModsDirectory, modsDirectory) ||
+                !PathsEqual(settings.ServersDirectory, serversDirectory))
+            {
+                _storageBusy = true;
+                _storageDialogOpen = true;
+                StateHasChanged();
+
+                _storageScan = await StorageService.ScanStorageAsync(new StorageScanRequest(modsDirectory, serversDirectory));
+                _storageActions.Clear();
+                foreach (var candidate in _storageScan.Servers.Concat(_storageScan.Mods))
+                    _storageActions[StorageCandidateKey(candidate)] = DefaultStorageAction(candidate);
+
+                _storageBusy = false;
+                StateHasChanged();
+                return;
+            }
+
+            settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
+            settings.ParallelModDownloads = Math.Clamp(_parallelModDownloads, 1, 16);
+            await SettingsService.UpdateSettingsAsync(settings);
+
+            _modsDirectory = settings.ModsDirectory;
+            _serversDirectory = settings.ServersDirectory;
+            Snackbar.Add("Settings saved", Severity.Success);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Snackbar.Add($"Storage path update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+        }
     }
+
+    private async Task ApplyStorageChanges()
+    {
+        if (_storageScan is null)
+            return;
+
+        _storageBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            if (_migrateStorage)
+            {
+                var migrated = await StorageService.MigrateStorageAsync(
+                    new StorageMigrationRequest(_storageScan.ProposedModsDirectory, _storageScan.ProposedServersDirectory));
+                Snackbar.Add(
+                    $"Migrated {migrated.ServersMigrated} server(s) and {migrated.ModsMigrated} mod(s). {migrated.Skipped.Count} skipped.",
+                    migrated.Skipped.Count == 0 ? Severity.Success : Severity.Warning);
+            }
+            else
+            {
+                var selections = _storageScan.Servers.Concat(_storageScan.Mods)
+                    .Select(candidate => new StorageResolutionSelection(
+                        candidate.Kind,
+                        candidate.Path,
+                        GetStorageAction(candidate),
+                        candidate.ExistingId))
+                    .ToList();
+
+                var applied = await StorageService.ApplyStorageChangesAsync(new StorageApplyRequest(
+                    _storageScan.ProposedModsDirectory,
+                    _storageScan.ProposedServersDirectory,
+                    selections));
+                Snackbar.Add(
+                    $"Storage saved. Adopted {applied.ServersAdopted + applied.ModsAdopted} item(s), switched {applied.ServersSwitched + applied.ModsSwitched} path(s).",
+                    Severity.Success);
+            }
+
+            var settings = await SettingsService.GetSettingsAsync();
+            settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
+            settings.ParallelModDownloads = Math.Clamp(_parallelModDownloads, 1, 16);
+            await SettingsService.UpdateSettingsAsync(settings);
+            _modsDirectory = settings.ModsDirectory;
+            _serversDirectory = settings.ServersDirectory;
+            _storageDialogOpen = false;
+            _storageScan = null;
+            _storageActions.Clear();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidOperationException)
+        {
+            Snackbar.Add($"Storage update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+        }
+        finally
+        {
+            _storageBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private string ResolveStoragePath(string path)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+        return Path.GetFullPath(
+            Path.IsPathRooted(expanded)
+                ? expanded
+                : Path.Combine(HostEnvironment.ContentRootPath, expanded));
+    }
+
+    private static bool PathsEqual(string left, string right)
+        => string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private StorageResolutionAction GetStorageAction(StorageScanCandidate candidate)
+        => _storageActions.TryGetValue(StorageCandidateKey(candidate), out var action)
+            ? action
+            : DefaultStorageAction(candidate);
+
+    private void SetStorageAction(StorageScanCandidate candidate, StorageResolutionAction action)
+        => _storageActions[StorageCandidateKey(candidate)] = action;
+
+    private static string StorageCandidateKey(StorageScanCandidate candidate)
+        => $"{candidate.Kind}:{candidate.Path}";
+
+    private static StorageResolutionAction DefaultStorageAction(StorageScanCandidate candidate)
+        => candidate.Status switch
+        {
+            StorageCandidateStatus.New => StorageResolutionAction.Skip,
+            StorageCandidateStatus.IdenticalDuplicate => StorageResolutionAction.KeepCurrent,
+            StorageCandidateStatus.SameNameDifferentData => StorageResolutionAction.KeepCurrent,
+            _ => StorageResolutionAction.Skip
+        };
+
+    private static IEnumerable<StorageResolutionAction> GetStorageActions(StorageScanCandidate candidate)
+        => candidate.Status switch
+        {
+            StorageCandidateStatus.New =>
+                [StorageResolutionAction.Skip, StorageResolutionAction.AdoptDiscovered],
+            StorageCandidateStatus.IdenticalDuplicate =>
+                [StorageResolutionAction.KeepCurrent, StorageResolutionAction.UseDiscovered],
+            StorageCandidateStatus.SameNameDifferentData =>
+                [StorageResolutionAction.KeepCurrent, StorageResolutionAction.UseDiscovered, StorageResolutionAction.AdoptDiscovered, StorageResolutionAction.Skip],
+            _ => [StorageResolutionAction.Skip]
+        };
+
+    private static string StorageActionText(StorageResolutionAction action)
+        => action switch
+        {
+            StorageResolutionAction.KeepCurrent => "Keep current",
+            StorageResolutionAction.UseDiscovered => "Use discovered",
+            StorageResolutionAction.AdoptDiscovered => "Adopt",
+            _ => "Skip"
+        };
+
+    private static string StorageStatusText(StorageCandidateStatus status)
+        => status switch
+        {
+            StorageCandidateStatus.IdenticalDuplicate => "Duplicate",
+            StorageCandidateStatus.SameNameDifferentData => "Conflict",
+            _ => "New"
+        };
+
+    private static Color StorageStatusColor(StorageCandidateStatus status)
+        => status switch
+        {
+            StorageCandidateStatus.IdenticalDuplicate => Color.Info,
+            StorageCandidateStatus.SameNameDifferentData => Color.Warning,
+            _ => Color.Success
+        };
 
     private Color UpdateStatusColor =>
         _updateCheck is null ? Color.Default :

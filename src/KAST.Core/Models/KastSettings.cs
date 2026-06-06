@@ -20,4 +20,11 @@ public class KastSettings
     public int ParallelModDownloads { get; set; } = 1;
     public string UpdateChannelId { get; set; } = "stable";
     public bool AutoUpdateCheckEnabled { get; set; } = true;
+    public bool SystemAuthEnabled { get; set; }
+
+    [MaxLength(255)]
+    public string? SystemAuthDomain { get; set; }
+
+    [MaxLength(32)]
+    public string SystemAuthSource { get; set; } = "Auto";
 }

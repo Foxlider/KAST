@@ -155,6 +155,13 @@ KAST uses local administrator accounts by default. OpenID Connect can be enabled
 through configuration or environment variables and is compatible with Authentik
 and other OIDC providers.
 
+Existing KAST administrators can also enable system account sign-in from
+**Settings -> Accounts**. Windows installs can allow local machine users or AD
+domain users, depending on whether a domain is configured. Linux installs can
+allow local Linux users from the running system. Docker installs use local users
+inside the KAST container, not users from the Docker host; create or mount those
+container accounts before selecting them in KAST.
+
 Supported auth modes:
 
 | Mode | Behavior |

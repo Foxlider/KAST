@@ -8,6 +8,7 @@ using KAST.Infrastructure.Services.Content;
 using KAST.Infrastructure.Services;
 using KAST.UI.Api;
 using KAST.UI.Services;
+using KAST.Tests.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -207,6 +208,82 @@ public class AccountAuthEndpointTests
         Assert.Equal("/fake-oidc/logout?redirectUri=%2Flogin", logout.Headers.Location?.OriginalString);
     }
 
+    [Fact]
+    public async Task SystemLogin_WhenDisabled_RejectsValidSystemCredentials()
+    {
+        var provider = BuildSystemProvider();
+        await using var app = await AuthApp.CreateAsync(systemProvider: provider);
+        await app.CreateUserAsync("admin", "secret");
+        await app.AllowSystemUserAsync(SystemAccount);
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "system-admin",
+            ["password"] = "system-secret"
+        });
+        var response = await app.Client.PostAsync("/auth/login", content);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("/login?error=", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task SystemLogin_WhenEnabledButNotAllowed_RejectsValidSystemCredentials()
+    {
+        var provider = BuildSystemProvider();
+        await using var app = await AuthApp.CreateAsync(
+            systemProvider: provider,
+            appSettings: new KastSettings { ModsDirectory = "/tmp/kast-mods", SystemAuthEnabled = true });
+        await app.CreateUserAsync("admin", "secret");
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "system-admin",
+            ["password"] = "system-secret"
+        });
+        var response = await app.Client.PostAsync("/auth/login", content);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("/login?error=", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task SystemLogin_WhenEnabledAndAllowed_IssuesCookie()
+    {
+        var provider = BuildSystemProvider();
+        await using var app = await AuthApp.CreateAsync(
+            systemProvider: provider,
+            appSettings: new KastSettings { ModsDirectory = "/tmp/kast-mods", SystemAuthEnabled = true });
+        await app.CreateUserAsync("admin", "secret");
+        await app.AllowSystemUserAsync(SystemAccount);
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "system-admin",
+            ["password"] = "system-secret",
+            ["returnUrl"] = "/"
+        });
+        var response = await app.Client.PostAsync("/auth/login", content);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.True(response.Headers.TryGetValues("Set-Cookie", out _));
+    }
+
+    private static readonly SystemAccount SystemAccount = new(
+        "system-admin",
+        "System Admin",
+        "test-host",
+        "1001",
+        "Linux Local");
+
+    private static FakeSystemAccountProvider BuildSystemProvider()
+    {
+        var provider = new FakeSystemAccountProvider();
+        provider.Add("system-admin", "system-secret", SystemAccount);
+        return provider;
+    }
+
     private sealed class AuthApp : IAsyncDisposable
     {
         private AuthApp(WebApplication app, HttpClient client)
@@ -218,7 +295,10 @@ public class AccountAuthEndpointTests
         public WebApplication App { get; }
         public HttpClient Client { get; }
 
-        public static async Task<AuthApp> CreateAsync(Dictionary<string, string?>? configuration = null)
+        public static async Task<AuthApp> CreateAsync(
+            Dictionary<string, string?>? configuration = null,
+            FakeSystemAccountProvider? systemProvider = null,
+            KastSettings? appSettings = null)
         {
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions
             {
@@ -242,6 +322,7 @@ public class AccountAuthEndpointTests
             var dbName = Guid.NewGuid().ToString();
             builder.Services.AddDbContext<KastDbContext>(options =>
                 options.UseInMemoryDatabase(dbName));
+            builder.Services.AddSingleton<ISystemAccountProvider>(systemProvider ?? new FakeSystemAccountProvider());
             builder.Services.AddScoped<IUserAccountService, UserAccountService>();
             builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie(options =>
@@ -289,7 +370,7 @@ public class AccountAuthEndpointTests
             builder.Services.AddSingleton<ContentProgressTracker>();
             builder.Services.AddSingleton(Substitute.For<IModPresetService>());
             builder.Services.AddSingleton(Substitute.For<IMissionService>());
-            builder.Services.AddSingleton(BuildSettingsService());
+            builder.Services.AddSingleton(BuildSettingsService(appSettings));
             builder.Services.AddSingleton(Substitute.For<IFileSystemService>());
             builder.Services.AddSingleton(BuildBroadcaster());
             builder.Services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
@@ -337,6 +418,13 @@ public class AccountAuthEndpointTests
             await db.SaveChangesAsync();
         }
 
+        public async Task AllowSystemUserAsync(SystemAccount account)
+        {
+            await using var scope = App.Services.CreateAsyncScope();
+            var accounts = scope.ServiceProvider.GetRequiredService<IUserAccountService>();
+            await accounts.AllowSystemAccountAsync(account);
+        }
+
         public void UseCookieFrom(HttpResponseMessage response)
         {
             var setCookie = response.Headers.GetValues("Set-Cookie").First();
@@ -360,11 +448,11 @@ public class AccountAuthEndpointTests
             return modService;
         }
 
-        private static ISettingsService BuildSettingsService()
+        private static ISettingsService BuildSettingsService(KastSettings? appSettings)
         {
             var settings = Substitute.For<ISettingsService>();
             settings.GetSettingsAsync(Arg.Any<CancellationToken>())
-                .Returns(new KastSettings { ModsDirectory = "/tmp/kast-mods" });
+                .Returns(appSettings ?? new KastSettings { ModsDirectory = "/tmp/kast-mods" });
             return settings;
         }
 

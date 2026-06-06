@@ -739,18 +739,18 @@ else
             <MudText Typo="Typo.body1" Class="mb-2">
                 Delete <strong>@_modPendingDelete.Name</strong> from KAST?
             </MudText>
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
-                This also removes the mod files from disk when KAST has a local path for it.
-            </MudAlert>
+            <MudCheckBox @bind-Value="_deleteModFiles"
+                         Label="Also delete mod files from disk"
+                         Color="Color.Error" />
         }
         else if (_selectedMods?.Count > 0)
         {
             <MudText Typo="Typo.body1" Class="mb-2">
                 Delete <strong>@_selectedMods.Count selected mod(s)</strong> from KAST?
             </MudText>
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
-                This also removes the mod files from disk for each mod that has a local path.
-            </MudAlert>
+            <MudCheckBox @bind-Value="_deleteModFiles"
+                         Label="Also delete mod files from disk"
+                         Color="Color.Error" />
         }
     </DialogContent>
     <DialogActions>
@@ -769,6 +769,7 @@ else
     private SteamMod? _selectedMod;
     private SteamMod? _modPendingDelete;
     private HashSet<SteamMod> _selectedMods = [];
+    private bool _deleteModFiles;
     private bool _showDetailDialog;
     private bool _showAddDialog;
     private bool _showImportDialog;
@@ -1423,6 +1424,7 @@ else
     private void ShowDeleteModDialog(SteamMod mod)
     {
         _modPendingDelete = mod;
+        _deleteModFiles = false;
         _showDeleteDialog = true;
     }
 
@@ -1430,6 +1432,7 @@ else
     {
         _showDeleteDialog = false;
         _modPendingDelete = null;
+        _deleteModFiles = false;
     }
 
     private async Task ConfirmDeleteMod()
@@ -1438,9 +1441,11 @@ else
         if (_modPendingDelete is not null)
         {
             var mod = _modPendingDelete;
+            var deleteFiles = _deleteModFiles;
             _showDeleteDialog = false;
             _modPendingDelete = null;
-            await DeleteMod(mod);
+            _deleteModFiles = false;
+            await DeleteMod(mod, deleteFiles);
             return;
         }
 
@@ -1449,11 +1454,13 @@ else
         {
             var count = _selectedMods.Count;
             var ids = _selectedMods.Select(m => m.Id).ToList();
+            var deleteFiles = _deleteModFiles;
             _showDeleteDialog = false;
+            _deleteModFiles = false;
             _selectedMods.Clear();
             foreach (var id in ids)
             {
-                await ModService.DeleteModAsync(id);
+                await ModService.DeleteModAsync(id, deleteFiles);
             }
             if (_selectedMod?.Id is int selId && ids.Contains(selId))
             {
@@ -1468,6 +1475,7 @@ else
     private void ShowBulkDeleteDialog()
     {
         _modPendingDelete = null;
+        _deleteModFiles = false;
         _showDeleteDialog = true;
     }
 
@@ -1476,9 +1484,9 @@ else
         _selectedMods.Clear();
     }
 
-    private async Task DeleteMod(SteamMod mod)
+    private async Task DeleteMod(SteamMod mod, bool deleteFiles = false)
     {
-        await ModService.DeleteModAsync(mod.Id);
+        await ModService.DeleteModAsync(mod.Id, deleteFiles);
         if (_selectedMod?.Id == mod.Id) { _selectedMod = null; _showDetailDialog = false; }
         await RefreshMods();
         Snackbar.Add($"Deleted {mod.Name}", Severity.Success);

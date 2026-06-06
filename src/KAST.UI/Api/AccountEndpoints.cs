@@ -13,8 +13,8 @@ public static class AccountEndpoints
     {
         endpoints.MapPost("/auth/setup", async (HttpContext http, IUserAccountService accounts, IConfiguration configuration, CancellationToken ct)
             => await SetupAsync(http, accounts, configuration, ct)).DisableAntiforgery();
-        endpoints.MapPost("/auth/login", async (HttpContext http, IUserAccountService accounts, IConfiguration configuration, CancellationToken ct)
-            => await LoginAsync(http, accounts, configuration, ct)).DisableAntiforgery();
+        endpoints.MapPost("/auth/login", async (HttpContext http, IUserAccountService accounts, ISettingsService settings, IConfiguration configuration, CancellationToken ct)
+            => await LoginAsync(http, accounts, settings, configuration, ct)).DisableAntiforgery();
         endpoints.MapGet("/auth/oidc/login", (HttpContext http, IConfiguration configuration)
             => OidcLogin(http, configuration));
         endpoints.MapGet("/auth/oidc/signed-out", () => Results.Redirect("/login"));
@@ -61,21 +61,33 @@ public static class AccountEndpoints
         }
     }
 
-    private static async Task<IResult> LoginAsync(HttpContext http, IUserAccountService accounts, IConfiguration configuration, CancellationToken ct)
+    private static async Task<IResult> LoginAsync(
+        HttpContext http,
+        IUserAccountService accounts,
+        ISettingsService settings,
+        IConfiguration configuration,
+        CancellationToken ct)
     {
         var authSettings = configuration.GetKastAuthSettings();
+        var appSettings = await settings.GetSettingsAsync(ct);
         var form = await http.Request.ReadFormAsync(ct);
         var username = form["username"].ToString();
         var password = form["password"].ToString();
         var returnUrl = NormalizeReturnUrl(form["returnUrl"].ToString());
 
-        if (!authSettings.IsLocalEnabled)
+        if (!authSettings.IsLocalEnabled && !appSettings.SystemAuthEnabled)
             return RedirectToOidcOrLogin(authSettings, returnUrl);
 
         if (!await accounts.HasAnyUsersAsync(ct))
             return Results.Redirect("/setup/account");
 
-        var user = await accounts.ValidateCredentialsAsync(username, password, ct);
+        KAST.Core.Models.KastUser? user = null;
+        if (authSettings.IsLocalEnabled)
+            user = await accounts.ValidateCredentialsAsync(username, password, ct);
+
+        if (user is null && appSettings.SystemAuthEnabled)
+            user = await accounts.ValidateSystemCredentialsAsync(username, password, ct);
+
         if (user is null)
             return Results.Redirect($"/login?error={Uri.EscapeDataString("Invalid username or password.")}&returnUrl={Uri.EscapeDataString(returnUrl)}");
 

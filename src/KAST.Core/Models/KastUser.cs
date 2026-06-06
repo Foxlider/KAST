@@ -6,6 +6,7 @@ public class KastUser
 {
     public const string LocalAuthSource = "Local";
     public const string OidcAuthSource = "Oidc";
+    public const string SystemAuthSource = "System";
 
     public int Id { get; set; }
 

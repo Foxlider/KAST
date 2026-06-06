@@ -2,6 +2,7 @@ using KAST.Core.Interfaces;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Services.Content;
+using KAST.Infrastructure.Services.SystemAccounts;
 using KAST.Infrastructure.Steam;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +38,8 @@ public static class DependencyInjection
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<ISettingsService, SettingsService>();
+        services.AddScoped<IStorageService, StorageService>();
+        services.AddSingleton<ISystemAccountProvider>(_ => SystemAccountProviderFactory.Create());
         services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddSingleton<IHostServiceManager, WindowsHostServiceManager>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();

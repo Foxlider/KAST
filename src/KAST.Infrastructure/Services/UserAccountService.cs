@@ -2,13 +2,18 @@ using System.Security.Cryptography;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
+using KAST.Infrastructure.Services.SystemAccounts;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
 namespace KAST.Infrastructure.Services;
 
-public class UserAccountService(KastDbContext db, IConfiguration configuration) : IUserAccountService
+public class UserAccountService(
+    KastDbContext db,
+    IConfiguration configuration,
+    ISystemAccountProvider? systemAccounts = null,
+    ISettingsService? settingsService = null) : IUserAccountService
 {
     private const int MaxAvatarBytes = 2 * 1024 * 1024;
     private const string DefaultOidcDisplayName = "OpenID Connect";
@@ -40,8 +45,11 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
                  u.IsActive,
             ct);
 
+    private ISystemAccountProvider SystemAccounts { get; } =
+        systemAccounts ?? new UnsupportedSystemAccountProvider("System account provider is not configured.");
+
     public async Task<IReadOnlyList<KastUser>> GetAllUsersAsync(CancellationToken ct = default)
-        => await db.Users.AsNoTracking().OrderBy(u => u.Username).ToListAsync(ct);
+        => await db.Users.AsNoTracking().Where(u => u.IsActive).OrderBy(u => u.Username).ToListAsync(ct);
 
     public async Task<KastUser> CreateInitialAdminAsync(
         string username,
@@ -146,6 +154,70 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
         return user;
     }
 
+    public Task<SystemAccountProviderStatus> GetSystemAccountProviderStatusAsync(CancellationToken ct = default)
+        => Task.FromResult(SystemAccounts.GetStatus());
+
+    public async Task<IReadOnlyList<SystemAccount>> SearchSystemAccountsAsync(string? query, CancellationToken ct = default)
+    {
+        var settings = await GetSettingsAsync(ct);
+        return await SystemAccounts.SearchAccountsAsync(query, settings.SystemAuthDomain, ct);
+    }
+
+    public async Task<KastUser> AllowSystemAccountAsync(SystemAccount account, CancellationToken ct = default)
+    {
+        ValidateSystemAccount(account);
+
+        var existing = await db.Users.FirstOrDefaultAsync(
+            u => u.ExternalIssuer == account.Issuer &&
+                 u.ExternalSubject == account.Subject,
+            ct);
+
+        if (existing is not null)
+        {
+            existing.Username = await GetUniqueUsernameAsync(account.Username, existing.Id, ct);
+            existing.NormalizedUsername = NormalizeUsername(existing.Username);
+            existing.PasswordHash = string.Empty;
+            existing.AuthSource = KastUser.SystemAuthSource;
+            existing.ExternalProvider = account.Provider;
+            existing.IsActive = true;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var username = await GetUniqueUsernameAsync(account.Username, existingUserId: null, ct);
+        var user = new KastUser
+        {
+            Username = username,
+            NormalizedUsername = NormalizeUsername(username),
+            PasswordHash = string.Empty,
+            AuthSource = KastUser.SystemAuthSource,
+            ExternalProvider = account.Provider,
+            ExternalIssuer = account.Issuer,
+            ExternalSubject = account.Subject,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(ct);
+        return user;
+    }
+
+    public async Task RemoveSystemAccountAsync(int userId, CancellationToken ct = default)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(
+            u => u.Id == userId &&
+                 u.AuthSource == KastUser.SystemAuthSource &&
+                 u.IsActive,
+            ct) ?? throw new InvalidOperationException("System account was not found.");
+
+        user.IsActive = false;
+        user.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<KastUser?> ValidateCredentialsAsync(string username, string password, CancellationToken ct = default)
     {
         var normalized = NormalizeUsername(username);
@@ -155,6 +227,30 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
                  u.IsActive,
             ct);
         if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash) || !VerifyPassword(password, user.PasswordHash))
+            return null;
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return user;
+    }
+
+    public async Task<KastUser?> ValidateSystemCredentialsAsync(string username, string password, CancellationToken ct = default)
+    {
+        var settings = await GetSettingsAsync(ct);
+        if (!settings.SystemAuthEnabled)
+            return null;
+
+        var account = await SystemAccounts.ValidateCredentialsAsync(username, password, settings.SystemAuthDomain, ct);
+        if (account is null)
+            return null;
+
+        var user = await db.Users.FirstOrDefaultAsync(
+            u => u.AuthSource == KastUser.SystemAuthSource &&
+                 u.ExternalIssuer == account.Issuer &&
+                 u.ExternalSubject == account.Subject &&
+                 u.IsActive,
+            ct);
+        if (user is null)
             return null;
 
         user.LastLoginAt = DateTime.UtcNow;
@@ -319,6 +415,40 @@ public class UserAccountService(KastDbContext db, IConfiguration configuration) 
 
     private static string FirstNonBlank(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private async Task<KastSettings> GetSettingsAsync(CancellationToken ct)
+    {
+        if (settingsService is not null)
+            return await settingsService.GetSettingsAsync(ct);
+
+        var settings = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);
+        if (settings is not null)
+            return settings;
+
+        settings = new KastSettings
+        {
+            ModsDirectory = configuration["Kast:ModsDirectory"] ?? "./mods",
+            ServersDirectory = configuration["Kast:ServersDirectory"] ?? "./servers",
+            Arma3ServerAppId = int.TryParse(configuration["Kast:Arma3AppId"], out var appId) ? appId : 233780,
+            UpdateChannelId = configuration["Kast:UpdateChannelId"] ?? "stable",
+            AutoUpdateCheckEnabled = !bool.TryParse(configuration["Kast:AutoUpdateCheckEnabled"], out var autoCheck) || autoCheck
+        };
+        db.Settings.Add(settings);
+        await db.SaveChangesAsync(ct);
+        return settings;
+    }
+
+    private static void ValidateSystemAccount(SystemAccount account)
+    {
+        if (string.IsNullOrWhiteSpace(account.Username))
+            throw new InvalidOperationException("System account username is required.");
+
+        if (string.IsNullOrWhiteSpace(account.Issuer) || string.IsNullOrWhiteSpace(account.Subject))
+            throw new InvalidOperationException("System account identity is required.");
+
+        if (string.IsNullOrWhiteSpace(account.Provider))
+            throw new InvalidOperationException("System account provider is required.");
+    }
 
     private static void ValidateUsername(string username, string normalized)
     {

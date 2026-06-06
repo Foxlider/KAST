@@ -3,6 +3,7 @@
 @attribute [AllowAnonymous]
 @inject NavigationManager Navigation
 @inject IConfiguration Configuration
+@inject ISettingsService SettingsService
 
 <PageTitle>KAST -- Login</PageTitle>
 
@@ -24,13 +25,13 @@
         </a>
     }
 
-    @if (_authSettings.IsOidcConfigured && _authSettings.IsLocalEnabled)
+    @if (_authSettings.IsOidcConfigured && IsPasswordFormEnabled)
     {
         <MudDivider Class="my-4" />
-        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">Local administrator account</MudText>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">@PasswordFormLabel</MudText>
     }
 
-    @if (_authSettings.IsLocalEnabled)
+    @if (IsPasswordFormEnabled)
     {
         <form method="post" action="/auth/login" enctype="multipart/form-data" data-enhance="false">
             <input type="hidden" name="returnUrl" value="@_returnUrl" />
@@ -96,11 +97,19 @@
     private string _returnUrl = "/";
     private string? _error;
     private KastAuthSettings _authSettings = new(KastAuthMode.Local, "OpenID Connect", null, null, null, "groups", "preferred_username", ["KAST Admins"]);
+    private bool _systemAuthEnabled;
     private string OidcLoginUrl => $"/auth/oidc/login?returnUrl={Uri.EscapeDataString(_returnUrl)}";
+    private bool IsPasswordFormEnabled => _authSettings.IsLocalEnabled || _systemAuthEnabled;
+    private string PasswordFormLabel => _authSettings.IsLocalEnabled && _systemAuthEnabled
+        ? "Local or system administrator account"
+        : _systemAuthEnabled
+            ? "System administrator account"
+            : "Local administrator account";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _authSettings = Configuration.GetKastAuthSettings();
+        _systemAuthEnabled = (await SettingsService.GetSettingsAsync()).SystemAuthEnabled;
         var uri = new Uri(Navigation.Uri);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
         _returnUrl = NormalizeReturnUrl(query["returnUrl"]);

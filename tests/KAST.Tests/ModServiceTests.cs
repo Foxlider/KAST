@@ -192,6 +192,46 @@ public class ModServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteMod_DefaultKeepsFilesOnDisk()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kast-mod-delete-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "mod.cpp"), "data");
+        var mod = new SteamMod { Name = "Keep Files", WorkshopId = 100, LocalPath = path };
+        _db.Mods.Add(mod);
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _sut.DeleteModAsync(mod.Id);
+
+            Assert.True(Directory.Exists(path));
+            Assert.Empty(_db.Mods);
+        }
+        finally
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteMod_WithDeleteFilesRemovesFilesOnDisk()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kast-mod-delete-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "mod.cpp"), "data");
+        var mod = new SteamMod { Name = "Delete Files", WorkshopId = 101, LocalPath = path };
+        _db.Mods.Add(mod);
+        await _db.SaveChangesAsync();
+
+        await _sut.DeleteModAsync(mod.Id, deleteFiles: true);
+
+        Assert.False(Directory.Exists(path));
+        Assert.Empty(_db.Mods);
+    }
+
+    [Fact]
     public async Task DeleteMod_NonExistentId_DoesNotThrow()
     {
         var exception = await Record.ExceptionAsync(() => _sut.DeleteModAsync(999));

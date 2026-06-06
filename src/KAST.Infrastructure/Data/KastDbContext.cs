@@ -130,6 +130,12 @@ public class KastDbContext : DbContext
             entity.Property(e => e.AvatarFileName).HasMaxLength(255);
         });
 
+        modelBuilder.Entity<KastSettings>(entity =>
+        {
+            entity.Property(e => e.SystemAuthDomain).HasMaxLength(255);
+            entity.Property(e => e.SystemAuthSource).HasMaxLength(32);
+        });
+
         // ── Mod Presets ────────────────────────────────────────────────────
 
         modelBuilder.Entity<ModPreset>(entity =>

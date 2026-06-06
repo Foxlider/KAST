@@ -100,7 +100,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         return mod;
     }
 
-    public async Task DeleteModAsync(int id, CancellationToken ct = default)
+    public async Task DeleteModAsync(int id, bool deleteFiles = false, CancellationToken ct = default)
     {
         using var activity = KastActivitySources.Mods.StartActivity(
             "kast.mod.delete", ActivityKind.Internal);
@@ -111,8 +111,8 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         {
             activity?.SetTag("mod.name", mod.Name);
 
-            // Delete mod files from disk
-            if (!string.IsNullOrEmpty(mod.LocalPath) && Directory.Exists(mod.LocalPath))
+            // Delete mod files from disk only when the caller explicitly requests it.
+            if (deleteFiles && !string.IsNullOrEmpty(mod.LocalPath) && Directory.Exists(mod.LocalPath))
             {
                 try
                 {

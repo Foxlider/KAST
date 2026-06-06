@@ -105,8 +105,12 @@ else
     </TitleContent>
     <DialogContent>
         <MudText>
-            Permanently delete @(_instancePendingDelete?.Name ?? "this instance")? This removes the instance configuration from KAST. Server files on disk are not removed.
+            Permanently delete @(_instancePendingDelete?.Name ?? "this instance") from KAST?
         </MudText>
+        <MudCheckBox @bind-Value="_deleteInstanceFiles"
+                     Label="Also delete server files from disk"
+                     Color="Color.Error"
+                     Class="mt-3" />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="@CancelDelete">Cancel</MudButton>
@@ -118,6 +122,7 @@ else
     private IReadOnlyList<ServerInstance> _instances = [];
     private ServerInstance? _instancePendingDelete;
     private bool _deleteDialogVisible;
+    private bool _deleteInstanceFiles;
 
     protected override async Task OnInitializedAsync() => await RefreshInstances();
 
@@ -127,6 +132,7 @@ else
     private void PromptDelete(ServerInstance instance)
     {
         _instancePendingDelete = instance;
+        _deleteInstanceFiles = false;
         _deleteDialogVisible = true;
     }
 
@@ -134,6 +140,7 @@ else
     {
         _deleteDialogVisible = false;
         _instancePendingDelete = null;
+        _deleteInstanceFiles = false;
     }
 
     private async Task StartInstance(int id)
@@ -161,9 +168,10 @@ else
 
     private async Task DeleteInstance(int id)
     {
-        await ServerService.DeleteInstanceAsync(id);
+        await ServerService.DeleteInstanceAsync(id, _deleteInstanceFiles);
         _deleteDialogVisible = false;
         _instancePendingDelete = null;
+        _deleteInstanceFiles = false;
         await RefreshInstances();
         Snackbar.Add("Instance deleted", Severity.Success);
     }

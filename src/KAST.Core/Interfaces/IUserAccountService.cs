@@ -12,7 +12,12 @@ public interface IUserAccountService
     Task<KastUser> CreateInitialAdminAsync(string username, string password, Stream? avatarStream = null, string? avatarFileName = null, long avatarLength = 0, CancellationToken ct = default);
     Task<KastUser> CreateAdminAsync(string username, string password, Stream? avatarStream = null, string? avatarFileName = null, long avatarLength = 0, CancellationToken ct = default);
     Task<KastUser> ProvisionOidcAdminAsync(OidcProvisioningRequest request, CancellationToken ct = default);
+    Task<SystemAccountProviderStatus> GetSystemAccountProviderStatusAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<SystemAccount>> SearchSystemAccountsAsync(string? query, CancellationToken ct = default);
+    Task<KastUser> AllowSystemAccountAsync(SystemAccount account, CancellationToken ct = default);
+    Task RemoveSystemAccountAsync(int userId, CancellationToken ct = default);
     Task<KastUser?> ValidateCredentialsAsync(string username, string password, CancellationToken ct = default);
+    Task<KastUser?> ValidateSystemCredentialsAsync(string username, string password, CancellationToken ct = default);
     Task<KastUser> UpdateProfileAsync(int userId, string username, string? newPassword = null, Stream? avatarStream = null, string? avatarFileName = null, long avatarLength = 0, CancellationToken ct = default);
     Task<string?> GetAvatarPathAsync(string fileName, CancellationToken ct = default);
 }

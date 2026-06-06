@@ -97,7 +97,7 @@ public class ServerInstanceService(
         return instance;
     }
 
-    public async Task DeleteInstanceAsync(int id, CancellationToken ct = default)
+    public async Task DeleteInstanceAsync(int id, bool deleteFiles = false, CancellationToken ct = default)
     {
         var instance = await db.ServerInstances
             .Include(s => s.Mods).ThenInclude(m => m.SteamMod)
@@ -115,7 +115,7 @@ public class ServerInstanceService(
             await StopInstanceAsync(id, ct);
 
         // Capture install path & check whether it's shared with other instances
-        // BEFORE we drop this row, so we know if we can safely wipe the game files.
+        // BEFORE we drop this row, so explicit file deletion cannot wipe shared data.
         var installPath = instance.InstallPath;
         var isInstallPathShared = !string.IsNullOrEmpty(installPath)
             && await db.ServerInstances
@@ -129,7 +129,7 @@ public class ServerInstanceService(
         // resurrect the row we just deleted from the DB.
         try
         {
-            DeleteInstanceFiles(instance, wipeInstallPath: !isInstallPathShared);
+            DeleteInstanceFiles(instance, wipeInstallPath: deleteFiles && !isInstallPathShared);
         }
         catch (Exception ex)
         {

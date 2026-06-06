@@ -158,6 +158,57 @@ public class UserAccountServiceTests
     }
 
     [Fact]
+    public async Task AllowSystemAccount_CreatesExternallyManagedUser()
+    {
+        using var db = DbHelper.CreateInMemoryDb();
+        var account = new SystemAccount("DOMAIN\\admin", "Domain Admin", "DOMAIN", "S-1-1-0", "Windows AD");
+        var sut = new UserAccountService(db, BuildConfig(), new FakeSystemAccountProvider());
+
+        var user = await sut.AllowSystemAccountAsync(account);
+
+        Assert.Equal(KastUser.SystemAuthSource, user.AuthSource);
+        Assert.Equal("Windows AD", user.ExternalProvider);
+        Assert.Equal("DOMAIN", user.ExternalIssuer);
+        Assert.Equal("S-1-1-0", user.ExternalSubject);
+        Assert.True(user.IsExternallyManaged);
+    }
+
+    [Fact]
+    public async Task RemoveSystemAccount_DeactivatesAllowlistEntry()
+    {
+        using var db = DbHelper.CreateInMemoryDb();
+        var account = new SystemAccount("linux-admin", "Linux Admin", "host", "1001", "Linux Local");
+        var sut = new UserAccountService(db, BuildConfig(), new FakeSystemAccountProvider());
+        var user = await sut.AllowSystemAccountAsync(account);
+
+        await sut.RemoveSystemAccountAsync(user.Id);
+
+        Assert.Empty(await sut.GetAllUsersAsync());
+        Assert.Null(await sut.GetByIdAsync(user.Id));
+    }
+
+    [Fact]
+    public async Task ValidateSystemCredentials_RequiresEnabledSettingAndAllowedAccount()
+    {
+        using var db = DbHelper.CreateInMemoryDb();
+        var account = new SystemAccount("linux-admin", "Linux Admin", "host", "1001", "Linux Local");
+        var provider = new FakeSystemAccountProvider();
+        provider.Add("linux-admin", "system-secret", account);
+        var sut = new UserAccountService(db, BuildConfig(), provider);
+
+        await sut.AllowSystemAccountAsync(account);
+        Assert.Null(await sut.ValidateSystemCredentialsAsync("linux-admin", "system-secret"));
+
+        db.Settings.Single().SystemAuthEnabled = true;
+        await db.SaveChangesAsync();
+
+        var valid = await sut.ValidateSystemCredentialsAsync("linux-admin", "system-secret");
+
+        Assert.NotNull(valid);
+        Assert.NotNull(valid!.LastLoginAt);
+    }
+
+    [Fact]
     public async Task UpdateProfile_ChangesUsernameAndPassword()
     {
         using var db = DbHelper.CreateInMemoryDb();

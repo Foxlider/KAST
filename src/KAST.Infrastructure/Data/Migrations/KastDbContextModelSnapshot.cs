@@ -222,6 +222,18 @@ namespace KAST.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SystemAuthDomain")
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SystemAuthEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SystemAuthSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ThemeMode")
                         .IsRequired()
                         .HasColumnType("TEXT");

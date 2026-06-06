@@ -1,6 +1,8 @@
 using KAST.Infrastructure.Services;
 using KAST.Tests.Helpers;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 
 namespace KAST.Tests;
 
@@ -59,6 +61,9 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(5, settings.MetricsIntervalSeconds);
         Assert.Equal("stable", settings.UpdateChannelId);
         Assert.True(settings.AutoUpdateCheckEnabled);
+        Assert.False(settings.SystemAuthEnabled);
+        Assert.Null(settings.SystemAuthDomain);
+        Assert.Equal("Auto", settings.SystemAuthSource);
     }
 
     [Fact]
@@ -68,7 +73,9 @@ public class SettingsServiceTests : IDisposable
         {
             ["Kast:ModsDirectory"] = "/custom/mods",
             ["Kast:ServersDirectory"] = "/custom/servers",
-            ["Kast:Arma3AppId"] = "999999"
+            ["Kast:Arma3AppId"] = "999999",
+            ["Auth:System:Enabled"] = "true",
+            ["Auth:System:Domain"] = "example.test"
         });
 
         var settings = await sut.GetSettingsAsync();
@@ -76,6 +83,8 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("/custom/mods", settings.ModsDirectory);
         Assert.Equal("/custom/servers", settings.ServersDirectory);
         Assert.Equal(999999, settings.Arma3ServerAppId);
+        Assert.True(settings.SystemAuthEnabled);
+        Assert.Equal("example.test", settings.SystemAuthDomain);
     }
 
     [Fact]
@@ -130,6 +139,9 @@ public class SettingsServiceTests : IDisposable
         settings.ModsDirectory = "/updated/mods";
         settings.UpdateChannelId = "dev";
         settings.AutoUpdateCheckEnabled = false;
+        settings.SystemAuthEnabled = true;
+        settings.SystemAuthDomain = "DOMAIN";
+        settings.SystemAuthSource = "Windows";
 
         await sut.UpdateSettingsAsync(settings);
 
@@ -140,6 +152,9 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("/updated/mods", updated.ModsDirectory);
         Assert.Equal("dev", updated.UpdateChannelId);
         Assert.False(updated.AutoUpdateCheckEnabled);
+        Assert.True(updated.SystemAuthEnabled);
+        Assert.Equal("DOMAIN", updated.SystemAuthDomain);
+        Assert.Equal("Windows", updated.SystemAuthSource);
     }
 
     [Fact]
@@ -172,5 +187,32 @@ public class SettingsServiceTests : IDisposable
         var settings = await sut.GetSettingsAsync();
 
         Assert.Equal(233780, settings.Arma3ServerAppId);
+    }
+
+    [Fact]
+    public async Task GetSettings_WithHostEnvironment_ResolvesRelativeStoragePathsAgainstContentRoot()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "kast-settings-test-" + Guid.NewGuid());
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Kast:ModsDirectory"] = "./custom-mods",
+                ["Kast:ServersDirectory"] = "custom-servers"
+            })
+            .Build();
+        var sut = new SettingsService(_db, config, new TestHostEnvironment(contentRoot));
+
+        var settings = await sut.GetSettingsAsync();
+
+        Assert.Equal(Path.GetFullPath(Path.Combine(contentRoot, "./custom-mods")), settings.ModsDirectory);
+        Assert.Equal(Path.GetFullPath(Path.Combine(contentRoot, "custom-servers")), settings.ServersDirectory);
+    }
+
+    private sealed class TestHostEnvironment(string contentRootPath) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Production;
+        public string ApplicationName { get; set; } = "KAST.Tests";
+        public string ContentRootPath { get; set; } = contentRootPath;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

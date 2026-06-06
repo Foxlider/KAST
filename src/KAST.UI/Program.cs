@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using System.Data.Common;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Net;
@@ -46,7 +47,9 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<KastDbContext>("database");
 
 // ── Database ─────────────────────────────────────────────────────────────────
-var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db";
+var connectionString = ResolveSqliteConnectionString(
+    contentRoot,
+    builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db");
 builder.Services.AddKastInfrastructure(connectionString);
 
 // Persist Data Protection keys so cookies and ProtectedBrowserStorage survive
@@ -292,18 +295,9 @@ TaskScheduler.UnobservedTaskException += (_, e) =>
 // ── Database migration & startup cleanup ─────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
-    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-
-    // Ensure data directories exist
-    var modsDir = config["Kast:ModsDirectory"] ?? "./mods";
-    var serversDir = config["Kast:ServersDirectory"] ?? "./servers";
-    Directory.CreateDirectory(modsDir);
-    Directory.CreateDirectory(serversDir);
-
     // Ensure SQLite directory exists
-    var cs = config.GetConnectionString("Default") ?? "";
-    var dbPath = cs.Replace("Data Source=", "");
-    if (!string.IsNullOrEmpty(dbPath))
+    var dbPath = GetSqliteDataSource(connectionString);
+    if (!string.IsNullOrWhiteSpace(dbPath))
     {
         var dbDir = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(dbDir))
@@ -312,6 +306,14 @@ using (var scope = app.Services.CreateScope())
 
     var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
     await db.Database.MigrateAsync();
+
+    // Ensure persisted data directories exist after settings have been loaded.
+    // Relative paths are resolved against ContentRootPath so service installs
+    // and updater scripts do not accidentally switch to a different working
+    // directory.
+    var settings = await scope.ServiceProvider.GetRequiredService<ISettingsService>().GetSettingsAsync();
+    Directory.CreateDirectory(settings.ModsDirectory);
+    Directory.CreateDirectory(settings.ServersDirectory);
 
     // Reset any mods stuck in-progress from a previous crash
     var stuckMods = await db.Mods
@@ -461,6 +463,48 @@ static IEnumerable<string> SplitClaimValue(string value)
 
 static string ResolveConfiguredPath(string contentRoot, string path) =>
     Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(contentRoot, path));
+
+static string ResolveSqliteConnectionString(string contentRoot, string connectionString)
+{
+    var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };
+    if (!TryGetSqliteDataSource(builder, out var dataSource) || string.IsNullOrWhiteSpace(dataSource))
+        return connectionString;
+
+    var expanded = Environment.ExpandEnvironmentVariables(dataSource);
+    if (IsSpecialSqliteDataSource(expanded) || Path.IsPathRooted(expanded))
+        return connectionString;
+
+    builder["Data Source"] = Path.GetFullPath(Path.Combine(contentRoot, expanded));
+    return builder.ConnectionString;
+}
+
+static string? GetSqliteDataSource(string connectionString)
+{
+    var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };
+    return TryGetSqliteDataSource(builder, out var dataSource) ? dataSource : null;
+}
+
+static bool TryGetSqliteDataSource(DbConnectionStringBuilder builder, out string dataSource)
+{
+    foreach (string key in builder.Keys)
+    {
+        if (!string.Equals(key, "Data Source", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(key, "DataSource", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        dataSource = builder[key]?.ToString() ?? "";
+        return true;
+    }
+
+    dataSource = "";
+    return false;
+}
+
+static bool IsSpecialSqliteDataSource(string dataSource)
+    => string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase)
+       || dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
 static string ResolveDataProtectionKeysDirectory(string contentRoot, string? configuredPath)
 {

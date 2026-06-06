@@ -135,6 +135,46 @@ public class ServerInstanceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteInstance_DefaultKeepsInstallFiles()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kast-server-delete-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "arma3server_x64.exe"), "bin");
+        var instance = new ServerInstance { Name = "Keep Files", InstallPath = path };
+        _db.ServerInstances.Add(instance);
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _sut.DeleteInstanceAsync(instance.Id);
+
+            Assert.True(Directory.Exists(path));
+            Assert.Empty(_db.ServerInstances);
+        }
+        finally
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteInstance_WithDeleteFilesRemovesInstallFiles()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kast-server-delete-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "arma3server_x64.exe"), "bin");
+        var instance = new ServerInstance { Name = "Delete Files", InstallPath = path };
+        _db.ServerInstances.Add(instance);
+        await _db.SaveChangesAsync();
+
+        await _sut.DeleteInstanceAsync(instance.Id, deleteFiles: true);
+
+        Assert.False(Directory.Exists(path));
+        Assert.Empty(_db.ServerInstances);
+    }
+
+    [Fact]
     public async Task DeleteInstance_RunningServer_StopsFirst()
     {
         var instance = await SeedInstanceAsync(status: ServerInstanceStatus.Running, processId: 1234);

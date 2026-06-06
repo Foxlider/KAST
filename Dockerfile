@@ -31,13 +31,17 @@ RUN apt-get update && \
         curl \
         lib32gcc-s1 \
         lib32stdc++6 \
-        libcap2 && \
+        libcap2 \
+        libpam0g \
+        libpam-modules \
+        passwd && \
     rm -rf /var/lib/apt/lists/*
 
 # Create directories for data persistence
 RUN mkdir -p /app/data /app/mods /app/servers
 
 COPY --from=build /app/publish .
+COPY docker/pam/kast /etc/pam.d/kast
 
 ENV ASPNETCORE_URLS=http://+:5000
 ENV ConnectionStrings__Default="Data Source=/app/data/kast.db"
