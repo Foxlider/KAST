@@ -206,6 +206,7 @@ builder.Services.AddSignalR();
 
 // ── Server console history (survives page navigation) ───────────────────────
 builder.Services.AddSingleton<ServerConsoleStore>();
+builder.Services.AddSingleton<ServerRuntimeEventStore>();
 
 // ── Event broadcaster (bridges domain events → SignalR) ──────────────────────
 builder.Services.AddSingleton<IAppEventBroadcaster, SignalREventBroadcaster>();

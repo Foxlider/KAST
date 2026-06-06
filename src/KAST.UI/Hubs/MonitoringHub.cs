@@ -28,4 +28,7 @@ public class MonitoringHub : Hub
 
     public static async Task BroadcastLogEntry(IHubContext<MonitoringHub> hubContext, LogEntryEvent logEntry)
         => await hubContext.Clients.Group($"instance-{logEntry.ServerInstanceId}").SendAsync("LogEntry", logEntry);
+
+    public static async Task BroadcastServerRuntimeEvent(IHubContext<MonitoringHub> hubContext, ServerRuntimeEvent runtimeEvent)
+        => await hubContext.Clients.Group($"instance-{runtimeEvent.ServerInstanceId}").SendAsync("ServerRuntimeEvent", runtimeEvent);
 }

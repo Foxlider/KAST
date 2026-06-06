@@ -13,6 +13,7 @@ public class ProcessWatchdogService(
     IServiceScopeFactory scopeFactory,
     IProcessManagerService processManager,
     IAppEventBroadcaster broadcaster,
+    IServerConsoleLogTailer consoleLogTailer,
     ILogger<ProcessWatchdogService> logger) : BackgroundService
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(10);
@@ -49,6 +50,7 @@ public class ProcessWatchdogService(
         foreach (var instance in runningInstances.Where(instance => !processManager.IsProcessRunning(instance.ProcessId!.Value)))
         {
             logger.LogWarning("Server {Name} (PID {Pid}) has crashed", instance.Name, instance.ProcessId);
+            await consoleLogTailer.StopFollowingAsync(instance.Id);
 
             instance.ProcessId = null;
             instance.Status = ServerInstanceStatus.Crashed;
@@ -72,6 +74,14 @@ public class ProcessWatchdogService(
                     logger.LogWarning("Server {Name}: Unknown restart policy {Policy}", instance.Name, instance.RestartPolicy);
                     break;
             }
+        }
+
+        foreach (var instance in runningInstances.Where(instance => processManager.IsProcessRunning(instance.ProcessId!.Value)))
+        {
+            consoleLogTailer.StartFollowing(
+                instance,
+                instance.StartedAt ?? DateTime.UtcNow,
+                replayExistingContent: false);
         }
     }
 

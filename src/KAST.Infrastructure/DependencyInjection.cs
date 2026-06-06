@@ -23,6 +23,8 @@ public static class DependencyInjection
 
         // Steam services
         services.TryAddSingleton<IOutputSanitizer, OutputSanitizer>();
+        services.AddSingleton<IArmaRptEventDetector, ArmaRptEventDetector>();
+        services.AddSingleton<IServerConsoleLogTailer, ServerConsoleLogTailer>();
         services.AddSingleton<ISteamService>(sp =>
         {
             var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SteamClientService>>();

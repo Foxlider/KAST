@@ -15,6 +15,7 @@ public interface IAppEventBroadcaster
     Task BroadcastHostMetricsAsync(HostMetricsUpdatedEvent metrics);
     Task BroadcastInstanceMetricsAsync(InstanceMetricsUpdatedEvent metrics);
     Task BroadcastLogEntryAsync(LogEntryEvent logEntry);
+    Task BroadcastServerRuntimeEventAsync(ServerRuntimeEvent runtimeEvent);
 
     /// <summary>In-process subscriptions for Blazor Server components (no HTTP needed).</summary>
     event Action<ModDownloadProgressEvent>? OnModDownloadProgress;

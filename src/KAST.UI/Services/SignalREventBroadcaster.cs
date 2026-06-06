@@ -12,6 +12,7 @@ public class SignalREventBroadcaster(
     IHubContext<DownloadHub> downloadHub,
     IHubContext<MonitoringHub> monitoringHub,
     ServerConsoleStore consoleStore,
+    ServerRuntimeEventStore runtimeEventStore,
     IOutputSanitizer sanitizer) : IAppEventBroadcaster
 {
     public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
@@ -47,5 +48,19 @@ public class SignalREventBroadcaster(
         var safeLogEntry = logEntry with { Line = sanitizer.Sanitize(logEntry.Line) };
         consoleStore.Add(safeLogEntry);
         return MonitoringHub.BroadcastLogEntry(monitoringHub, safeLogEntry);
+    }
+
+    public Task BroadcastServerRuntimeEventAsync(ServerRuntimeEvent runtimeEvent)
+    {
+        var safeRuntimeEvent = runtimeEvent with
+        {
+            Message = sanitizer.Sanitize(runtimeEvent.Message),
+            SourceLine = runtimeEvent.SourceLine is null ? null : sanitizer.Sanitize(runtimeEvent.SourceLine),
+            MissionFile = runtimeEvent.MissionFile is null ? null : sanitizer.Sanitize(runtimeEvent.MissionFile),
+            MissionDirectory = runtimeEvent.MissionDirectory is null ? null : sanitizer.Sanitize(runtimeEvent.MissionDirectory),
+            PlayerIp = runtimeEvent.PlayerIp is null ? null : sanitizer.Sanitize(runtimeEvent.PlayerIp)
+        };
+        runtimeEventStore.Add(safeRuntimeEvent);
+        return MonitoringHub.BroadcastServerRuntimeEvent(monitoringHub, safeRuntimeEvent);
     }
 }

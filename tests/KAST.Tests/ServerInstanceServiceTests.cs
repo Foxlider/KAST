@@ -15,6 +15,7 @@ public class ServerInstanceServiceTests : IDisposable
     private readonly Infrastructure.Data.KastDbContext _db;
     private readonly IProcessManagerService _processManager;
     private readonly IAppEventBroadcaster _broadcaster;
+    private readonly IServerConsoleLogTailer _consoleLogTailer;
     private readonly ILogger<ServerInstanceService> _logger;
     private readonly ServerInstanceService _sut;
     private bool _disposed = false;
@@ -24,8 +25,9 @@ public class ServerInstanceServiceTests : IDisposable
         _db = DbHelper.CreateInMemoryDb();
         _processManager = Substitute.For<IProcessManagerService>();
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
+        _consoleLogTailer = Substitute.For<IServerConsoleLogTailer>();
         _logger = Substitute.For<ILogger<ServerInstanceService>>();
-        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger, new OutputSanitizer());
+        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger, new OutputSanitizer(), _consoleLogTailer);
     }
 
     public void Dispose()
@@ -240,6 +242,22 @@ public class ServerInstanceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StartInstance_StartsRptTailerWithReplay()
+    {
+        var instance = await SeedInstanceAsync();
+
+        _processManager.StartServerProcessAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Action<int, string>?>(), Arg.Any<Action<int, int>?>(), Arg.Any<CancellationToken>())
+            .Returns(42);
+
+        await _sut.StartInstanceAsync(instance.Id);
+
+        _consoleLogTailer.Received(1).StartFollowing(
+            Arg.Is<ServerInstance>(s => s.Id == instance.Id),
+            Arg.Any<DateTime>(),
+            replayExistingContent: true);
+    }
+
+    [Fact]
     public void GetCommandLine_UsesAbsolutePerInstancePathsForArmaPathArguments()
     {
         var relativeInstallPath = Path.Combine("servers", "Server-20260528-202725");
@@ -316,6 +334,7 @@ public class ServerInstanceServiceTests : IDisposable
         Assert.Equal(ServerInstanceStatus.Stopped, updated!.Status);
         Assert.Null(updated.ProcessId);
         Assert.Null(updated.StartedAt);
+        await _consoleLogTailer.Received(1).StopFollowingAsync(instance.Id);
     }
 
     [Fact]

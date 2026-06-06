@@ -2,9 +2,11 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject KAST.UI.Services.ServerConsoleStore ConsoleStore
+@inject KAST.UI.Services.ServerRuntimeEventStore RuntimeEventStore
 @inject KastInternalUrlProvider InternalUrls
 @inject InternalHubTokenService InternalHubToken
 @inject ILogger<MonitorTab> Logger
+@inject ISnackbar Snackbar
 
 @if (!_monitoringConnected && _monitoringError is not null)
 {
@@ -41,6 +43,81 @@
         </MudCard>
     </MudItem>
 </MudGrid>
+
+<MudGrid Class="mt-4" Spacing="3">
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-3 h-100" Elevation="1">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Mission</MudText>
+            @if (_latestMission is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No mission detected yet.</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.subtitle2">@(_latestMission.MissionFile ?? "Mission running")</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @FirstNonBlank(_latestMission.MissionWorld, _latestMission.MissionDirectory, "Unknown world")
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-3 h-100" Elevation="1">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Steam</MudText>
+            @if (_latestSteamEvent is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No Steam status detected yet.</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.subtitle2">@_latestSteamEvent.Title</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@_latestSteamEvent.Message</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-3 h-100" Elevation="1">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Admin Activity</MudText>
+            @if (_latestAdminEvent is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No admin activity detected yet.</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.subtitle2">@_latestAdminEvent.Title</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@_latestAdminEvent.Message</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (AlertEvents.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-3" Elevation="1">
+        <div class="d-flex align-center justify-space-between mb-2">
+            <MudText Typo="Typo.subtitle2">Server Events</MudText>
+            <MudTooltip Text="Clear detected server events">
+                <MudIconButton Icon="@Icons.Material.Outlined.DeleteSweep"
+                               Size="Size.Small"
+                               OnClick="ClearRuntimeEvents" />
+            </MudTooltip>
+        </div>
+        <div class="kast-runtime-events">
+            @foreach (var runtimeEvent in AlertEvents.TakeLast(8).Reverse())
+            {
+                <MudAlert Severity="@ToMudSeverity(runtimeEvent.Severity)"
+                          Variant="Variant.Outlined"
+                          Dense="true"
+                          Class="mb-1">
+                    <div class="d-flex flex-column">
+                        <span>@runtimeEvent.Title</span>
+                        <span class="mud-typography-caption">@runtimeEvent.Message</span>
+                    </div>
+                </MudAlert>
+            }
+        </div>
+    </MudPaper>
+}
 
 <div class="d-flex align-center justify-space-between mt-4 mb-1">
     <MudText Typo="Typo.subtitle2">Server Console</MudText>
@@ -85,6 +162,7 @@
 
     private HubConnection? _hubConnection;
     private readonly List<ConsoleEntry> _consoleLines = new();
+    private readonly List<ServerRuntimeEvent> _runtimeEvents = new();
     private ElementReference _consoleRef;
     private bool _followConsole = true;
     private bool _scrollConsole;
@@ -103,6 +181,15 @@
             ? _consoleLines.ToList()
             : _consoleLines.Where(e => e.Type == _consoleFilter).ToList();
 
+    private IReadOnlyList<ServerRuntimeEvent> AlertEvents =>
+        _runtimeEvents
+            .Where(e => e.Severity is ServerRuntimeEventSeverity.Warning or ServerRuntimeEventSeverity.Error or ServerRuntimeEventSeverity.Critical)
+            .ToList();
+
+    private ServerRuntimeEvent? _latestMission;
+    private ServerRuntimeEvent? _latestSteamEvent;
+    private ServerRuntimeEvent? _latestAdminEvent;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && !_initialized && Instance.Id > 0)
@@ -110,6 +197,8 @@
             _initialized = true;
             foreach (var entry in ConsoleStore.GetHistory(Instance.Id))
                 _consoleLines.Add(new ConsoleEntry(entry.Timestamp, entry.Line, ClassifyLine(entry.Line)));
+            foreach (var runtimeEvent in RuntimeEventStore.GetHistory(Instance.Id))
+                AddRuntimeEvent(runtimeEvent, showSnackbar: false);
             await InitializeSignalR();
         }
 
@@ -168,6 +257,16 @@
                     _lastConsoleRender = now;
                     InvokeAsync(StateHasChanged);
                 }
+            });
+
+            _hubConnection.On<ServerRuntimeEvent>("ServerRuntimeEvent", runtimeEvent =>
+            {
+                if (runtimeEvent.ServerInstanceId != Instance.Id) return;
+                InvokeAsync(() =>
+                {
+                    AddRuntimeEvent(runtimeEvent, showSnackbar: true);
+                    StateHasChanged();
+                });
             });
 
             _hubConnection.On<ServerStatusChangedEvent>("ServerStatusChanged", async evt =>
@@ -240,6 +339,46 @@
         }
         StateHasChanged();
     }
+
+    private void ClearRuntimeEvents()
+    {
+        _runtimeEvents.Clear();
+        _latestMission = null;
+        _latestSteamEvent = null;
+        _latestAdminEvent = null;
+        RuntimeEventStore.Clear(Instance.Id);
+        StateHasChanged();
+    }
+
+    private void AddRuntimeEvent(ServerRuntimeEvent runtimeEvent, bool showSnackbar)
+    {
+        _runtimeEvents.Add(runtimeEvent);
+        while (_runtimeEvents.Count > 200) _runtimeEvents.RemoveAt(0);
+
+        if (runtimeEvent.Kind == ServerRuntimeEventKind.MissionStarted)
+            _latestMission = runtimeEvent;
+        if (runtimeEvent.Kind is ServerRuntimeEventKind.SteamInitialized or ServerRuntimeEventKind.SteamConnected or ServerRuntimeEventKind.SteamQueryOverflow)
+            _latestSteamEvent = runtimeEvent;
+        if (runtimeEvent.Kind is ServerRuntimeEventKind.AdminLogin or ServerRuntimeEventKind.AdminLogout)
+            _latestAdminEvent = runtimeEvent;
+
+        if (!showSnackbar || runtimeEvent.Severity is not (ServerRuntimeEventSeverity.Warning or ServerRuntimeEventSeverity.Critical))
+            return;
+
+        Snackbar.Add($"{runtimeEvent.Title}: {runtimeEvent.Message}", ToMudSeverity(runtimeEvent.Severity));
+    }
+
+    private static Severity ToMudSeverity(ServerRuntimeEventSeverity severity)
+        => severity switch
+        {
+            ServerRuntimeEventSeverity.Critical => Severity.Error,
+            ServerRuntimeEventSeverity.Error => Severity.Error,
+            ServerRuntimeEventSeverity.Warning => Severity.Warning,
+            _ => Severity.Info
+        };
+
+    private static string FirstNonBlank(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
 
     private string GetUptime()
     {

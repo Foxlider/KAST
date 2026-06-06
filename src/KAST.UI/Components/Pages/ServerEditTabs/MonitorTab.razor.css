@@ -8,3 +8,8 @@
     resize: both;
     box-sizing: border-box;
 }
+
+.kast-runtime-events {
+    max-height: 220px;
+    overflow: auto;
+}

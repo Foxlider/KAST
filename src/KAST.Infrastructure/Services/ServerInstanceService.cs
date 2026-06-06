@@ -18,6 +18,7 @@ public class ServerInstanceService(
     IAppEventBroadcaster broadcaster,
     ILogger<ServerInstanceService> logger,
     IOutputSanitizer sanitizer,
+    IServerConsoleLogTailer? consoleLogTailer = null,
     IHostEnvironment? hostEnvironment = null) : IServerInstanceService
 {
     public async Task<IReadOnlyList<ServerInstance>> GetAllInstancesAsync(CancellationToken ct = default)
@@ -113,6 +114,8 @@ public class ServerInstanceService(
 
         if (instance.Status == ServerInstanceStatus.Running)
             await StopInstanceAsync(id, ct);
+        else if (consoleLogTailer is not null)
+            await consoleLogTailer.StopFollowingAsync(id);
 
         // Capture install path & check whether it's shared with other instances
         // BEFORE we drop this row, so explicit file deletion cannot wipe shared data.
@@ -253,6 +256,7 @@ public class ServerInstanceService(
 
         try
         {
+            var sessionStartedUtc = DateTime.UtcNow;
             var executable = GetServerExecutable(instance);
             var args = BuildLaunchArguments(instance);
 
@@ -277,6 +281,8 @@ public class ServerInstanceService(
                             new ServerStatusChangedEvent(id, newStatus.ToString()));
                         await broadcaster.BroadcastLogEntryAsync(
                             new LogEntryEvent(id, $"Process exited with code {exitCode}", DateTime.UtcNow));
+                        if (consoleLogTailer is not null)
+                            await consoleLogTailer.StopFollowingAsync(id);
                     }
                     catch (Exception ex)
                     {
@@ -286,6 +292,7 @@ public class ServerInstanceService(
             }
 
             var pid = await processManager.StartServerProcessAsync(executable, args, OnOutputLine, OnProcessExited, ct);
+            consoleLogTailer?.StartFollowing(instance, sessionStartedUtc, replayExistingContent: true);
             instance.ProcessId = pid;
             instance.Status = ServerInstanceStatus.Running;
             instance.StartedAt = DateTime.UtcNow;
@@ -401,6 +408,8 @@ public class ServerInstanceService(
             instance.ProcessId = null;
             instance.Status = ServerInstanceStatus.Stopped;
             instance.StartedAt = null;
+            if (consoleLogTailer is not null)
+                await consoleLogTailer.StopFollowingAsync(id);
         }
         else
         {
