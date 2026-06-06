@@ -10,7 +10,7 @@ namespace KAST.Infrastructure.Services;
 
 public sealed class WindowsHostServiceManager(ILogger<WindowsHostServiceManager> logger) : IHostServiceManager
 {
-    private const string ServiceName = "KAST";
+    public const string ServiceName = "KAST";
     private const string DisplayName = "KAST Panel";
     private const string Description = "Keelah Arma Server Tool web panel";
     private const int DefaultRestartDelaySeconds = 60;

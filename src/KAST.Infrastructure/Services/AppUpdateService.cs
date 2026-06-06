@@ -13,20 +13,27 @@ using System.Text.RegularExpressions;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public partial class AppUpdateService(
-    HttpClient httpClient,
-    IHostApplicationLifetime applicationLifetime,
-    ILogger<AppUpdateService> logger) : IAppUpdateService
+public partial class AppUpdateService : IAppUpdateService
 {
     private const string StableChannelId = "stable";
     private const string DevChannelId = "dev";
     private const string CasterChannelId = "caster";
     private const string CasterNightlyChannelId = "caster-nightly";
     private const string GitHubApiBase = "https://api.github.com";
+
+    private readonly HttpClient httpClient;
+    private readonly IHostApplicationLifetime applicationLifetime;
+    private readonly IHostServiceManager hostServiceManager;
+    private readonly ILogger<AppUpdateService> logger;
+    private readonly Func<bool> isDocker;
+    private readonly Func<bool> isWindows;
+    private readonly Func<bool> isWindowsService;
+    private readonly Action<string> startApplyScript;
 
     private static readonly AppUpdateChannel[] Channels =
     [
@@ -36,6 +43,43 @@ public partial class AppUpdateService(
         new(StableChannelId, "Stable", "Foxlider", "KAST", AppUpdateReleaseSelection.LatestStable, null, false)
     ];
 
+    public AppUpdateService(
+        HttpClient httpClient,
+        IHostApplicationLifetime applicationLifetime,
+        IHostServiceManager hostServiceManager,
+        ILogger<AppUpdateService> logger)
+        : this(
+            httpClient,
+            applicationLifetime,
+            hostServiceManager,
+            logger,
+            IsDocker,
+            OperatingSystem.IsWindows,
+            () => OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService(),
+            StartApplyScript)
+    {
+    }
+
+    internal AppUpdateService(
+        HttpClient httpClient,
+        IHostApplicationLifetime applicationLifetime,
+        IHostServiceManager hostServiceManager,
+        ILogger<AppUpdateService> logger,
+        Func<bool> isDocker,
+        Func<bool> isWindows,
+        Func<bool> isWindowsService,
+        Action<string> startApplyScript)
+    {
+        this.httpClient = httpClient;
+        this.applicationLifetime = applicationLifetime;
+        this.hostServiceManager = hostServiceManager;
+        this.logger = logger;
+        this.isDocker = isDocker;
+        this.isWindows = isWindows;
+        this.isWindowsService = isWindowsService;
+        this.startApplyScript = startApplyScript;
+    }
+
     public IReadOnlyList<AppUpdateChannel> GetChannels() => Channels;
 
     public async Task<AppUpdateCheckResult> CheckForUpdatesAsync(string channelId, CancellationToken ct = default)
@@ -43,7 +87,8 @@ public partial class AppUpdateService(
         var channel = GetChannel(channelId);
         var rid = GetCurrentRuntimeIdentifier();
         var currentVersion = GetCurrentVersion();
-        var isDocker = IsDocker();
+        var isDockerDeployment = isDocker();
+        var restartMode = GetRestartMode(isDockerDeployment);
 
         if (rid is null)
         {
@@ -52,7 +97,8 @@ public partial class AppUpdateService(
                 currentVersion,
                 "This platform is not supported by the native updater.",
                 runtimeIdentifier: "unsupported",
-                isDocker: isDocker);
+                isDocker: isDockerDeployment,
+                restartMode);
         }
 
         var release = await FetchReleaseAsync(channel, ct);
@@ -63,7 +109,8 @@ public partial class AppUpdateService(
                 currentVersion,
                 $"{channel.Label} does not have an available GitHub release yet.",
                 rid,
-                isDocker);
+                isDockerDeployment,
+                restartMode);
         }
 
         var asset = SelectAsset(release.Assets, rid, channel.IsPrerelease);
@@ -73,8 +120,9 @@ public partial class AppUpdateService(
                 channel,
                 currentVersion,
                 rid,
-                IsNativeSupported: !isDocker,
-                IsDocker: isDocker,
+                IsNativeSupported: !isDockerDeployment,
+                IsDocker: isDockerDeployment,
+                RestartMode: restartMode,
                 IsChannelAvailable: false,
                 IsUpdateAvailable: false,
                 Message: $"No {rid} update asset was found for {channel.Label}.",
@@ -88,7 +136,7 @@ public partial class AppUpdateService(
 
         var releaseVersion = ExtractReleaseVersion(release);
         var updateAvailable = IsUpdateAvailable(currentVersion, releaseVersion, release.TagName);
-        var message = isDocker
+        var message = isDockerDeployment
             ? "KAST is running in Docker. Download is available, but updates must be applied by changing the container image."
             : updateAvailable
                 ? "Update available."
@@ -98,8 +146,9 @@ public partial class AppUpdateService(
             channel,
             currentVersion,
             rid,
-            IsNativeSupported: !isDocker,
-            IsDocker: isDocker,
+            IsNativeSupported: !isDockerDeployment,
+            IsDocker: isDockerDeployment,
+            RestartMode: restartMode,
             IsChannelAvailable: true,
             IsUpdateAvailable: updateAvailable,
             message,
@@ -158,23 +207,33 @@ public partial class AppUpdateService(
         return new(true, checksumVerified ? "Update downloaded and verified." : "Update downloaded and staged.", updateId, extractPath, checksumVerified);
     }
 
-    public Task<AppUpdateApplyResult> ApplyStagedUpdateAsync(string stagedUpdateId, CancellationToken ct = default)
+    public async Task<AppUpdateApplyResult> ApplyStagedUpdateAsync(string stagedUpdateId, CancellationToken ct = default)
     {
-        if (IsDocker())
-            return Task.FromResult(new AppUpdateApplyResult(false, "Docker deployments are notify-only."));
+        if (isDocker())
+            return new AppUpdateApplyResult(false, "Docker deployments are notify-only.");
         if (string.IsNullOrWhiteSpace(stagedUpdateId) || stagedUpdateId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            return Task.FromResult(new AppUpdateApplyResult(false, "Invalid staged update id."));
+            return new AppUpdateApplyResult(false, "Invalid staged update id.");
 
         var updateRoot = Path.Combine(AppContext.BaseDirectory, "updates", stagedUpdateId);
         var extractPath = Path.Combine(updateRoot, "extracted");
         if (!Directory.Exists(extractPath))
-            return Task.FromResult(new AppUpdateApplyResult(false, "Staged update files were not found."));
+            return new AppUpdateApplyResult(false, "Staged update files were not found.");
 
         var processPath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(processPath))
-            return Task.FromResult(new AppUpdateApplyResult(false, "Could not resolve the current KAST executable path."));
+            return new AppUpdateApplyResult(false, "Could not resolve the current KAST executable path.");
 
-        var scriptPath = OperatingSystem.IsWindows()
+        var restartMode = GetRestartMode(isDockerDeployment: false);
+        if (restartMode == AppUpdateRestartMode.WindowsService)
+        {
+            var serviceStatus = await hostServiceManager.GetStatusAsync(ct);
+            if (!serviceStatus.IsSupported || serviceStatus.State == HostServiceRunState.Unsupported)
+                return new AppUpdateApplyResult(false, "KAST is running as a Windows service, but Windows service control is not supported from this process.");
+            if (serviceStatus.State == HostServiceRunState.NotInstalled)
+                return new AppUpdateApplyResult(false, "KAST is running as a Windows service, but the KAST service is not installed.");
+        }
+
+        var scriptPath = isWindows()
             ? Path.Combine(updateRoot, "apply-update.cmd")
             : Path.Combine(updateRoot, "apply-update.sh");
         var backupPath = Path.Combine(
@@ -183,15 +242,15 @@ public partial class AppUpdateService(
             "backup-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
         var pid = Environment.ProcessId;
 
-        if (OperatingSystem.IsWindows())
-            File.WriteAllText(scriptPath, BuildWindowsApplyScript(pid, extractPath, AppContext.BaseDirectory, backupPath, processPath), Encoding.ASCII);
+        if (isWindows())
+            File.WriteAllText(scriptPath, BuildWindowsApplyScript(pid, extractPath, AppContext.BaseDirectory, backupPath, processPath, restartMode), Encoding.ASCII);
         else
             File.WriteAllText(scriptPath, BuildLinuxApplyScript(pid, extractPath, AppContext.BaseDirectory, backupPath, processPath), Encoding.ASCII);
 
-        StartApplyScript(scriptPath);
+        startApplyScript(scriptPath);
         logger.LogInformation("KAST update apply script started: {ScriptPath}", scriptPath);
         applicationLifetime.StopApplication();
-        return Task.FromResult(new AppUpdateApplyResult(true, "KAST is stopping so the staged update can be applied."));
+        return new AppUpdateApplyResult(true, "KAST is stopping so the staged update can be applied.");
     }
 
     public static string? GetCurrentRuntimeIdentifier()
@@ -307,13 +366,15 @@ public partial class AppUpdateService(
         string currentVersion,
         string message,
         string runtimeIdentifier,
-        bool isDocker)
+        bool isDocker,
+        AppUpdateRestartMode restartMode)
         => new(
             channel,
             currentVersion,
             runtimeIdentifier,
             IsNativeSupported: !isDocker,
             IsDocker: isDocker,
+            RestartMode: restartMode,
             IsChannelAvailable: false,
             IsUpdateAvailable: false,
             message,
@@ -453,8 +514,28 @@ public partial class AppUpdateService(
         Process.Start(startInfo);
     }
 
-    private static string BuildWindowsApplyScript(int pid, string sourcePath, string destinationPath, string backupPath, string processPath)
-        => $$"""
+    private AppUpdateRestartMode GetRestartMode(bool isDockerDeployment)
+    {
+        if (isDockerDeployment)
+            return AppUpdateRestartMode.None;
+        return isWindowsService()
+            ? AppUpdateRestartMode.WindowsService
+            : AppUpdateRestartMode.DirectProcess;
+    }
+
+    internal static string BuildWindowsApplyScript(
+        int pid,
+        string sourcePath,
+        string destinationPath,
+        string backupPath,
+        string processPath,
+        AppUpdateRestartMode restartMode)
+    {
+        var restartCommand = restartMode == AppUpdateRestartMode.WindowsService
+            ? $"sc.exe start {WindowsHostServiceManager.ServiceName}"
+            : "start \"\" \"%EXE%\"";
+
+        return $$"""
 @echo off
 setlocal
 set PID={{pid}}
@@ -474,11 +555,12 @@ xcopy "%DEST%" "%BACKUP%\" /E /I /Y /H /C >nul
 copy "%DEST%\appsettings*.json" "%BACKUP%\preserve-config\" >nul 2>nul
 xcopy "%SRC%" "%DEST%\" /E /I /Y /H /C >nul
 copy "%BACKUP%\preserve-config\appsettings*.json" "%DEST%\" >nul 2>nul
-start "" "%EXE%"
+{{restartCommand}}
 endlocal
 """;
+    }
 
-    private static string BuildLinuxApplyScript(int pid, string sourcePath, string destinationPath, string backupPath, string processPath)
+    internal static string BuildLinuxApplyScript(int pid, string sourcePath, string destinationPath, string backupPath, string processPath)
         => $$"""
 #!/bin/sh
 PID={{pid}}

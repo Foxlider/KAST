@@ -763,7 +763,7 @@
                             @if (_downloadResult?.Success == true)
                             {
                                 <MudCheckBox T="bool" @bind-Value="_confirmApplyUpdate" Color="Color.Warning"
-                                             Label="I understand KAST will stop and restart to apply the staged update." />
+                                             Label="@ApplyUpdateConfirmationText" />
                                 <MudButton Variant="Variant.Filled" Color="Color.Warning"
                                            StartIcon="@Icons.Material.Filled.SystemUpdateAlt"
                                            Disabled="@(!_confirmApplyUpdate || _applyingUpdate)"
@@ -1500,6 +1500,10 @@
         _serviceStatus is null ? "Loading service status." :
         _serviceStatus.State == HostServiceRunState.NotInstalled ? "KAST is not installed as a Windows service." :
         $"KAST service is {_serviceStatus.State}.";
+
+    private string ApplyUpdateConfirmationText => _updateCheck?.RestartMode == AppUpdateRestartMode.WindowsService
+        ? "I understand KAST will stop and the Windows service will restart after the update is applied."
+        : "I understand KAST will stop and restart to apply the staged update.";
 
     private HostServiceConfigureRequest CurrentServiceRequest()
         => new(

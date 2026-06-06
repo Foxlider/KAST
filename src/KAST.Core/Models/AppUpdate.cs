@@ -15,6 +15,13 @@ public enum AppUpdateStage
     Staged
 }
 
+public enum AppUpdateRestartMode
+{
+    None,
+    DirectProcess,
+    WindowsService
+}
+
 public record AppUpdateChannel(
     string Id,
     string Label,
@@ -35,6 +42,7 @@ public record AppUpdateCheckResult(
     string RuntimeIdentifier,
     bool IsNativeSupported,
     bool IsDocker,
+    AppUpdateRestartMode RestartMode,
     bool IsChannelAvailable,
     bool IsUpdateAvailable,
     string Message,
