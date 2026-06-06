@@ -251,7 +251,7 @@ jobs:
             kast-win-x64-v*.zip
             kast-win-x64-v*.zip.sha256
 
-      - name: Update CHANGELOG.md on caster
+      - name: Prepare CHANGELOG.md branch
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -259,7 +259,17 @@ jobs:
           git fetch origin +caster:refs/remotes/origin/caster
           git checkout -B caster origin/caster
 
-          git cliff --output CHANGELOG.md
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --strip all
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Commit CHANGELOG.md
+        run: |
           git add CHANGELOG.md
 
           git diff --staged --quiet && echo "No changelog changes." && exit 0
