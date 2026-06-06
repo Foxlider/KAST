@@ -181,20 +181,18 @@ public class KastApiModsEndToEndTests
             builder.Services.AddSingleton<ISteamService>(new FakeSteamService());
             builder.Services.AddSingleton<IAppEventBroadcaster, NoopAppEventBroadcaster>();
             builder.Services.AddSingleton(sp => new ModDownloadManager(
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<IContentOrchestrator>(),
-                sp.GetRequiredService<ContentProgressTracker>(),
-                NullLogger<ModDownloadManager>.Instance));
+                sp.GetRequiredService<IModDownloadQueueService>()));
 
             var app = builder.Build();
             app.MapGroup("/api").MapKastApi();
-            await app.StartAsync();
 
             await using (var scope = app.Services.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<KastDbContext>();
                 await db.Database.EnsureCreatedAsync();
             }
+
+            await app.StartAsync();
 
             return new EndToEndApiApp(app, app.GetTestClient(), tempRoot);
         }

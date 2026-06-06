@@ -45,40 +45,22 @@ public class SteamModInstaller(
             if (!steam.IsConnected)
                 throw new InvalidOperationException("Failed to connect to Steam.");
 
+            var reporter = new ThrottledModProgressReporter(
+                broadcaster,
+                request.ModId,
+                request.WorkshopId,
+                request.ExpectedSizeBytes);
             var progress = new Progress<double>(pct =>
             {
                 state.SetStepProgress(0, pct);
-                if (request.ModId <= 0 || broadcaster is null)
-                    return;
-
-                var bytesDownloaded = request.ExpectedSizeBytes > 0
-                    ? (long)(pct / 100.0 * request.ExpectedSizeBytes)
-                    : 0;
-                _ = broadcaster.BroadcastDownloadProgressAsync(new ModDownloadProgressEvent(
-                    request.ModId,
-                    request.WorkshopId,
-                    pct,
-                    bytesDownloaded,
-                    request.ExpectedSizeBytes));
+                reporter.Report(pct);
             });
             var fileProgress = new Progress<DownloadFileProgress>(file =>
             {
                 state.SetFileProgress(file);
-                if (request.ModId <= 0 || broadcaster is null)
-                    return;
 
                 var overallPct = state.Steps.Count > 0 ? state.Steps[0].Progress : 0;
-                var bytesDownloaded = request.ExpectedSizeBytes > 0
-                    ? (long)(overallPct / 100.0 * request.ExpectedSizeBytes)
-                    : 0;
-
-                _ = broadcaster.BroadcastDownloadProgressAsync(new ModDownloadProgressEvent(
-                    request.ModId,
-                    request.WorkshopId,
-                    overallPct,
-                    bytesDownloaded,
-                    request.ExpectedSizeBytes,
-                    [file]));
+                reporter.Report(overallPct, file);
             });
             var statusProgress = new Progress<string>(state.SetStatusMessage);
             state.AddLog($"Parallel workers: {Math.Max(1, request.MaxParallelDownloads)}.");
@@ -93,6 +75,7 @@ public class SteamModInstaller(
             state.InstalledManifestId = installedManifestId;
 
             state.CompleteStep(0);
+            reporter.Report(100, force: true);
             state.AddLog("Download complete.");
 
             state.BeginStep(1);
@@ -111,6 +94,52 @@ public class SteamModInstaller(
             state.SetStatusMessage(ex is OperationCanceledException ? "Cancelled" : "Failed");
             activity?.SetStatus(ActivityStatusCode.Error, sanitizer.Sanitize(ex.Message));
             throw;
+        }
+    }
+
+    private sealed class ThrottledModProgressReporter(
+        IAppEventBroadcaster? broadcaster,
+        int modId,
+        long workshopId,
+        long expectedSizeBytes)
+    {
+        private static readonly TimeSpan MinimumInterval = TimeSpan.FromSeconds(1);
+        private readonly object _lock = new();
+        private DateTime _lastSent = DateTime.MinValue;
+        private double _lastPercent = -1;
+
+        public void Report(double percent, DownloadFileProgress? file = null, bool force = false)
+        {
+            if (modId <= 0 || broadcaster is null)
+                return;
+
+            percent = Math.Clamp(percent, 0, 100);
+            var now = DateTime.UtcNow;
+            lock (_lock)
+            {
+                if (!force &&
+                    percent < 100 &&
+                    now - _lastSent < MinimumInterval &&
+                    Math.Abs(percent - _lastPercent) < 1)
+                {
+                    return;
+                }
+
+                _lastSent = now;
+                _lastPercent = percent;
+            }
+
+            var bytesDownloaded = expectedSizeBytes > 0
+                ? (long)(percent / 100.0 * expectedSizeBytes)
+                : file?.BytesDownloaded ?? 0;
+            var files = file is null ? null : new[] { file };
+            _ = broadcaster.BroadcastDownloadProgressAsync(new ModDownloadProgressEvent(
+                modId,
+                workshopId,
+                percent,
+                bytesDownloaded,
+                expectedSizeBytes,
+                files));
         }
     }
 

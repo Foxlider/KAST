@@ -105,6 +105,18 @@ public class KastDbContext : DbContext
             entity.HasIndex(e => e.KeyPrefix);
         });
 
+        modelBuilder.Entity<DownloadTask>(entity =>
+        {
+            entity.HasOne(e => e.Mod)
+                .WithMany()
+                .HasForeignKey(e => e.ModId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.ModId);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => new { e.Status, e.CreatedAt });
+        });
+
         modelBuilder.Entity<KastUser>(entity =>
         {
             entity.HasIndex(e => e.NormalizedUsername).IsUnique();

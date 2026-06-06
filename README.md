@@ -117,6 +117,32 @@ volumes:
   kast-data:
 ```
 
+### **Operations**
+
+KAST exposes `/health` for basic web/database health and `/ready` for readiness
+including the active mod download count. Bulk mod downloads are queued
+durably; `/api/downloads/state` is the authoritative queue snapshot used by the
+UI after reconnects.
+
+When running behind Caddy or another reverse proxy, keep websocket proxying
+enabled for Blazor Server and configure KAST to trust only the proxy IPs that
+can reach it. For a local Caddy reverse proxy, the default trusted proxies are
+`127.0.0.1` and `::1`; override with `ForwardedHeaders:KnownProxies` if the
+proxy runs elsewhere.
+
+Example Caddy route:
+
+```caddyfile
+panel.example.com {
+    reverse_proxy 127.0.0.1:5000
+}
+```
+
+If the KAST process exits during active downloads, configure Windows Service,
+systemd, Docker, or your supervisor to restart it. On startup KAST reconciles
+interrupted queued/running download records and resets mods left in
+`Downloading` or `Updating` state so they can be retried safely.
+
 ### **Authentication and OIDC**
 
 KAST uses local administrator accounts by default. OpenID Connect can be enabled

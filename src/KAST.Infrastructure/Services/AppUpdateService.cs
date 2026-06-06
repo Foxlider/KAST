@@ -136,6 +136,15 @@ public partial class AppUpdateService(
 
         progress?.Report(new(AppUpdateStage.Verifying, null, "Verifying downloaded archive..."));
         var checksumVerified = await TryVerifyChecksumAsync(check.Channel, check.Asset, downloadPath, ct);
+        if (!checksumVerified)
+        {
+            return new(
+                false,
+                "Update checksum asset was not found. The update was downloaded but will not be staged.",
+                null,
+                null,
+                false);
+        }
 
         progress?.Report(new(AppUpdateStage.Extracting, null, "Extracting update archive..."));
         ExtractArchive(downloadPath, extractPath);

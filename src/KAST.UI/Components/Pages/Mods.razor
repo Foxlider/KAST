@@ -7,6 +7,7 @@
 @inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject ModDownloadManager DownloadManager
+@inject IModDownloadQueueService DownloadQueue
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -773,7 +774,6 @@ else
     private bool _showImportDialog;
     private bool _showPresetImportDialog;
     private bool _showDeleteDialog;
-    private bool _showDownloadsDrawer;
     private bool _isCheckingUpdates;
     private bool _isUpdatingAll;
     private int _outdatedCount;
@@ -784,8 +784,10 @@ else
     private string _modSearchQuery = "";
     private string _activeModFilter = "all";
     private DateTime _lastProgressUiRefresh = DateTime.MinValue;
+    private DateTime _lastQueueSnapshotModRefresh = DateTime.MinValue;
     private bool _progressRefreshQueued;
     private bool _isDisposed;
+    private CancellationTokenSource? _queuePollCts;
 
     private static readonly (string Key, string Label, Color Color)[] _modFilters =
     [
@@ -838,17 +840,86 @@ else
         await RefreshMods();
         Broadcaster.OnModDownloadProgress += HandleDownloadProgress;
         Broadcaster.OnModStatusChanged    += HandleStatusChanged;
+        _queuePollCts = new CancellationTokenSource();
+        _ = PollDownloadQueueStateAsync(_queuePollCts.Token);
     }
 
     public async ValueTask DisposeAsync()
     {
         _isDisposed = true;
+        _queuePollCts?.Cancel();
+        _queuePollCts?.Dispose();
         Broadcaster.OnModDownloadProgress -= HandleDownloadProgress;
         Broadcaster.OnModStatusChanged    -= HandleStatusChanged;
         foreach (var (_, (state, handler)) in _progressSubscriptions)
             state.Changed -= handler;
         _progressSubscriptions.Clear();
         await Task.CompletedTask;
+    }
+
+    private async Task PollDownloadQueueStateAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var snapshot = await DownloadQueue.GetSnapshotAsync(ct);
+                await InvokeAsync(() =>
+                {
+                    ApplyDownloadQueueSnapshot(snapshot);
+                    StateHasChanged();
+                });
+
+                if ((DateTime.UtcNow - _lastQueueSnapshotModRefresh).TotalSeconds >= 10 &&
+                    snapshot.Tasks.Any(t => t.Status is DownloadStatus.Queued or DownloadStatus.Downloading or DownloadStatus.Validating))
+                {
+                    _lastQueueSnapshotModRefresh = DateTime.UtcNow;
+                    await InvokeAsync(RefreshMods);
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+        }
+    }
+
+    private void ApplyDownloadQueueSnapshot(DownloadQueueSnapshot snapshot)
+    {
+        foreach (var task in snapshot.Tasks)
+        {
+            if (task.ModId <= 0)
+                continue;
+
+            if (!_taskIds.Contains(task.ModId))
+                _taskIds.Insert(0, task.ModId);
+
+            if (task.Status is DownloadStatus.Queued)
+            {
+                _queuedModIds.Add(task.ModId);
+                _taskProgress.TryAdd(task.ModId, task.ProgressPercent);
+                continue;
+            }
+
+            if (task.Status is DownloadStatus.Downloading or DownloadStatus.Validating)
+            {
+                _queuedModIds.Remove(task.ModId);
+                _taskProgress[task.ModId] = task.ProgressPercent;
+                _downloadBytesPrev[task.ModId] = task.BytesDownloaded;
+                _downloadTsPrev[task.ModId] = task.UpdatedAt;
+                continue;
+            }
+
+            _queuedModIds.Remove(task.ModId);
+            if (task.Status is DownloadStatus.Completed)
+                _taskProgress[task.ModId] = 100;
+        }
     }
 
     // ── In-process event handlers ─────────────────────────────────────────────

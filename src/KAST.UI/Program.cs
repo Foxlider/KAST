@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Net;
 using MudBlazor;
 using MudBlazor.Services;
 using OpenTelemetry.Resources;
@@ -213,6 +214,7 @@ builder.Services.AddScoped<MonitoringStateService>();
 builder.Services.AddHostedService<MetricsBackgroundService>();
 builder.Services.AddHostedService<ProcessWatchdogService>();
 builder.Services.AddHostedService<SchedulingBackgroundService>();
+builder.Services.AddHostedService<SteamStartupService>();
 
 // ── OpenTelemetry tracing ────────────────────────────────────────────────────
 var telemetry = builder.Configuration.GetSection("Telemetry");
@@ -233,7 +235,8 @@ if (telemetry.GetValue("Enabled", true))
                 // Skip noisy health-check and static-asset spans
                 opts.Filter = ctx =>
                     !ctx.Request.Path.StartsWithSegments("/health") &&
-                    !ctx.Request.Path.StartsWithSegments("/alive");
+                    !ctx.Request.Path.StartsWithSegments("/alive") &&
+                    !ctx.Request.Path.StartsWithSegments("/ready");
             })
             .AddHttpClientInstrumentation(opts =>
             {
@@ -254,6 +257,26 @@ if (telemetry.GetValue("Enabled", true))
 }
 
 var app = builder.Build();
+var lifecycleLogger = app.Services.GetRequiredService<ILogger<Program>>();
+app.Lifetime.ApplicationStarted.Register(() =>
+    lifecycleLogger.LogInformation(
+        "KAST web host started. ProcessId={ProcessId}, WorkingSetMB={WorkingSetMB:F1}",
+        Environment.ProcessId,
+        Environment.WorkingSet / 1_048_576.0));
+app.Lifetime.ApplicationStopping.Register(() =>
+    lifecycleLogger.LogInformation(
+        "KAST web host stopping. ProcessId={ProcessId}, WorkingSetMB={WorkingSetMB:F1}",
+        Environment.ProcessId,
+        Environment.WorkingSet / 1_048_576.0));
+app.Lifetime.ApplicationStopped.Register(() =>
+    lifecycleLogger.LogInformation("KAST web host stopped. ProcessId={ProcessId}", Environment.ProcessId));
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+    lifecycleLogger.LogCritical(e.ExceptionObject as Exception, "Unhandled AppDomain exception. IsTerminating={IsTerminating}", e.IsTerminating);
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    lifecycleLogger.LogError(e.Exception, "Unobserved task exception");
+    e.SetObserved();
+};
 
 // ── Database migration & startup cleanup ─────────────────────────────────────
 using (var scope = app.Services.CreateScope())
@@ -307,10 +330,15 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor |
                        ForwardedHeaders.XForwardedHost |
-                       ForwardedHeaders.XForwardedProto
+                       ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1
 };
-forwardedHeadersOptions.KnownIPNetworks.Clear();
-forwardedHeadersOptions.KnownProxies.Clear();
+foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ??
+                      ["127.0.0.1", "::1"])
+{
+    if (IPAddress.TryParse(proxy, out var address))
+        forwardedHeadersOptions.KnownProxies.Add(address);
+}
 app.UseForwardedHeaders(forwardedHeadersOptions);
 app.UseStaticFiles();
 app.UseAntiforgery();
@@ -320,7 +348,23 @@ app.UseAuthorization();
 
 // ── Health checks ─────────────────────────────────────────────────────────────
 app.MapHealthChecks("/health");
-app.MapHealthChecks("/alive");
+app.MapGet("/alive", () => Results.Ok(new
+{
+    status = "alive",
+    timestamp = DateTimeOffset.UtcNow
+}));
+app.MapGet("/ready", async (IModDownloadQueueService queue, CancellationToken ct) =>
+{
+    var snapshot = await queue.GetSnapshotAsync(ct);
+    return Results.Ok(new
+    {
+        status = "ready",
+        queueActive = snapshot.ActiveCount,
+        queueQueued = snapshot.QueuedCount,
+        queueFailed = snapshot.FailedCount,
+        timestamp = DateTimeOffset.UtcNow
+    });
+});
 
 app.MapAccountEndpoints();
 
@@ -337,7 +381,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 // ── Steam startup ─────────────────────────────────────────────────────────────
-_ = Task.Run(async () =>
+/*_ = Task.Run(async () =>
 {
     var steam = app.Services.GetRequiredService<ISteamService>();
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
@@ -363,7 +407,7 @@ _ = Task.Run(async () =>
     {
         logger.LogWarning(ex, "Steam startup connection failed");
     }
-});
+});*/
 
 app.Run();
 

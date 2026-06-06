@@ -32,6 +32,9 @@ public class ApiKeyService(KastDbContext db) : IApiKeyService
 
     public async Task<bool> ValidateKeyAsync(string rawKey, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(rawKey) || rawKey.Length < 8)
+            return false;
+
         var prefix = rawKey[..8];
         var candidate = await db.ApiKeys
             .Where(k => k.KeyPrefix == prefix && k.IsActive)

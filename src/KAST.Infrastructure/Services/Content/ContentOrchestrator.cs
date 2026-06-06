@@ -184,6 +184,71 @@ public class ContentOrchestrator(
         return state;
     }
 
+    public async Task<ContentInstallState> RunModInstallAsync(int modId, ContentType type, string destinationPath,
+        long workshopId = 0, string? sourcePath = null,
+        long expectedSizeBytes = 0,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
+        Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
+        int maxParallelDownloads = 4,
+        int maxParallelModDownloads = 1,
+        CancellationToken ct = default)
+    {
+        var key = ContentProgressTracker.ModKey(modId);
+
+        using var activity = KastActivitySources.Content.StartActivity(
+            "kast.content.queued", ActivityKind.Internal);
+        activity?.SetTag("content.key", key);
+        activity?.SetTag("content.type", type.ToString());
+        activity?.SetTag("content.mod_id", modId);
+        if (workshopId != 0)
+            activity?.SetTag("content.workshop_id", workshopId);
+
+        if (_active.TryGetValue(key, out var existing))
+        {
+            activity?.SetTag("content.queued", false);
+            activity?.AddEvent(new ActivityEvent("install.already_running"));
+            return existing.State;
+        }
+
+        var installer = _installers[type];
+        var request = new ContentInstallRequest
+        {
+            Type = type,
+            DestinationPath = destinationPath,
+            ModId = modId,
+            WorkshopId = workshopId,
+            ExpectedSizeBytes = expectedSizeBytes,
+            SourcePath = sourcePath,
+            MaxParallelDownloads = maxParallelDownloads,
+            MaxParallelModDownloads = maxParallelModDownloads
+        };
+
+        var steps = installer.PlanSteps(request);
+        var state = new ContentInstallState
+        {
+            Key = key,
+            Type = type,
+            Label = $"Mod {modId}",
+            Steps = steps.ToList()
+        };
+        state.IsDownloading = true;
+        state.AddLog($"Queued install for mod {modId}.");
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var operation = new ActiveInstall(linkedCts, state);
+        if (!_active.TryAdd(key, operation))
+            return _active.TryGetValue(key, out existing) ? existing.State : tracker.Get(key) ?? state;
+
+        tracker.Set(state);
+
+        activity?.SetTag("content.queued", true);
+        activity?.SetTag("content.steps", steps.Count);
+
+        await RunAsync(key, request, state, linkedCts.Token, onStarted, onComplete, onError);
+        return state;
+    }
+
     // ── Cancel ───────────────────────────────────────────────────────────────
 
     public void Cancel(string key)

@@ -23,6 +23,7 @@ public static class KastApiEndpoints
         group.MapPresetsApi();
         group.MapMissionsApi();
         group.MapMonitoringApi();
+        group.MapDownloadsApi();
         group.MapSettingsApi();
         return group;
     }
@@ -402,6 +403,26 @@ public static class KastApiEndpoints
         });
     }
 
+    private static void MapDownloadsApi(this RouteGroupBuilder root)
+    {
+        var g = root.MapGroup("/downloads").WithTags("Downloads");
+
+        g.MapGet("/state", async (IModDownloadQueueService queue, CancellationToken ct) =>
+        {
+            var snapshot = await queue.GetSnapshotAsync(ct);
+            return Results.Ok(new DownloadQueueStateDto(
+                snapshot.ActiveCount,
+                snapshot.QueuedCount,
+                snapshot.CompletedCount,
+                snapshot.FailedCount,
+                snapshot.CancelledCount,
+                snapshot.Tasks.Select(ToDownloadTaskDto).ToList()));
+        });
+
+        g.MapPost("/mods/{modId:int}/cancel", async (int modId, IModDownloadQueueService queue, CancellationToken ct) =>
+            await queue.CancelAsync(modId, ct) ? Results.Ok() : Results.NotFound());
+    }
+
     // ── Settings ──────────────────────────────────────────────────────────────
 
     private static void MapSettingsApi(this RouteGroupBuilder root)
@@ -514,6 +535,24 @@ public static class KastApiEndpoints
         settings.MetricsIntervalSeconds,
         settings.ParallelDownloads);
 
+    private static SafeDownloadTaskDto ToDownloadTaskDto(DownloadTask task) => new(
+        task.Id,
+        task.ModId,
+        task.WorkshopId,
+        task.Name,
+        task.Status,
+        task.IsUpdate,
+        task.ProgressPercent,
+        task.BytesDownloaded,
+        task.TotalBytes,
+        task.RetryCount,
+        task.MaxRetries,
+        task.ErrorMessage,
+        task.CreatedAt,
+        task.UpdatedAt,
+        task.StartedAt,
+        task.CompletedAt);
+
     public record SafeServerInstanceDto(
         int Id,
         string Name,
@@ -594,6 +633,32 @@ public static class KastApiEndpoints
         string ThemeMode,
         int MetricsIntervalSeconds,
         int ParallelDownloads);
+
+    public record DownloadQueueStateDto(
+        int ActiveCount,
+        int QueuedCount,
+        int CompletedCount,
+        int FailedCount,
+        int CancelledCount,
+        IReadOnlyList<SafeDownloadTaskDto> Tasks);
+
+    public record SafeDownloadTaskDto(
+        int Id,
+        int ModId,
+        long WorkshopId,
+        string Name,
+        DownloadStatus Status,
+        bool IsUpdate,
+        double ProgressPercent,
+        long BytesDownloaded,
+        long TotalBytes,
+        int RetryCount,
+        int MaxRetries,
+        string? ErrorMessage,
+        DateTime CreatedAt,
+        DateTime UpdatedAt,
+        DateTime? StartedAt,
+        DateTime? CompletedAt);
 
 }
 

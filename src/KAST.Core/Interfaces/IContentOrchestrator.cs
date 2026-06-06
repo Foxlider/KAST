@@ -41,6 +41,24 @@ public interface IContentOrchestrator
         int maxParallelDownloads = 4,
         int maxParallelModDownloads = 1);
 
+    /// <summary>
+    /// Runs a mod install and completes only after the installer finishes.
+    /// Intended for hosted queue workers that own their own scheduling.
+    /// </summary>
+    Task<ContentInstallState> RunModInstallAsync(
+        int modId,
+        ContentType type,
+        string destinationPath,
+        long workshopId = 0,
+        string? sourcePath = null,
+        long expectedSizeBytes = 0,
+        Func<IServiceProvider, ContentInstallState, Task>? onStarted = null,
+        Func<IServiceProvider, ContentInstallState, Task>? onComplete = null,
+        Func<IServiceProvider, ContentInstallState, Exception, Task>? onError = null,
+        int maxParallelDownloads = 4,
+        int maxParallelModDownloads = 1,
+        CancellationToken ct = default);
+
     /// <summary>Cancels the active download for the given key.</summary>
     void Cancel(string key);
 

@@ -171,13 +171,20 @@ public class ContentOrchestratorTests
         var second = orchestrator.StartModInstall(32, ContentType.SteamMod, "/tmp/mod32", maxParallelModDownloads: 2);
         var third = orchestrator.StartModInstall(33, ContentType.SteamMod, "/tmp/mod33", maxParallelModDownloads: 2);
 
-        await WaitForAsync(() => Volatile.Read(ref started) == 2);
-        Assert.Equal(2, Volatile.Read(ref started));
-        Assert.True(first.Steps[0].Status == ContentStepStatus.InProgress);
-        Assert.True(second.Steps[0].Status == ContentStepStatus.InProgress);
-        Assert.True(third.Steps[0].Status == ContentStepStatus.Pending);
+        try
+        {
+            await WaitForAsync(() => Volatile.Read(ref started) == 2);
+            Assert.Equal(2, Volatile.Read(ref started));
+            Assert.Equal(2, new[] { first, second, third }.Count(s =>
+                s.Steps[0].Status == ContentStepStatus.InProgress));
+            Assert.Single(new[] { first, second, third }, s =>
+                s.Steps[0].Status == ContentStepStatus.Pending);
+        }
+        finally
+        {
+            gate.TrySetResult(true);
+        }
 
-        gate.SetResult(true);
         await WaitForAsync(() => first.IsComplete && second.IsComplete && third.IsComplete);
         Assert.Equal(3, Volatile.Read(ref started));
     }

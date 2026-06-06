@@ -57,6 +57,8 @@ public record ContentInstallRequest
 /// </summary>
 public class ContentInstallState
 {
+    private const int MaxLogEntries = 500;
+    private const int MaxTrackedFileProgressEntries = 200;
     private ImmutableArray<string> _log = [];
     private readonly Dictionary<string, DownloadFileProgress> _fileProgress = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
@@ -108,7 +110,12 @@ public class ContentInstallState
 
     public void AddLog(string line)
     {
-        lock (_lock) _log = _log.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
+        lock (_lock)
+        {
+            _log = _log.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
+            if (_log.Length > MaxLogEntries)
+                _log = _log.RemoveRange(0, _log.Length - MaxLogEntries);
+        }
         Changed?.Invoke();
     }
 
@@ -122,8 +129,27 @@ public class ContentInstallState
 
     public void SetFileProgress(DownloadFileProgress progress)
     {
-        lock (_lock) _fileProgress[progress.FileName] = progress;
-        Changed?.Invoke();
+        var shouldNotify = false;
+        lock (_lock)
+        {
+            if (_fileProgress.TryGetValue(progress.FileName, out var previous))
+            {
+                shouldNotify =
+                    progress.IsComplete ||
+                    previous.Status != progress.Status ||
+                    Math.Abs(previous.ProgressPercent - progress.ProgressPercent) >= 1.0;
+            }
+            else
+            {
+                shouldNotify = true;
+            }
+
+            _fileProgress[progress.FileName] = progress;
+            TrimFileProgressLocked();
+        }
+
+        if (shouldNotify)
+            Changed?.Invoke();
     }
 
     public void BeginStep(int index)
@@ -193,6 +219,23 @@ public class ContentInstallState
             s.Progress = 0;
             s.Error = null;
             s.IsIndeterminate = false;
+        }
+    }
+
+    private void TrimFileProgressLocked()
+    {
+        if (_fileProgress.Count <= MaxTrackedFileProgressEntries)
+            return;
+
+        var removeCount = _fileProgress.Count - MaxTrackedFileProgressEntries;
+        foreach (var key in _fileProgress
+                     .OrderByDescending(kvp => kvp.Value.IsComplete)
+                     .ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+                     .Take(removeCount)
+                     .Select(kvp => kvp.Key)
+                     .ToList())
+        {
+            _fileProgress.Remove(key);
         }
     }
 }

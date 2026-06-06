@@ -316,11 +316,9 @@ public class KastApiMissionsEndpointsTests
         builder.Services.AddSingleton(Substitute.For<IAppEventBroadcaster>());
         builder.Services.AddSingleton(Substitute.For<IModPresetService>());
         builder.Services.AddSingleton(missionService ?? Substitute.For<IMissionService>());
+        builder.Services.AddSingleton(Substitute.For<IModDownloadQueueService>());
         builder.Services.AddSingleton(sp => new ModDownloadManager(
-            sp.GetRequiredService<IServiceScopeFactory>(),
-            sp.GetRequiredService<IContentOrchestrator>(),
-            sp.GetRequiredService<ContentProgressTracker>(),
-            NullLogger<ModDownloadManager>.Instance));
+            sp.GetRequiredService<IModDownloadQueueService>()));
 
         var app = builder.Build();
         app.MapGroup("/api").MapKastApi();

@@ -293,11 +293,9 @@ public class AccountAuthEndpointTests
             builder.Services.AddSingleton(Substitute.For<IFileSystemService>());
             builder.Services.AddSingleton(BuildBroadcaster());
             builder.Services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
+            builder.Services.AddSingleton(Substitute.For<IModDownloadQueueService>());
             builder.Services.AddSingleton(sp => new ModDownloadManager(
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<IContentOrchestrator>(),
-                sp.GetRequiredService<ContentProgressTracker>(),
-                NullLogger<ModDownloadManager>.Instance));
+                sp.GetRequiredService<IModDownloadQueueService>()));
 
             var app = builder.Build();
             app.UseAuthentication();
