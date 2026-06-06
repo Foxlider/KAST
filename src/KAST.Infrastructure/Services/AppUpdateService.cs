@@ -25,11 +25,13 @@ public partial class AppUpdateService(
     private const string StableChannelId = "stable";
     private const string DevChannelId = "dev";
     private const string CasterChannelId = "caster";
+    private const string CasterNightlyChannelId = "caster-nightly";
     private const string GitHubApiBase = "https://api.github.com";
 
     private static readonly AppUpdateChannel[] Channels =
     [
         new(CasterChannelId, "Caster", "bluefield-creator", "KAST", AppUpdateReleaseSelection.LatestStable, null, false),
+        new(CasterNightlyChannelId, "Caster Nightly", "bluefield-creator", "KAST", AppUpdateReleaseSelection.Tag, "nightly", true),
         new(DevChannelId, "Dev", "Foxlider", "KAST", AppUpdateReleaseSelection.Tag, "nightly", true),
         new(StableChannelId, "Stable", "Foxlider", "KAST", AppUpdateReleaseSelection.LatestStable, null, false)
     ];

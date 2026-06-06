@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using KAST.Core.Models;
 using KAST.Infrastructure.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,21 @@ namespace KAST.Tests;
 
 public class AppUpdateServiceTests
 {
+    [Fact]
+    public void GetChannels_IncludesCasterNightly()
+    {
+        var sut = CreateService(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var channel = Assert.Single(sut.GetChannels(), c => c.Id == "caster-nightly");
+
+        Assert.Equal("Caster Nightly", channel.Label);
+        Assert.Equal("bluefield-creator", channel.Owner);
+        Assert.Equal("KAST", channel.Repository);
+        Assert.Equal(AppUpdateReleaseSelection.Tag, channel.ReleaseSelection);
+        Assert.Equal("nightly", channel.TagName);
+        Assert.True(channel.IsPrerelease);
+    }
+
     [Fact]
     public void SelectAsset_Nightly_RequiresExactRollingAssetName()
     {
@@ -38,6 +54,47 @@ public class AppUpdateServiceTests
 
         Assert.NotNull(selected);
         Assert.Equal(assetName, selected!.Name);
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_CasterNightly_UsesBluefieldNightlyReleaseTag()
+    {
+        var rid = AppUpdateService.GetCurrentRuntimeIdentifier();
+        if (rid is null)
+            return;
+
+        var extension = rid.StartsWith("win-", StringComparison.OrdinalIgnoreCase) ? ".zip" : ".tar.gz";
+        Uri? requestedUri = null;
+        var json = $$"""
+{
+  "tag_name": "nightly",
+  "name": "Caster Nightly - 1.2.3-nightly.20260602.abcdef0",
+  "prerelease": true,
+  "draft": false,
+  "published_at": "2026-06-02T09:21:24Z",
+  "html_url": "https://github.com/bluefield-creator/KAST/releases/tag/nightly",
+  "assets": [
+    {
+      "name": "kast-{{rid}}-nightly{{extension}}",
+      "size": 123,
+      "browser_download_url": "https://example.test/update"
+    }
+  ]
+}
+""";
+        var sut = CreateService(request =>
+        {
+            requestedUri = request.RequestUri;
+            return JsonResponse(json);
+        });
+
+        var result = await sut.CheckForUpdatesAsync("caster-nightly");
+
+        Assert.Equal("/repos/bluefield-creator/KAST/releases/tags/nightly", requestedUri?.AbsolutePath);
+        Assert.True(result.IsChannelAvailable);
+        Assert.Equal("caster-nightly", result.Channel.Id);
+        Assert.True(result.Channel.IsPrerelease);
+        Assert.Equal("nightly", result.ReleaseTag);
     }
 
     [Fact]

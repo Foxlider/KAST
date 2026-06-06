@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IUserAccountService, UserAccountService>();
+        services.AddSingleton<IHostServiceManager, WindowsHostServiceManager>();
         services.AddSingleton<IServerConfigService, ServerConfigService>();
         services.AddHttpClient<IAppUpdateService, AppUpdateService>();
         services.AddSingleton<ModDownloadQueueService>();

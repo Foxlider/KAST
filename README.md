@@ -124,6 +124,12 @@ including the active mod download count. Bulk mod downloads are queued
 durably; `/api/downloads/state` is the authoritative queue snapshot used by the
 UI after reconnects.
 
+The Settings page includes a Service tab for Windows hosts. It can install KAST
+as a Windows service, set startup mode after reboot, configure crash restart
+actions, and show recent crash reports. Service changes require running KAST as
+Administrator. Non-Windows deployments should use their supervisor instead
+(`systemd`, Docker restart policies, or the hosting platform restart policy).
+
 When running behind Caddy or another reverse proxy, keep websocket proxying
 enabled for Blazor Server and configure KAST to trust only the proxy IPs that
 can reach it. For a local Caddy reverse proxy, the default trusted proxies are

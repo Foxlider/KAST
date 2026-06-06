@@ -32,13 +32,14 @@ var outputSanitizer = new OutputSanitizer(
 builder.Services.AddSingleton<IOutputSanitizer>(outputSanitizer);
 builder.Host.UseWindowsService(options =>
 {
-    options.ServiceName = "KAST Panel";
+    options.ServiceName = "KAST";
 });
 
 // ── In-memory log capture (UI console) ──────────────────────────────────────
 var kastLogStore = new KastLogStore();
 builder.Services.AddSingleton(kastLogStore);
 builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore, outputSanitizer));
+builder.Services.AddSingleton<ICrashReportService, CrashReportService>();
 
 // ── Health checks ────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
@@ -258,6 +259,8 @@ if (telemetry.GetValue("Enabled", true))
 
 var app = builder.Build();
 var lifecycleLogger = app.Services.GetRequiredService<ILogger<Program>>();
+var crashReports = app.Services.GetRequiredService<ICrashReportService>();
+crashReports.RecordProcessStart();
 app.Lifetime.ApplicationStarted.Register(() =>
     lifecycleLogger.LogInformation(
         "KAST web host started. ProcessId={ProcessId}, WorkingSetMB={WorkingSetMB:F1}",
@@ -269,11 +272,19 @@ app.Lifetime.ApplicationStopping.Register(() =>
         Environment.ProcessId,
         Environment.WorkingSet / 1_048_576.0));
 app.Lifetime.ApplicationStopped.Register(() =>
-    lifecycleLogger.LogInformation("KAST web host stopped. ProcessId={ProcessId}", Environment.ProcessId));
+{
+    lifecycleLogger.LogInformation("KAST web host stopped. ProcessId={ProcessId}", Environment.ProcessId);
+    crashReports.RecordCleanShutdown();
+});
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-    lifecycleLogger.LogCritical(e.ExceptionObject as Exception, "Unhandled AppDomain exception. IsTerminating={IsTerminating}", e.IsTerminating);
+{
+    var exception = e.ExceptionObject as Exception ?? new InvalidOperationException(e.ExceptionObject?.ToString() ?? "Unknown unhandled exception");
+    crashReports.RecordCrash(exception, "UnhandledException", e.IsTerminating);
+    lifecycleLogger.LogCritical(exception, "Unhandled AppDomain exception. IsTerminating={IsTerminating}", e.IsTerminating);
+};
 TaskScheduler.UnobservedTaskException += (_, e) =>
 {
+    crashReports.RecordCrash(e.Exception, "UnobservedTaskException", false);
     lifecycleLogger.LogError(e.Exception, "Unobserved task exception");
     e.SetObserved();
 };

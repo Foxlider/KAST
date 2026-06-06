@@ -5,6 +5,8 @@
 @inject IUserAccountService AccountService
 @inject ISettingsService SettingsService
 @inject IAppUpdateService AppUpdateService
+@inject IHostServiceManager HostServiceManager
+@inject ICrashReportService CrashReportService
 @inject ISteamService SteamService
 @inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
@@ -440,6 +442,148 @@
         </MudCard>
     </MudTabPanel>
 
+    <MudTabPanel Text="Service">
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <div class="d-flex align-center justify-space-between gap-3 flex-wrap mb-3">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">Windows Service</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Install and control KAST as a background service.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="LoadServiceStatus"
+                               Disabled="@_serviceBusy">
+                        Refresh
+                    </MudButton>
+                </div>
+
+                @if (_serviceStatus is null)
+                {
+                    <div class="d-flex align-center gap-2">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body2">Loading service status...</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudAlert Severity="@ServiceAlertSeverity" Dense="true" Class="mb-3">
+                        @(_serviceStatus.Message ?? ServiceStatusText)
+                    </MudAlert>
+
+                    <MudSimpleTable Dense="true" Class="mb-4">
+                        <tbody>
+                            <tr><td>Service</td><td>@_serviceStatus.ServiceName (@_serviceStatus.DisplayName)</td></tr>
+                            <tr><td>Status</td><td>@_serviceStatus.State</td></tr>
+                            <tr><td>Administrator</td><td>@(_serviceStatus.IsAdministrator ? "Yes" : "No")</td></tr>
+                            <tr><td>Executable</td><td>@(_serviceStatus.ExecutablePath ?? "Unknown")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+
+                    <div class="d-flex gap-3 flex-wrap align-end mb-3">
+                        <MudSelect T="HostServiceStartupMode" @bind-Value="_serviceStartupMode"
+                                   Label="Startup after reboot"
+                                   Style="width:220px;"
+                                   Disabled="@(!_serviceStatus.IsSupported || _serviceBusy)">
+                            <MudSelectItem Value="HostServiceStartupMode.Automatic">Automatic</MudSelectItem>
+                            <MudSelectItem Value="HostServiceStartupMode.Manual">Manual</MudSelectItem>
+                            <MudSelectItem Value="HostServiceStartupMode.Disabled">Disabled</MudSelectItem>
+                        </MudSelect>
+                        <MudSwitch @bind-Value="_serviceRestartOnCrash"
+                                   Label="Restart after crash"
+                                   Color="Color.Primary"
+                                   Disabled="@(!_serviceStatus.IsSupported || _serviceBusy)" />
+                        <MudNumericField @bind-Value="_serviceRestartDelaySeconds"
+                                         Label="Restart delay"
+                                         Min="5" Max="3600" Step="5"
+                                         Style="width:160px;"
+                                         Disabled="@(!_serviceStatus.IsSupported || !_serviceRestartOnCrash || _serviceBusy)" />
+                        <MudNumericField @bind-Value="_serviceResetFailureDays"
+                                         Label="Reset failures after days"
+                                         Min="0" Max="365" Step="1"
+                                         Style="width:210px;"
+                                         Disabled="@(!_serviceStatus.IsSupported || !_serviceRestartOnCrash || _serviceBusy)" />
+                    </div>
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.InstallDesktop"
+                                   Disabled="@(!CanChangeService)"
+                                   OnClick="InstallService">
+                            Install
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   Disabled="@(!CanConfigureService)"
+                                   OnClick="ConfigureService">
+                            Apply
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                                   Disabled="@(!CanStartService)"
+                                   OnClick="StartService">
+                            Start
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Filled.Stop"
+                                   Disabled="@(!CanStopService)"
+                                   OnClick="StopService">
+                            Stop
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@(!CanConfigureService)"
+                                   OnClick="UninstallService">
+                            Remove
+                        </MudButton>
+                    </div>
+                }
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Elevation="1" Class="mt-3">
+            <MudCardContent>
+                <div class="d-flex align-center justify-space-between gap-3 flex-wrap mb-3">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">Crash Reports</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Reports are written for unhandled crashes and previous unclean shutdowns.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="LoadCrashReports">
+                        Refresh
+                    </MudButton>
+                </div>
+
+                @if (_crashReports.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">No crash reports recorded.</MudText>
+                }
+                else
+                {
+                    <MudDataGrid T="CrashReportSummary" Items="@_crashReports" Dense="true" Hover="true">
+                        <Columns>
+                            <PropertyColumn Property="r => r.CreatedAt" Title="Created" />
+                            <PropertyColumn Property="r => r.Kind" Title="Type" />
+                            <PropertyColumn Property="r => r.ProcessId" Title="PID" />
+                            <PropertyColumn Property="r => r.Message" Title="Message" />
+                            <PropertyColumn Property="r => r.Path" Title="Path" />
+                        </Columns>
+                    </MudDataGrid>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudTabPanel>
+
     <MudTabPanel Text="Updates">
         <MudCard Elevation="1" Class="mt-3">
             <MudCardContent>
@@ -581,6 +725,13 @@
     private bool _confirmApplyUpdate;
     private string? _updateProgressMessage;
     private double? _updateProgressPercent;
+    private HostServiceStatus? _serviceStatus;
+    private HostServiceStartupMode _serviceStartupMode = HostServiceStartupMode.Automatic;
+    private bool _serviceRestartOnCrash = true;
+    private int _serviceRestartDelaySeconds = 60;
+    private int _serviceResetFailureDays = 1;
+    private bool _serviceBusy;
+    private IReadOnlyList<CrashReportSummary> _crashReports = [];
 
     private KastUser? _currentUser;
     private IReadOnlyList<KastUser> _accounts = [];
@@ -615,6 +766,8 @@
         _autoUpdateCheckEnabled = settings.AutoUpdateCheckEnabled;
         _accentMud  = ThemeService.AccentColor;
         _isDarkMode = ThemeService.IsDarkMode;
+        await LoadServiceStatus();
+        LoadCrashReports();
 
         // Check if we should navigate to a specific tab.
         var uri = new Uri(Navigation.Uri);
@@ -624,7 +777,8 @@
             "accounts" => 1,
             "steam" => 2,
             "api-keys" => 3,
-            "updates" => 4,
+            "service" => 4,
+            "updates" => 5,
             _ => _activePanelIndex
         };
 
@@ -882,6 +1036,104 @@
         _confirmApplyUpdate = false;
         Snackbar.Add("Update settings saved", Severity.Success);
     }
+
+    private bool CanChangeService =>
+        _serviceStatus is { IsSupported: true, IsAdministrator: true } && !_serviceBusy;
+
+    private bool CanConfigureService =>
+        CanChangeService && _serviceStatus!.State != HostServiceRunState.NotInstalled;
+
+    private bool CanStartService =>
+        CanConfigureService && _serviceStatus!.State is HostServiceRunState.Stopped;
+
+    private bool CanStopService =>
+        CanConfigureService && _serviceStatus!.State is HostServiceRunState.Running;
+
+    private Severity ServiceAlertSeverity =>
+        _serviceStatus is null ? Severity.Info :
+        !_serviceStatus.IsSupported ? Severity.Warning :
+        !_serviceStatus.IsAdministrator ? Severity.Warning :
+        _serviceStatus.State == HostServiceRunState.NotInstalled ? Severity.Info :
+        Severity.Success;
+
+    private string ServiceStatusText =>
+        _serviceStatus is null ? "Loading service status." :
+        _serviceStatus.State == HostServiceRunState.NotInstalled ? "KAST is not installed as a Windows service." :
+        $"KAST service is {_serviceStatus.State}.";
+
+    private HostServiceConfigureRequest CurrentServiceRequest()
+        => new(
+            _serviceStartupMode,
+            new HostServiceRecoveryOptions(
+                _serviceRestartOnCrash,
+                Math.Clamp(_serviceRestartDelaySeconds, 5, 3600),
+                Math.Clamp(_serviceResetFailureDays, 0, 365)));
+
+    private async Task LoadServiceStatus()
+    {
+        _serviceStatus = await HostServiceManager.GetStatusAsync();
+        _serviceStartupMode = _serviceStatus.StartupMode;
+        _serviceRestartOnCrash = _serviceStatus.Recovery.RestartOnCrash;
+        _serviceRestartDelaySeconds = _serviceStatus.Recovery.RestartDelaySeconds;
+        _serviceResetFailureDays = _serviceStatus.Recovery.ResetFailureCountAfterDays;
+        StateHasChanged();
+    }
+
+    private void LoadCrashReports()
+    {
+        _crashReports = CrashReportService.GetRecentReports(20);
+        StateHasChanged();
+    }
+
+    private async Task RunServiceOperation(Func<CancellationToken, Task<HostServiceOperationResult>> operation)
+    {
+        _serviceBusy = true;
+        StateHasChanged();
+        try
+        {
+            var result = await operation(CancellationToken.None);
+            if (result.Status is not null)
+                ApplyServiceStatus(result.Status);
+            else
+                await LoadServiceStatus();
+
+            Snackbar.Add(result.Message, result.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            Snackbar.Add($"Service operation failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error);
+            await LoadServiceStatus();
+        }
+        finally
+        {
+            _serviceBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyServiceStatus(HostServiceStatus status)
+    {
+        _serviceStatus = status;
+        _serviceStartupMode = status.StartupMode;
+        _serviceRestartOnCrash = status.Recovery.RestartOnCrash;
+        _serviceRestartDelaySeconds = status.Recovery.RestartDelaySeconds;
+        _serviceResetFailureDays = status.Recovery.ResetFailureCountAfterDays;
+    }
+
+    private Task InstallService()
+        => RunServiceOperation(ct => HostServiceManager.InstallAsync(CurrentServiceRequest(), ct));
+
+    private Task ConfigureService()
+        => RunServiceOperation(ct => HostServiceManager.ConfigureAsync(CurrentServiceRequest(), ct));
+
+    private Task StartService()
+        => RunServiceOperation(HostServiceManager.StartAsync);
+
+    private Task StopService()
+        => RunServiceOperation(HostServiceManager.StopAsync);
+
+    private Task UninstallService()
+        => RunServiceOperation(HostServiceManager.UninstallAsync);
 
     private async Task CheckForUpdate(bool showSnackbar = true)
     {
