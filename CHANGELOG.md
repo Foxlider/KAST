@@ -1,3 +1,7 @@
+## [1.1.2] - 2026-06-06
+### Maintenance
+- Update changelog for v1.1.1 [skip ci]
+
 ## [1.1.1] - 2026-06-06
 ### Bug Fixes
 - Generate changelog via action
