@@ -1,9 +1,13 @@
 ## [1.2.0] - 2026-06-20
 ### Bug Fixes
 - Register IProcessManagerService in API test DI containers
+- Add service stop+wait before file overwrite in Windows service mode
 
 ### Features
 - Add mission hashing, HTTP downloads, process history, and performance tracking
+
+### Maintenance
+- Update changelog for v1.2.0 [skip ci]
 
 ## [1.1.3] - 2026-06-06
 ### Maintenance
