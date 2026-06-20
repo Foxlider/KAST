@@ -134,7 +134,7 @@ automated deployment, and more dependable server management.
 | Feature | Description |
 | --- | --- |
 | Mission upload | Upload PBO files via the web UI or API |
-| HTTP mission downloads | Player-facing download endpoint — alternative to Steam Workshop |
+| HTTP mission downloads | Alternative to Arma 3's built-in file transfer — a web server-based approach that is faster and offers more bandwidth |
 | Integrity verification | CRC32/BZip2 hashing for mission files |
 | Conditional requests | ETag and If-Modified-Since support (304 Not Modified) |
 | Byte-range support | Partial and resumable downloads via HTTP range requests |
