@@ -6,20 +6,20 @@
 ## Badges
 
 ***GitHub***  
-[![GitHub issues](https://img.shields.io/github/issues/Foxlider/KAST.svg?logo=github&style=flat-square)](https://github.com/Foxlider/KAST/issues)
-![GitHub](https://img.shields.io/github/license/Foxlider/KAST.svg?style=flat-square)
-[![GitHub release](https://img.shields.io/github/release/Foxlider/KAST.svg?logo=github&style=flat-square)](https://GitHub.com/Foxlider/KAST/releases/)  
-[![Github total downloads](https://img.shields.io/github/downloads/Foxlider/KAST/total.svg?logo=github&style=flat-square)](https://GitHub.com/Foxlider/KAST/releases/)
-[![Github latest downloads](https://img.shields.io/github/downloads/Foxlider/KAST/latest/total.svg?logo=github&style=flat-square)](https://GitHub.com/Foxlider/KAST/releases/)
+[![GitHub issues](https://img.shields.io/github/issues/bluefield-creator/KAST.svg?logo=github&style=flat-square)](https://github.com/bluefield-creator/KAST/issues)
+![GitHub](https://img.shields.io/github/license/bluefield-creator/KAST.svg?style=flat-square)
+[![GitHub release](https://img.shields.io/github/release/bluefield-creator/KAST.svg?logo=github&style=flat-square)](https://GitHub.com/bluefield-creator/KAST/releases/)  
+[![Github total downloads](https://img.shields.io/github/downloads/bluefield-creator/KAST/total.svg?logo=github&style=flat-square)](https://GitHub.com/bluefield-creator/KAST/releases/)
+[![Github latest downloads](https://img.shields.io/github/downloads/bluefield-creator/KAST/latest/total.svg?logo=github&style=flat-square)](https://GitHub.com/bluefield-creator/KAST/releases/)
 
 ***CI / Quality***  
-[![CI](https://github.com/Foxlider/KAST/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Foxlider/KAST/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/Foxlider/KAST/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/Foxlider/KAST/actions/workflows/codeql-analysis.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Foxlider_KAST&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Foxlider_KAST)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Foxlider_KAST&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Foxlider_KAST)
+[![CI](https://github.com/bluefield-creator/KAST/actions/workflows/ci.yml/badge.svg?branch=caster)](https://github.com/bluefield-creator/KAST/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/bluefield-creator/KAST/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/bluefield-creator/KAST/actions/workflows/codeql-analysis.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=bluefield-creator_KAST&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=bluefield-creator_KAST)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=bluefield-creator_KAST&metric=coverage)](https://sonarcloud.io/summary/new_code?id=bluefield-creator_KAST)
 
 ***Docker***  
-[![Docker Image](https://ghcr-badge.egpl.dev/foxlider/kast/latest_tag?trim=major&label=nightly&style=flat-square)](https://github.com/Foxlider/KAST/pkgs/container/kast)
+[![Docker Image](https://ghcr-badge.egpl.dev/bluefield-creator/kast/latest_tag?trim=major&label=nightly&style=flat-square)](https://github.com/bluefield-creator/KAST/pkgs/container/kast)
 
 [![Discord](https://img.shields.io/discord/366955806777671681?label=Discord&logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/2BUuZa3)
 
@@ -64,11 +64,11 @@ Big up to all the devs, testers and users. Also, to BI for giving us an awesome 
 
 ## **ISSUES and FEEDBACK**
 
-As always, best place to report issues is on the [GitHub Repo](https://github.com/Foxlider/KAST/issues). As for general discussion I'll keep an eye on the BI forum thread but I'll be more active on [Discord](https://discord.gg/2BUuZa3).
+As always, best place to report issues is on the [GitHub Repo](https://github.com/bluefield-creator/KAST/issues). As for general discussion I'll keep an eye on the BI forum thread but I'll be more active on [Discord](https://discord.gg/2BUuZa3).
 
 ## **DOCUMENTATION**
   
-A complete Documentation is available on the [GitHub Wiki](https://github.com/Foxlider/KAST/wiki)
+A complete Documentation is available on the [GitHub Wiki](https://github.com/bluefield-creator/KAST/wiki)
 
 ## **INSTALLATION**
 
@@ -76,21 +76,21 @@ KAST is distributed as a self-contained single-file executable — no .NET insta
 
 ### **Stable releases**
 
-Download the latest release for your platform from the [Releases page](https://github.com/Foxlider/KAST/releases/latest):
+Download the latest release for your platform from the [Releases page](https://github.com/bluefield-creator/KAST/releases/latest):
 
 | Platform | Archive |
 | --- | --- |
 | Linux x64 | `kast-linux-x64-v*.tar.gz` |
 | Linux arm64 | `kast-linux-arm64-v*.tar.gz` |
 | Windows x64 | `kast-win-x64-v*.zip` |
-| Docker | `ghcr.io/foxlider/kast:latest` or `ghcr.io/foxlider/kast:stable` |
+| Docker | `ghcr.io/bluefield-creator/kast:latest` or `ghcr.io/bluefield-creator/kast:stable` |
 
 Extract and run the `KAST.UI` executable. On Linux you may need to `chmod +x KAST.UI` first.
 
 ### **Nightly builds**
 
-Automated builds from the `develop` branch are published as a rolling pre-release at  
-[`releases/tag/nightly`](https://github.com/Foxlider/KAST/releases/tag/nightly).
+Automated builds from the `caster` branch are published as a rolling pre-release at  
+[`releases/tag/nightly`](https://github.com/bluefield-creator/KAST/releases/tag/nightly).
 
 The nightly tag always points to the latest development commit. Download URLs are stable:
 
@@ -99,7 +99,7 @@ The nightly tag always points to the latest development commit. Download URLs ar
 | Linux x64 | `kast-linux-x64-nightly.tar.gz` |
 | Linux arm64 | `kast-linux-arm64-nightly.tar.gz` |
 | Windows x64 | `kast-win-x64-nightly.zip` |
-| Docker | `ghcr.io/foxlider/kast:nightly` |
+| Docker | `ghcr.io/bluefield-creator/kast:nightly` |
 
 > Nightly builds may be unstable. Use tagged releases for production.
 
@@ -108,7 +108,7 @@ The nightly tag always points to the latest development commit. Download URLs ar
 ```yaml
 services:
   kast:
-    image: ghcr.io/foxlider/kast:latest
+    image: ghcr.io/bluefield-creator/kast:latest
     ports:
       - "8080:8080"
     volumes:
