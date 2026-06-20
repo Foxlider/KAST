@@ -193,11 +193,12 @@ public class AppUpdateServiceTests
             AppUpdateRestartMode.DirectProcess);
 
         Assert.Contains("start \"\" \"%EXE%\"", script);
+        Assert.DoesNotContain("sc.exe stop KAST", script);
         Assert.DoesNotContain("sc.exe start KAST", script);
     }
 
     [Fact]
-    public void BuildWindowsApplyScript_WindowsService_StartsServiceOnly()
+    public void BuildWindowsApplyScript_WindowsService_StopsAndStartsService()
     {
         var script = AppUpdateService.BuildWindowsApplyScript(
             123,
@@ -207,6 +208,9 @@ public class AppUpdateServiceTests
             @"C:\KAST\KAST.exe",
             AppUpdateRestartMode.WindowsService);
 
+        Assert.Contains("sc.exe stop KAST", script);
+        Assert.Contains("sc.exe query KAST", script);
+        Assert.Contains("STOPPED", script);
         Assert.Contains("sc.exe start KAST", script);
         Assert.DoesNotContain("start \"\" \"%EXE%\"", script);
     }

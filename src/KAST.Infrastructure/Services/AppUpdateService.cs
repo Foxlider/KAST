@@ -531,9 +531,24 @@ public partial class AppUpdateService : IAppUpdateService
         string processPath,
         AppUpdateRestartMode restartMode)
     {
-        var restartCommand = restartMode == AppUpdateRestartMode.WindowsService
-            ? $"sc.exe start {WindowsHostServiceManager.ServiceName}"
+        var serviceName = WindowsHostServiceManager.ServiceName;
+        var isService = restartMode == AppUpdateRestartMode.WindowsService;
+        var restartCommand = isService
+            ? $"sc.exe start {serviceName}"
             : "start \"\" \"%EXE%\"";
+
+        var serviceStopBlock = isService
+            ? $$"""
+sc.exe stop {{serviceName}}
+:wait_svc
+sc.exe query {{serviceName}} | find "STOPPED" >nul
+if errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait_svc
+)
+
+"""
+            : string.Empty;
 
         return $$"""
 @echo off
@@ -543,11 +558,11 @@ set SRC={{sourcePath}}
 set DEST={{destinationPath}}
 set BACKUP={{backupPath}}
 set EXE={{processPath}}
-:wait
+{{serviceStopBlock}}:wait_pid
 tasklist /FI "PID eq %PID%" | find "%PID%" >nul
 if not errorlevel 1 (
   timeout /t 1 /nobreak >nul
-  goto wait
+  goto wait_pid
 )
 mkdir "%BACKUP%" >nul 2>nul
 mkdir "%BACKUP%\preserve-config" >nul 2>nul
