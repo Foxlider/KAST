@@ -91,6 +91,19 @@ public class MetricsBackgroundService(
                                 inst.PlayerCount));
                     }
                 }
+
+                // Collect and broadcast all running Arma server processes (managed + external)
+                try
+                {
+                    var processManager = scope.ServiceProvider.GetRequiredService<IProcessManagerService>();
+                    var processes = await processManager.GetRunningServerProcessesAsync(stoppingToken);
+                    await broadcaster.BroadcastExternalProcessesAsync(
+                        new ExternalProcessesUpdatedEvent(processes));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Error collecting external process list");
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             { break; }

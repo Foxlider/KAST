@@ -13,7 +13,8 @@ public class SignalREventBroadcaster(
     IHubContext<MonitoringHub> monitoringHub,
     ServerConsoleStore consoleStore,
     ServerRuntimeEventStore runtimeEventStore,
-    IOutputSanitizer sanitizer) : IAppEventBroadcaster
+    IOutputSanitizer sanitizer,
+    MonitoringSnapshotService snapshots) : IAppEventBroadcaster
 {
     public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
     public event Action<ModStatusChangedEvent>? OnModStatusChanged;
@@ -62,5 +63,11 @@ public class SignalREventBroadcaster(
         };
         runtimeEventStore.Add(safeRuntimeEvent);
         return MonitoringHub.BroadcastServerRuntimeEvent(monitoringHub, safeRuntimeEvent);
+    }
+
+    public Task BroadcastExternalProcessesAsync(ExternalProcessesUpdatedEvent processes)
+    {
+        snapshots.UpdateExternalProcesses(processes.Processes);
+        return MonitoringHub.BroadcastExternalProcesses(monitoringHub, processes);
     }
 }

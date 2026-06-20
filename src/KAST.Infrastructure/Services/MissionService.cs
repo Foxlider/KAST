@@ -10,6 +10,7 @@ namespace KAST.Infrastructure.Services;
 public class MissionService(
     KastDbContext db,
     IServerInstanceService serverInstanceService,
+    IMissionHashService hashService,
     ILogger<MissionService> logger) : IMissionService
 {
     private static readonly ConcurrentDictionary<int, SemaphoreSlim> InstanceLocks = new();
@@ -98,6 +99,7 @@ public class MissionService(
             mission.SizeBytes = fileInfo.Length;
             mission.PhysicalPath = targetPath;
             mission.UploadedAt = DateTime.UtcNow;
+            mission.Hash = await hashService.ComputeHashAsync(targetPath, ct);
 
             await db.SaveChangesAsync(ct);
 
@@ -129,29 +131,30 @@ public class MissionService(
 
     public async Task DeleteMissionAsync(int id, CancellationToken ct = default)
     {
-        var mission = await db.Missions.FindAsync([id], ct);
+        var mission = await db.Missions
+            .Include(m => m.TagAssignments)
+            .Include(m => m.CampaignMissions)
+            .Include(m => m.SetMissions)
+            .FirstOrDefaultAsync(m => m.Id == id, ct);
         if (mission == null) return;
 
-        // Delete physical file
-        if (!string.IsNullOrEmpty(mission.PhysicalPath) && File.Exists(mission.PhysicalPath))
+        var gate = InstanceLocks.GetOrAdd(mission.ServerInstanceId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
         {
-            try
+            if (!string.IsNullOrEmpty(mission.PhysicalPath) && File.Exists(mission.PhysicalPath))
             {
                 File.Delete(mission.PhysicalPath);
                 logger.LogInformation("Deleted mission file: {Path}", mission.PhysicalPath);
             }
-            catch (IOException ex)
-            {
-                logger.LogWarning(ex, "Failed to delete mission file: {Path}", mission.PhysicalPath);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                logger.LogWarning(ex, "Failed to delete mission file: {Path}", mission.PhysicalPath);
-            }
-        }
 
-        db.Missions.Remove(mission);
-        await db.SaveChangesAsync(ct);
+            db.Missions.Remove(mission);
+            await db.SaveChangesAsync(ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task<Stream?> GetMissionFileStreamAsync(int id, CancellationToken ct = default)
@@ -540,6 +543,7 @@ public class MissionService(
                         UploadedAt = info.LastWriteTimeUtc
                     };
                     db.Missions.Add(mission);
+                    mission.Hash = await hashService.ComputeHashAsync(path, ct);
                 }
 
                 mission.FileName = name;

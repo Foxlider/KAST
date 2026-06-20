@@ -53,3 +53,5 @@ public record ServerRuntimeEvent(
     string? PlayerIp = null,
     int? GamePort = null,
     int? SteamQueryPort = null);
+
+public record ExternalProcessesUpdatedEvent(IReadOnlyList<RunningProcessInfo> Processes);

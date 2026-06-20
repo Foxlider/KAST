@@ -78,6 +78,9 @@
     @* ════════════ SERVER CONFIG ════════════ *@
     <MudTabPanel Text="Server Config">
         <ServerConfigTab Config="_serverConfig"
+                         Instance="_instance"
+                         MissionDownloadBaseUrl="_missionDownloadBaseUrl"
+                         MissionCount="_missionCount"
                          RawContent="@_serverCfgRaw"
                          OnConfigChanged="OnServerConfigChanged"
                          OnRawContentChanged="OnServerCfgRawChanged" />
@@ -144,6 +147,8 @@
     private string _serverCfgRaw = "";
     private string _basicCfgRaw = "";
     private string _profileRaw = "";
+    private string? _missionDownloadBaseUrl;
+    private int _missionCount;
 
     private bool _isDirty;
     private IDisposable? _locationChangingRegistration;
@@ -176,6 +181,8 @@
             { _basicConfig = ConfigService.ParseBasicConfig(_instance.BasicCfgContent); _basicCfgRaw = _instance.BasicCfgContent; }
             if (!string.IsNullOrEmpty(_instance.ArmaProfileContent))
             { _profileData = ConfigService.ParseArma3Profile(_instance.ArmaProfileContent); _profileRaw = _instance.ArmaProfileContent; }
+
+            _missionDownloadBaseUrl = (await SettingsService.GetSettingsAsync()).MissionDownloadBaseUrl;
         }
         else
         {
@@ -244,6 +251,14 @@
     {
         try
         {
+            // Auto-inject missionHTTPDownloadBaseURL if HTTP downloads enabled and no custom URL set
+            if (_instance.HttpDownloadsEnabled && string.IsNullOrEmpty(_serverConfig.MissionHTTPDownloadBaseURL))
+            {
+                _serverConfig.MissionHTTPDownloadBaseURL = !string.IsNullOrEmpty(_missionDownloadBaseUrl)
+                    ? $"{_missionDownloadBaseUrl.TrimEnd('/')}/mission-download/{_instance.Id}/"
+                    : $"http://localhost:{_instance.Port}/mission-download/{_instance.Id}/";
+            }
+
             _instance.ServerCfgContent = ConfigService.SerializeServerConfig(_serverConfig);
             _instance.BasicCfgContent = ConfigService.SerializeBasicConfig(_basicConfig);
             _instance.ArmaProfileContent = ConfigService.SerializeArma3Profile(_profileData);

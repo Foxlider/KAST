@@ -3,6 +3,8 @@
 @implements IAsyncDisposable
 @inject MonitoringStateService State
 @inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject IProcessManagerService ProcessManager
 
 <PageTitle>KAST -- Monitoring</PageTitle>
 
@@ -70,6 +72,70 @@
     </MudItem>
 </MudGrid>
 
+@* ── All Running Arma Processes ── *@
+<MudText Typo="Typo.subtitle1" Class="mb-2">All Running Arma Processes</MudText>
+@if (_extProcesses.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">No running Arma server processes detected.</MudAlert>
+}
+else
+{
+    <MudTable Items="_extProcesses" Hover="true" Class="mb-4" Elevation="1" Dense="true">
+        <HeaderContent>
+            <MudTh>PID</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>CPU / Mem</MudTh>
+            <MudTh>Port</MudTh>
+            <MudTh>Uptime</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="PID">
+                <MudText Typo="Typo.body2">@context.Pid</MudText>
+            </MudTd>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2">@context.ProcessName</MudText>
+            </MudTd>
+            <MudTd DataLabel="CPU/Mem">
+                <MudText Typo="Typo.caption">
+                    CPU: @context.CpuPercent.ToString("F1")% |
+                    Mem: @UiHelpers.FormatBytes(context.MemoryBytes)
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Port">
+                @if (context.Port.HasValue)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.Port</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Uptime">
+                <MudText Typo="Typo.caption">@FormatUptime(context.StartTime)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.IsManaged)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                        @context.LinkedInstanceName
+                    </MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">External</MudChip>
+                }
+                <MudIconButton Icon="@Icons.Material.Filled.StopCircle"
+                               Size="Size.Small"
+                               Color="Color.Error"
+                               OnClick="@(() => KillExternalProcess(context))"
+                               Disabled="_killingPids.Contains(context.Pid)" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
 @* ── Instances ── *@
 <MudText Typo="Typo.subtitle1" Class="mb-2">Instances</MudText>
 @if (State.Instances.Count == 0)
@@ -121,6 +187,8 @@ else
 
 @code {
     private bool _chartsInitialized;
+    private readonly List<RunningProcessInfo> _extProcesses = [];
+    private readonly HashSet<int> _killingPids = [];
 
     protected override void OnInitialized()
     {
@@ -130,11 +198,47 @@ else
 
     private void HandleDataChanged()
     {
+        _extProcesses.Clear();
+        _extProcesses.AddRange(State.ExternalProcesses);
         InvokeAsync(async () =>
         {
             StateHasChanged();
             if (_chartsInitialized) await UpdateChartsAsync();
         });
+    }
+
+    private async Task KillExternalProcess(RunningProcessInfo process)
+    {
+        if (process.IsManaged) return;
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Kill process {process.ProcessName} (PID {process.Pid})?");
+        if (!confirmed) return;
+
+        _killingPids.Add(process.Pid);
+        try
+        {
+            var killed = await ProcessManager.KillProcessAsync(process.Pid);
+            if (killed)
+                Snackbar.Add($"Killed PID {process.Pid}", Severity.Success);
+            else
+                Snackbar.Add($"Failed to kill PID {process.Pid}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _killingPids.Remove(process.Pid);
+        }
+    }
+
+    private static string FormatUptime(DateTime startTime)
+    {
+        var span = DateTime.UtcNow - startTime.ToUniversalTime();
+        if (span.TotalDays >= 1) return $"{(int)span.TotalDays}d {span.Hours}h";
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+        return $"{(int)span.TotalMinutes}m {span.Seconds}s";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

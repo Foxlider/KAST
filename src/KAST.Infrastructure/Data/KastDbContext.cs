@@ -29,6 +29,7 @@ public class KastDbContext : DbContext
     public DbSet<CampaignMission> CampaignMissions => Set<CampaignMission>();
     public DbSet<Set> Sets => Set<Set>();
     public DbSet<SetMission> SetMissions => Set<SetMission>();
+    public DbSet<ServerInstanceProcessHistory> ServerInstanceProcessHistories => Set<ServerInstanceProcessHistory>();
 
     public override int SaveChanges()
         => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -258,6 +259,36 @@ public class KastDbContext : DbContext
                 .WithMany(m => m.SetMissions)
                 .HasForeignKey(e => e.MissionId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Concurrency tokens ──────────────────────────────────────────────
+        // In-memory databases do not support concurrency tokens, so only
+        // enable them for relational providers (SQLite in production).
+
+        if (Database.IsSqlite())
+        {
+            modelBuilder.Entity<ServerInstance>(entity =>
+            {
+                entity.Property(e => e.ConcurrencyStamp).IsConcurrencyToken();
+            });
+
+            modelBuilder.Entity<HeadlessClient>(entity =>
+            {
+                entity.Property(e => e.ConcurrencyStamp).IsConcurrencyToken();
+            });
+        }
+
+        // ── Process history ──────────────────────────────────────────────────
+
+        modelBuilder.Entity<ServerInstanceProcessHistory>(entity =>
+        {
+            entity.HasOne(e => e.ServerInstance)
+                .WithMany()
+                .HasForeignKey(e => e.ServerInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.ServerInstanceId);
+            entity.HasIndex(e => new { e.ServerInstanceId, e.EndedAt });
         });
     }
 }

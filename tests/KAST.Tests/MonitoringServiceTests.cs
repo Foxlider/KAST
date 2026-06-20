@@ -57,6 +57,12 @@ public class MonitoringServiceTests : IDisposable
         public Task StopProcessAsync(int processId, CancellationToken ct = default)
             => throw new NotImplementedException();
 
+        public Task<bool> KillProcessAsync(int processId, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<RunningProcessInfo>> GetRunningServerProcessesAsync(CancellationToken ct = default)
+            => throw new NotImplementedException();
+
         public bool IsProcessRunning(int processId) => true;
     }
 }

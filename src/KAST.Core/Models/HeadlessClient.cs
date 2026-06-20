@@ -11,4 +11,5 @@ public class HeadlessClient
     public int? ProcessId { get; set; }
     public ServerInstanceStatus Status { get; set; } = ServerInstanceStatus.Stopped;
     public DateTime? StartedAt { get; set; }
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
 }

@@ -236,6 +236,7 @@ public class KastApiModsEndToEndTests
         public Task BroadcastInstanceMetricsAsync(InstanceMetricsUpdatedEvent metrics) => Task.CompletedTask;
         public Task BroadcastLogEntryAsync(LogEntryEvent logEntry) => Task.CompletedTask;
         public Task BroadcastServerRuntimeEventAsync(ServerRuntimeEvent runtimeEvent) => Task.CompletedTask;
+        public Task BroadcastExternalProcessesAsync(ExternalProcessesUpdatedEvent processes) => Task.CompletedTask;
     }
 
     private sealed class FakeSteamService : ISteamService

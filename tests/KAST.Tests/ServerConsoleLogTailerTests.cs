@@ -172,5 +172,8 @@ public class ServerConsoleLogTailerTests : IDisposable
             RuntimeEvents.Add(runtimeEvent);
             return Task.CompletedTask;
         }
+
+        public Task BroadcastExternalProcessesAsync(ExternalProcessesUpdatedEvent processes)
+            => Task.CompletedTask;
     }
 }

@@ -3,6 +3,7 @@ using System;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KAST.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(KastDbContext))]
-    partial class KastDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260619235232_AddConcurrencyStampAndProcessHistory")]
+    partial class AddConcurrencyStampAndProcessHistory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -491,12 +494,6 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<bool>("ContactDlc")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("CpuCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("CpuCountOverride")
-                        .HasColumnType("INTEGER");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -504,12 +501,6 @@ namespace KAST.Infrastructure.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("EfDlc")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EnableHT")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EnableRanking")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("GmDlc")
@@ -533,12 +524,6 @@ namespace KAST.Infrastructure.Data.Migrations
 
                     b.Property<DateTime?>("LastModified")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("MaxMem")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("MaxMemOverride")
-                        .HasColumnType("INTEGER");
 
                     b.Property<int>("MaxRestartAttempts")
                         .HasColumnType("INTEGER");

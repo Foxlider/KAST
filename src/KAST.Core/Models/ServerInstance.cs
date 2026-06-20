@@ -35,6 +35,14 @@ public class ServerInstance
     public bool RfDlc { get; set; }
     public bool EfDlc { get; set; }
 
+    // Performance
+    public bool EnableHT { get; set; }
+    public bool MaxMemOverride { get; set; }
+    public int MaxMem { get; set; } = 1024;
+    public bool CpuCountOverride { get; set; }
+    public int CpuCount { get; set; }
+    public bool EnableRanking { get; set; }
+
     // Installation tracking
     public DateTime? InstalledAt { get; set; }
     public string? InstalledBuildId { get; set; }
@@ -42,9 +50,13 @@ public class ServerInstance
     // Process tracking
     public int? ProcessId { get; set; }
     public DateTime? StartedAt { get; set; }
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
 
     // Headless clients
     public int HeadlessClientCount { get; set; }
+
+    // HTTP mission downloads
+    public bool HttpDownloadsEnabled { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastModified { get; set; }

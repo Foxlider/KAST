@@ -11,6 +11,7 @@ public class MissionServiceTests : IDisposable
 {
     private readonly Infrastructure.Data.KastDbContext _db;
     private readonly IServerInstanceService _serverInstanceService;
+    private readonly IMissionHashService _hashService;
     private readonly ILogger<MissionService> _logger;
     private readonly MissionService _sut;
     private bool _disposed;
@@ -19,8 +20,9 @@ public class MissionServiceTests : IDisposable
     {
         _db = DbHelper.CreateInMemoryDb();
         _serverInstanceService = Substitute.For<IServerInstanceService>();
+        _hashService = Substitute.For<IMissionHashService>();
         _logger = Substitute.For<ILogger<MissionService>>();
-        _sut = new MissionService(_db, _serverInstanceService, _logger);
+        _sut = new MissionService(_db, _serverInstanceService, _hashService, _logger);
     }
 
     public void Dispose()
@@ -202,6 +204,22 @@ public class MissionServiceTests : IDisposable
         using var stream = new MemoryStream(new byte[] { 0x00 });
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => _sut.UploadMissionAsync(999, "test.pbo", stream));
+    }
+
+    [Fact]
+    public async Task UploadMission_ComputesAndStoresHash()
+    {
+        var instance = await SeedInstance("HashServer", "/tmp/servers/hash-test");
+        _hashService.ComputeHashAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(0xDEADBEEFu);
+
+        using var stream = new MemoryStream(new byte[] { 0x00, 0x50, 0x42, 0x4F });
+        var mission = await _sut.UploadMissionAsync(instance.Id, "test.pbo", stream);
+
+        Assert.Equal(0xDEADBEEFu, mission.Hash);
+        await _hashService.Received(1).ComputeHashAsync(mission.PhysicalPath, Arg.Any<CancellationToken>());
+
+        File.Delete(mission.PhysicalPath);
     }
 
     // ── UpdateMissionAsync ──

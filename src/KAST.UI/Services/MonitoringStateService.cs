@@ -20,6 +20,7 @@ public sealed class MonitoringStateService : IAsyncDisposable
     public bool IsMonitoringOk { get; private set; } = true;
     public bool IsDbOk { get; private set; } = true;
     public HealthStatus ApiStatus { get; private set; } = HealthStatus.Healthy;
+    public IReadOnlyList<RunningProcessInfo> ExternalProcesses { get; private set; } = [];
 
     // ── History buffers ──────────────────────────────────────────────────────
     private readonly List<string> _hostLabels = new(MaxPoints);
@@ -70,6 +71,8 @@ public sealed class MonitoringStateService : IAsyncDisposable
         IsMonitoringOk = snapshot.IsMonitoringOk;
         IsDbOk = snapshot.IsDbOk;
         ApiStatus = snapshot.ApiStatus;
+        if (snapshot.ExternalProcesses is not null)
+            ExternalProcesses = snapshot.ExternalProcesses;
 
         // Append to history
         var label = DateTime.Now.ToString("HH:mm:ss");

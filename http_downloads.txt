@@ -1,0 +1,86 @@
+[[Category:Introduced with Arma 3 version 2.20]]
+{{GameCategory|arma3|Multiplayer}}
+
+When {{hl|missionHTTPDownloadBaseURL}} is configured in the {{Link|Arma 3: Server Config File|server config}}, clients will attempt to download mission files via HTTP from the specified base URL instead of receiving them directly from the game server. If the download fails or the file hash does not match, the client automatically falls back to downloading the mission from the game server.
+
+== Configuration ==
+
+The parameter value must be a base URL to which the mission filename will be appended.
+The URL must start with {{hl|http://}} or {{hl|https://}} and must end with {{hl|/}} or {{hl|{{=}}}}.
+
+{{Feature|informative|The standard in-game mission transfer is limited to 300 MiB. HTTP download supports mission files up to 512 MiB.}}
+
+<syntaxhighlight lang="cpp">
+missionHTTPDownloadBaseURL = "https://example.com/missionfiles/";
+</syntaxhighlight>
+
+'''Examples of valid values:'''
+* {{hl|https://example.com/missionfiles/}}
+* {{hl|http://example.com/missionfiles?download{{=}}}}
+
+The client constructs the full download URL by appending the mission filename to the base URL:
+* {{hl|https://example.com/missionfiles/missionname.Altis.pbo}}
+* {{hl|http://example.com/missionfiles?download{{=}}missionname.Altis.pbo}}
+
+== HTTP Request ==
+
+Clients send a {{hl|GET}} request to the constructed URL with the following headers:
+
+{| class="wikitable"
+! Header
+! Description
+|-
+| {{hl|Accept}}
+| Always {{hl|*/*}}
+|-
+| {{hl|Accept-Encoding}}
+| Always {{hl|gzip}}
+|-
+| {{hl|Expected-Size}}
+| Size of the mission file in bytes, as found in the server's {{hl|mpmissions}} folder. The server determines this value and the client forwards it in the request.
+|-
+| {{hl|Mission-File-Name}}
+| Mission filename without extension, as found in the server's {{hl|mpmissions}} folder
+|-
+| {{hl|Mission-Hash}}
+| Expected CRC32/BZIP2 (MSB-first) hash of the mission file {{Wiki|wip|The hashing algorithm may be replaced in a future version.}}
+|-
+| {{hl|Player-Name}}
+| Client profile name, [https://en.wikipedia.org/wiki/Base64 Base64-encoded]
+|-
+| {{hl|Player-Steamid}}
+| Client's SteamID64
+|-
+| {{hl|Server-Address}}
+| The server address the client connected to, in {{hl|ip:port}} format (e.g. {{hl|192.0.2.1:2302}}). In non-standard network setups such as VPN tunnels, this may differ from the server's actual network address.
+|-
+| {{hl|User-Agent}}
+| Always starts with {{hl|BIGameEngine/}}, followed by the client's game version
+|}
+
+=== Example Request Headers ===
+
+<syntaxhighlight lang="http">
+Accept: */*
+Accept-Encoding: gzip
+Expected-Size: 1951592
+Host: example.com
+Mission-File-Name: missionname.Altis
+Mission-Hash: 2852136129
+Player-Name: UmFic2N1dHRsZQ==
+Player-Steamid: 76561197960287930
+Server-Address: 192.0.2.1:2302
+User-Agent: BIGameEngine/2.20.153752
+</syntaxhighlight>
+
+== Redirects ==
+
+HTTP redirects are supported. This allows, for example, generating a pre-signed public link to a mission file hosted on [https://en.wikipedia.org/wiki/Amazon%20S3 Amazon S3] and redirecting the client to it.
+
+== Fallback Behaviour ==
+
+If the download fails for any reason, or if the hash of the downloaded file does not match the hash of the mission file on the server, the client will automatically fall back to receiving the mission file directly from the game server.
+
+== See Also ==
+
+* {{Link|Arma_3:_Server_Config_File|Arma 3: Server Config File}}

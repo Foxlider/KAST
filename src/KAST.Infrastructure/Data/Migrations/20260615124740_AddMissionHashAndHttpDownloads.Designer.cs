@@ -3,6 +3,7 @@ using System;
 using KAST.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KAST.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(KastDbContext))]
-    partial class KastDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615124740_AddMissionHashAndHttpDownloads")]
+    partial class AddMissionHashAndHttpDownloads
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -173,10 +176,6 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("ConcurrencyStamp")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
 
                     b.Property<int?>("ProcessId")
                         .HasColumnType("INTEGER");
@@ -484,17 +483,7 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<string>("BasicCfgContent")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("ConcurrencyStamp")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("ContactDlc")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("CpuCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("CpuCountOverride")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreatedAt")
@@ -504,12 +493,6 @@ namespace KAST.Infrastructure.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("EfDlc")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EnableHT")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EnableRanking")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("GmDlc")
@@ -533,12 +516,6 @@ namespace KAST.Infrastructure.Data.Migrations
 
                     b.Property<DateTime?>("LastModified")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("MaxMem")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("MaxMemOverride")
-                        .HasColumnType("INTEGER");
 
                     b.Property<int>("MaxRestartAttempts")
                         .HasColumnType("INTEGER");
@@ -613,40 +590,6 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.HasIndex("SteamModId");
 
                     b.ToTable("ServerInstanceMods");
-                });
-
-            modelBuilder.Entity("KAST.Core.Models.ServerInstanceProcessHistory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("EndedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ExitCode")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ProcessId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ServerInstanceId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TerminationReason")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ServerInstanceId");
-
-                    b.HasIndex("ServerInstanceId", "EndedAt");
-
-                    b.ToTable("ServerInstanceProcessHistories");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.Set", b =>
@@ -913,17 +856,6 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Navigation("ServerInstance");
 
                     b.Navigation("SteamMod");
-                });
-
-            modelBuilder.Entity("KAST.Core.Models.ServerInstanceProcessHistory", b =>
-                {
-                    b.HasOne("KAST.Core.Models.ServerInstance", "ServerInstance")
-                        .WithMany()
-                        .HasForeignKey("ServerInstanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ServerInstance");
                 });
 
             modelBuilder.Entity("KAST.Core.Models.Set", b =>

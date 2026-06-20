@@ -27,4 +27,7 @@ public class KastSettings
 
     [MaxLength(32)]
     public string SystemAuthSource { get; set; } = "Auto";
+
+    [MaxLength(512)]
+    public string? MissionDownloadBaseUrl { get; set; }
 }

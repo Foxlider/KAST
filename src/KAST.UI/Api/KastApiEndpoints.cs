@@ -24,6 +24,7 @@ public static class KastApiEndpoints
         group.MapMissionsApi();
         group.MapMonitoringApi();
         group.MapDownloadsApi();
+        group.MapProcessesApi();
         group.MapSettingsApi();
         return group;
     }
@@ -483,6 +484,7 @@ public static class KastApiEndpoints
         instance.ProcessId,
         instance.StartedAt,
         instance.HeadlessClientCount,
+        instance.HttpDownloadsEnabled,
         instance.CreatedAt,
         instance.LastModified,
         instance.Mods.Select(mod => ToServerModDto(mod, sanitizer)).ToList(),
@@ -533,7 +535,8 @@ public static class KastApiEndpoints
         sanitizer.ToDisplayPath(settings.ServersDirectory),
         settings.ThemeMode,
         settings.MetricsIntervalSeconds,
-        settings.ParallelDownloads);
+        settings.ParallelDownloads,
+        settings.MissionDownloadBaseUrl);
 
     private static SafeDownloadTaskDto ToDownloadTaskDto(DownloadTask task) => new(
         task.Id,
@@ -582,6 +585,7 @@ public static class KastApiEndpoints
         int? ProcessId,
         DateTime? StartedAt,
         int HeadlessClientCount,
+        bool HttpDownloadsEnabled,
         DateTime CreatedAt,
         DateTime? LastModified,
         IReadOnlyList<SafeServerInstanceModDto> Mods,
@@ -632,7 +636,8 @@ public static class KastApiEndpoints
         string ServersDirectory,
         string ThemeMode,
         int MetricsIntervalSeconds,
-        int ParallelDownloads);
+        int ParallelDownloads,
+        string? MissionDownloadBaseUrl);
 
     public record DownloadQueueStateDto(
         int ActiveCount,
@@ -659,6 +664,22 @@ public static class KastApiEndpoints
         DateTime UpdatedAt,
         DateTime? StartedAt,
         DateTime? CompletedAt);
+
+    // ── Processes ────────────────────────────────────────────────────────────
+
+    private static void MapProcessesApi(this RouteGroupBuilder root)
+    {
+        var g = root.MapGroup("/processes").WithTags("Processes");
+
+        g.MapGet("/", async (IProcessManagerService processManager, CancellationToken ct) =>
+            Results.Ok(await processManager.GetRunningServerProcessesAsync(ct)));
+
+        g.MapDelete("/{pid:int}", async (int pid, IProcessManagerService processManager, CancellationToken ct) =>
+        {
+            var killed = await processManager.KillProcessAsync(pid, ct);
+            return killed ? Results.NoContent() : Results.NotFound();
+        });
+    }
 
 }
 

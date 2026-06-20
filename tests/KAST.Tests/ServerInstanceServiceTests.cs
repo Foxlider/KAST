@@ -27,7 +27,7 @@ public class ServerInstanceServiceTests : IDisposable
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
         _consoleLogTailer = Substitute.For<IServerConsoleLogTailer>();
         _logger = Substitute.For<ILogger<ServerInstanceService>>();
-        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger, new OutputSanitizer(), _consoleLogTailer);
+        _sut = new ServerInstanceService(_db, _processManager, _broadcaster, _logger, new OutputSanitizer(), Substitute.For<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(), _consoleLogTailer);
     }
 
     public void Dispose()

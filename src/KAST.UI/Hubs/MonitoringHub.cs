@@ -17,6 +17,12 @@ public class MonitoringHub : Hub
     public async Task UnsubscribeFromInstance(int instanceId)
         => await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"instance-{instanceId}");
 
+    public async Task SubscribeToExternalProcesses()
+        => await Groups.AddToGroupAsync(Context.ConnectionId, "external-processes");
+
+    public async Task UnsubscribeFromExternalProcesses()
+        => await Groups.RemoveFromGroupAsync(Context.ConnectionId, "external-processes");
+
     public static async Task BroadcastHostMetrics(IHubContext<MonitoringHub> hubContext, HostMetricsUpdatedEvent metrics)
         => await hubContext.Clients.Group("host-metrics").SendAsync("HostMetricsUpdated", metrics);
 
@@ -31,4 +37,7 @@ public class MonitoringHub : Hub
 
     public static async Task BroadcastServerRuntimeEvent(IHubContext<MonitoringHub> hubContext, ServerRuntimeEvent runtimeEvent)
         => await hubContext.Clients.Group($"instance-{runtimeEvent.ServerInstanceId}").SendAsync("ServerRuntimeEvent", runtimeEvent);
+
+    public static async Task BroadcastExternalProcesses(IHubContext<MonitoringHub> hubContext, ExternalProcessesUpdatedEvent processes)
+        => await hubContext.Clients.Group("external-processes").SendAsync("ExternalProcessesUpdated", processes);
 }

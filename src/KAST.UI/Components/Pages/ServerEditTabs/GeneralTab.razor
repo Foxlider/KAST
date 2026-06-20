@@ -57,39 +57,39 @@
 <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Performance</MudText>
 <MudGrid Spacing="2">
     <MudItem xs="6" sm="3">
-        <MudSwitch Value="@ServerConfig.EnableHT"
-                   ValueChanged="@((bool v) => { ServerConfig.EnableHT = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+        <MudSwitch Value="@Instance.EnableHT"
+                   ValueChanged="@((bool v) => { Instance.EnableHT = v; _ = OnNameChanged.InvokeAsync(); })"
                    Label="Enable HT" Color="Color.Primary" />
     </MudItem>
     <MudItem xs="6" sm="3">
-        <MudSwitch Value="@ServerConfig.MaxMemOverride"
-                   ValueChanged="@((bool v) => { ServerConfig.MaxMemOverride = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+        <MudSwitch Value="@Instance.MaxMemOverride"
+                   ValueChanged="@((bool v) => { Instance.MaxMemOverride = v; _ = OnNameChanged.InvokeAsync(); })"
                    Label="Override MaxMem" Color="Color.Primary" />
     </MudItem>
-    @if (ServerConfig.MaxMemOverride)
+    @if (Instance.MaxMemOverride)
     {
         <MudItem xs="6" sm="3">
-            <MudNumericField Value="@ServerConfig.MaxMem"
-                             ValueChanged="@((int v) => { ServerConfig.MaxMem = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+            <MudNumericField Value="@Instance.MaxMem"
+                             ValueChanged="@((int v) => { Instance.MaxMem = v; _ = OnNameChanged.InvokeAsync(); })"
                              Label="MaxMem (MB)" Min="512" />
         </MudItem>
     }
     <MudItem xs="6" sm="3">
-        <MudSwitch Value="@ServerConfig.CpuCountOverride"
-                   ValueChanged="@((bool v) => { ServerConfig.CpuCountOverride = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+        <MudSwitch Value="@Instance.CpuCountOverride"
+                   ValueChanged="@((bool v) => { Instance.CpuCountOverride = v; _ = OnNameChanged.InvokeAsync(); })"
                    Label="Override CPU Count" Color="Color.Primary" />
     </MudItem>
-    @if (ServerConfig.CpuCountOverride)
+    @if (Instance.CpuCountOverride)
     {
         <MudItem xs="6" sm="3">
-            <MudNumericField Value="@ServerConfig.CpuCount"
-                             ValueChanged="@((int v) => { ServerConfig.CpuCount = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+            <MudNumericField Value="@Instance.CpuCount"
+                             ValueChanged="@((int v) => { Instance.CpuCount = v; _ = OnNameChanged.InvokeAsync(); })"
                              Label="CPU Count" Min="1" />
         </MudItem>
     }
     <MudItem xs="6" sm="3">
-        <MudSwitch Value="@ServerConfig.EnableRanking"
-                   ValueChanged="@((bool v) => { ServerConfig.EnableRanking = v; _ = OnServerConfigChanged.InvokeAsync(); })"
+        <MudSwitch Value="@Instance.EnableRanking"
+                   ValueChanged="@((bool v) => { Instance.EnableRanking = v; _ = OnNameChanged.InvokeAsync(); })"
                    Label="Enable Ranking" Color="Color.Primary" />
     </MudItem>
 </MudGrid>

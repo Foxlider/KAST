@@ -26,6 +26,14 @@ public sealed class MonitoringSnapshotService
 
         Changed?.Invoke();
     }
+
+    public void UpdateExternalProcesses(IReadOnlyList<RunningProcessInfo> processes)
+    {
+        lock (_lock)
+            _snapshot = _snapshot with { ExternalProcesses = processes };
+
+        Changed?.Invoke();
+    }
 }
 
 public sealed record MonitoringSnapshot(
@@ -34,7 +42,8 @@ public sealed record MonitoringSnapshot(
     IReadOnlyList<InstanceMetrics> InstanceMetrics,
     bool IsMonitoringOk,
     bool IsDbOk,
-    HealthStatus ApiStatus)
+    HealthStatus ApiStatus,
+    IReadOnlyList<RunningProcessInfo>? ExternalProcesses = null)
 {
     public static MonitoringSnapshot Empty { get; } = new(
         new HostMetrics(),

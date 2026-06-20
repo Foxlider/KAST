@@ -9,6 +9,7 @@ public class Mission
     public string DisplayName { get; set; } = string.Empty;
     public string MapName { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
+    public uint? Hash { get; set; }
     public string PhysicalPath { get; set; } = string.Empty;
     public int? ModPresetId { get; set; }
     public ModPreset? ModPreset { get; set; }

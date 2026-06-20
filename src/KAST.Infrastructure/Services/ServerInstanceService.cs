@@ -7,6 +7,7 @@ using KAST.Core.Models;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -18,6 +19,7 @@ public class ServerInstanceService(
     IAppEventBroadcaster broadcaster,
     ILogger<ServerInstanceService> logger,
     IOutputSanitizer sanitizer,
+    IServiceScopeFactory scopeFactory,
     IServerConsoleLogTailer? consoleLogTailer = null,
     IHostEnvironment? hostEnvironment = null) : IServerInstanceService
 {
@@ -91,7 +93,14 @@ public class ServerInstanceService(
                 .SetProperty(x => x.SpeDlc, instance.SpeDlc)
                 .SetProperty(x => x.RfDlc, instance.RfDlc)
                 .SetProperty(x => x.EfDlc, instance.EfDlc)
+                .SetProperty(x => x.EnableHT, instance.EnableHT)
+                .SetProperty(x => x.MaxMemOverride, instance.MaxMemOverride)
+                .SetProperty(x => x.MaxMem, instance.MaxMem)
+                .SetProperty(x => x.CpuCountOverride, instance.CpuCountOverride)
+                .SetProperty(x => x.CpuCount, instance.CpuCount)
+                .SetProperty(x => x.EnableRanking, instance.EnableRanking)
                 .SetProperty(x => x.HeadlessClientCount, instance.HeadlessClientCount)
+                .SetProperty(x => x.HttpDownloadsEnabled, instance.HttpDownloadsEnabled)
                 .SetProperty(x => x.LastModified, instance.LastModified),
             ct);
 
@@ -234,7 +243,11 @@ public class ServerInstanceService(
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new InvalidOperationException($"Server instance {id} not found");
 
-        if (instance.Status == ServerInstanceStatus.Running)
+        if (instance.Status is ServerInstanceStatus.Running
+            or ServerInstanceStatus.Starting
+            or ServerInstanceStatus.Stopping
+            or ServerInstanceStatus.Restarting
+            or ServerInstanceStatus.Downloading)
             return;
 
         using var activity = KastActivitySources.Instances.StartActivity(
@@ -276,6 +289,21 @@ public class ServerInstanceService(
                 {
                     try
                     {
+                        await using var exitScope = scopeFactory.CreateAsyncScope();
+                        var exitDb = exitScope.ServiceProvider.GetRequiredService<KastDbContext>();
+
+                        var history = await exitDb.ServerInstanceProcessHistories
+                            .Where(h => h.ServerInstanceId == id && h.ProcessId == pid && h.EndedAt == null)
+                            .OrderByDescending(h => h.StartedAt)
+                            .FirstOrDefaultAsync();
+                        if (history is not null)
+                        {
+                            history.EndedAt = DateTime.UtcNow;
+                            history.ExitCode = exitCode;
+                            history.TerminationReason = exitCode == 0 ? "Exited" : "Crashed";
+                            await exitDb.SaveChangesAsync();
+                        }
+
                         var newStatus = exitCode == 0 ? ServerInstanceStatus.Stopped : ServerInstanceStatus.Crashed;
                         await broadcaster.BroadcastServerStatusChangedAsync(
                             new ServerStatusChangedEvent(id, newStatus.ToString()));
@@ -296,6 +324,13 @@ public class ServerInstanceService(
             instance.ProcessId = pid;
             instance.Status = ServerInstanceStatus.Running;
             instance.StartedAt = DateTime.UtcNow;
+
+            db.ServerInstanceProcessHistories.Add(new ServerInstanceProcessHistory
+            {
+                ServerInstanceId = instance.Id,
+                ProcessId = pid,
+                StartedAt = instance.StartedAt.Value
+            });
 
             activity?.SetTag("instance.pid", pid);
             activity?.AddEvent(new ActivityEvent("instance.process_started", tags: new ActivityTagsCollection
@@ -405,6 +440,11 @@ public class ServerInstanceService(
 
         if (!serverStillRunning)
         {
+            if (instance.ProcessId.HasValue)
+            {
+                CloseProcessHistoryEntry(id, instance.ProcessId.Value, "Killed");
+            }
+
             instance.ProcessId = null;
             instance.Status = ServerInstanceStatus.Stopped;
             instance.StartedAt = null;
@@ -671,13 +711,13 @@ public class ServerInstanceService(
         if (cfg.NetlogEnabled) args.Add("-netlog");
         if (cfg.AutoInit) args.Add("-autoInit");
         if (cfg.AllowedFilePatching > 0) args.Add("-filePatching");
-        if (cfg.EnableHT) args.Add("-enableHT");
-        if (cfg.EnableRanking)
+        if (instance.EnableHT) args.Add("-enableHT");
+        if (instance.EnableRanking)
             args.Add($"\"-ranking={Path.Combine(configDir, "ranking.log")}\"");
-        if (cfg.MaxMemOverride && cfg.MaxMem > 0)
-            args.Add($"-maxMem={cfg.MaxMem}");
-        if (cfg.CpuCountOverride && cfg.CpuCount > 0)
-            args.Add($"-cpuCount={cfg.CpuCount}");
+        if (instance.MaxMemOverride && instance.MaxMem > 0)
+            args.Add($"-maxMem={instance.MaxMem}");
+        if (instance.CpuCountOverride && instance.CpuCount > 0)
+            args.Add($"-cpuCount={instance.CpuCount}");
     }
 
     private void AddModArgs(ServerInstance instance, List<string> args)
@@ -803,6 +843,20 @@ public class ServerInstanceService(
         {
             logger.LogWarning(ex,
                 "Failed to remove Linux profile symlink for instance {Id}", instance.Id);
+        }
+    }
+
+    private void CloseProcessHistoryEntry(int instanceId, int processId, string reason, int? exitCode = null)
+    {
+        var history = db.ServerInstanceProcessHistories
+            .Where(h => h.ServerInstanceId == instanceId && h.ProcessId == processId && h.EndedAt == null)
+            .OrderByDescending(h => h.StartedAt)
+            .FirstOrDefault();
+        if (history is not null)
+        {
+            history.EndedAt = DateTime.UtcNow;
+            history.TerminationReason = reason;
+            history.ExitCode = exitCode;
         }
     }
 }

@@ -102,6 +102,20 @@ public class FileSystemServiceTests : IDisposable
     [Fact]
     public void CreateOrUpdateSymlink_ReplacesExistingSymlink()
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var probeLink = Path.Combine(_root, ".probe-link");
+            try
+            {
+                Directory.CreateSymbolicLink(probeLink, _root);
+                Directory.Delete(probeLink);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+        }
+
         var sut = new FileSystemService();
         var oldTarget = Path.Combine(_root, "old-target");
         var newTarget = Path.Combine(_root, "new-target");

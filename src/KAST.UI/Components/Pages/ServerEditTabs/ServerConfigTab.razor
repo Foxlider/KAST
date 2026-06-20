@@ -1,7 +1,40 @@
 @* Server Config: structured fields + raw server.cfg editor *@
+@using KAST.Core.Models
 
 <MudGrid Class="mt-3">
     <MudItem xs="12" md="6">
+        <MudCard Elevation="1" Class="mb-3">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">HTTP Mission Downloads</MudText>
+                <MudSwitch Value="@Instance.HttpDownloadsEnabled"
+                            ValueChanged="@((bool v) => { Instance.HttpDownloadsEnabled = v; _ = OnConfigChanged.InvokeAsync(); })"
+                            Label="Enable HTTP Mission Downloads"
+                            Color="Color.Primary" />
+                @if (Instance.HttpDownloadsEnabled)
+                {
+                    <MudTextField Value="@Config.MissionHTTPDownloadBaseURL"
+                                  ValueChanged="@((string v) => { Config.MissionHTTPDownloadBaseURL = v; _ = OnConfigChanged.InvokeAsync(); })"
+                                  Label="Download Base URL"
+                                  HelperText="Leave blank to auto-generate from the public base URL"
+                                  FullWidth="true" Class="mt-2" />
+                    @if (string.IsNullOrEmpty(Config.MissionHTTPDownloadBaseURL) && !string.IsNullOrEmpty(MissionDownloadBaseUrl))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Info">
+                            Will use: @MissionDownloadBaseUrl/mission-download/@(Instance.Id)/
+                        </MudText>
+                    }
+                    else if (string.IsNullOrEmpty(Config.MissionHTTPDownloadBaseURL))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">
+                            Set a public base URL in KAST Settings, or enter a custom URL above.
+                        </MudText>
+                    }
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        Missions: @MissionCount
+                    </MudText>
+                }
+            </MudCardContent>
+        </MudCard>
         <MudCard Elevation="1" Class="mb-3">
             <MudCardContent>
                 <MudText Typo="Typo.subtitle1" Class="mb-2">Server Options</MudText>
@@ -131,6 +164,9 @@
 
 @code {
     [Parameter, EditorRequired] public ServerConfigData Config { get; set; } = default!;
+    [Parameter] public ServerInstance Instance { get; set; } = new();
+    [Parameter] public string? MissionDownloadBaseUrl { get; set; }
+    [Parameter] public int MissionCount { get; set; }
     [Parameter] public string RawContent { get; set; } = "";
     [Parameter] public EventCallback OnConfigChanged { get; set; }
     [Parameter] public EventCallback<string> OnRawContentChanged { get; set; }

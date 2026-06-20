@@ -1,4 +1,5 @@
 @using KAST.Core.Models
+@using System.IO
 @inject IMissionService MissionService
 @inject IModPresetService ModPresetService
 @inject ISnackbar Snackbar
@@ -794,6 +795,18 @@
             await RefreshAll();
         }
         catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+        catch (IOException ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
         {
             Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
         }

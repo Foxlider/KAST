@@ -37,6 +37,8 @@ public static class DependencyInjection
         services.AddScoped<IServerInstanceService, ServerInstanceService>();
         services.AddScoped<IModPresetService, ModPresetService>();
         services.AddScoped<IMissionService, MissionService>();
+        services.AddScoped<IMissionHashService, MissionHashService>();
+        services.AddScoped<IMissionHttpDownloadService, MissionHttpDownloadService>();
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<ISettingsService, SettingsService>();
