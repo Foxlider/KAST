@@ -1,3 +1,14 @@
+## [1.2.0] - 2026-06-20
+### Bug Fixes
+- Register IProcessManagerService in API test DI containers
+
+### Features
+- Add mission hashing, HTTP downloads, process history, and performance tracking
+
+## [1.1.3] - 2026-06-06
+### Maintenance
+- Update changelog for v1.1.2 [skip ci]
+
 ## [1.1.2] - 2026-06-06
 ### Maintenance
 - Update changelog for v1.1.1 [skip ci]
