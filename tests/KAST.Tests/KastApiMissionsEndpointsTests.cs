@@ -319,6 +319,7 @@ public class KastApiMissionsEndpointsTests
         builder.Services.AddSingleton(Substitute.For<IModDownloadQueueService>());
         builder.Services.AddSingleton(sp => new ModDownloadManager(
             sp.GetRequiredService<IModDownloadQueueService>()));
+        builder.Services.AddSingleton(Substitute.For<IProcessManagerService>());
 
         var app = builder.Build();
         app.MapGroup("/api").MapKastApi();
