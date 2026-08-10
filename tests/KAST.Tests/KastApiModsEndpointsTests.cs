@@ -69,6 +69,86 @@ public class KastApiModsEndpointsTests
     }
 
     [Fact]
+    public async Task GetMods_SanitizesAbsoluteLocalPathInResponse()
+    {
+        var modService = Substitute.For<IModService>();
+        modService.GetAllModsAsync(Arg.Any<CancellationToken>()).Returns([
+            new SteamMod
+            {
+                Id = 1,
+                WorkshopId = EnhancedMovementWorkshopId,
+                Name = "ACE",
+                LocalPath = "C:\\Users\\secret\\mods\\@ace",
+                Status = ModStatus.Installed
+            }
+        ]);
+
+        await using var app = await CreateApiAppAsync(modService: modService);
+
+        var response = await app.Client.GetAsync("/api/mods/");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object?>>>();
+        Assert.NotNull(json);
+        Assert.Single(json!);
+
+        var localPath = json[0]["localPath"]?.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(localPath));
+        Assert.Equal("@ace", localPath);
+    }
+
+    [Fact]
+    public async Task GetServers_SanitizesAbsoluteInstallPathInResponse()
+    {
+        var serverService = Substitute.For<IServerInstanceService>();
+        serverService.GetAllInstancesAsync(Arg.Any<CancellationToken>()).Returns([
+            new ServerInstance
+            {
+                Id = 9,
+                Name = "Alpha",
+                InstallPath = "D:\\games\\arma\\servers\\alpha",
+                Mods = [],
+                HeadlessClients = []
+            }
+        ]);
+
+        await using var app = await CreateApiAppAsync(serverService: serverService);
+
+        var response = await app.Client.GetAsync("/api/servers/");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object?>>>();
+        Assert.NotNull(json);
+        Assert.Single(json!);
+
+        var installPath = json[0]["installPath"]?.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(installPath));
+        Assert.Equal("alpha", installPath);
+    }
+
+    [Fact]
+    public async Task GetSettings_SanitizesConfiguredDirectoriesInResponse()
+    {
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync(Arg.Any<CancellationToken>()).Returns(new KastSettings
+        {
+            ModsDirectory = "C:\\Users\\secret\\mods",
+            ServersDirectory = "D:\\private\\servers"
+        });
+
+        await using var app = await CreateApiAppAsync(settingsService: settingsService);
+
+        var response = await app.Client.GetAsync("/api/settings/");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
+        Assert.NotNull(json);
+
+        Assert.Equal("mods", json!["modsDirectory"]?.ToString());
+        Assert.Equal("servers", json["serversDirectory"]?.ToString());
+    }
+
+    [Fact]
     public async Task DownloadMod_WhenMissing_ReturnsNotFound()
     {
         var modService = Substitute.For<IModService>();
@@ -219,6 +299,7 @@ public class KastApiModsEndpointsTests
 
     private static async Task<ApiAppContext> CreateApiAppAsync(
         IModService? modService = null,
+        IServerInstanceService? serverService = null,
         IContentOrchestrator? orchestrator = null,
         ISettingsService? settingsService = null,
         IFileSystemService? fileSystemService = null,
@@ -232,7 +313,7 @@ public class KastApiModsEndpointsTests
         builder.WebHost.UseTestServer();
 
         builder.Services.AddSingleton(modService ?? Substitute.For<IModService>());
-        builder.Services.AddSingleton(Substitute.For<IServerInstanceService>());
+        builder.Services.AddSingleton(serverService ?? Substitute.For<IServerInstanceService>());
         builder.Services.AddSingleton(Substitute.For<IMonitoringService>());
         builder.Services.AddSingleton(Substitute.For<IApiKeyService>());
         builder.Services.AddSingleton(orchestrator ?? Substitute.For<IContentOrchestrator>());
