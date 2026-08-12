@@ -21,7 +21,7 @@ var contentRoot = builder.Environment.ContentRootPath;
 if (builder.Environment.IsProduction())
 {
     // Docker persists this path in kast-data so protected browser values survive container recreation.
-    var dataProtectionKeysDirectory = Path.Combine(contentRoot, "data", "keys");
+    var dataProtectionKeysDirectory = Path.Join(contentRoot, "data", "keys");
     Directory.CreateDirectory(dataProtectionKeysDirectory);
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysDirectory));

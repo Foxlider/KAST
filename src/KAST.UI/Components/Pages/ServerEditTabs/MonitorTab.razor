@@ -157,11 +157,21 @@
         await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
     }
 
-    // Docker server-side rendering uses Kestrel directly; standalone deployments retain the public URL.
-    private Uri GetMonitoringHubUrl() =>
-        Configuration["Kast:InternalBaseUrl"] is { Length: > 0 } internalBaseUrl
-            ? new Uri(new Uri(internalBaseUrl, UriKind.Absolute), "/hubs/monitoring")
-            : Nav.ToAbsoluteUri("/hubs/monitoring");
+    // Preserve any app path base (e.g. /kast) when targeting the monitoring hub.
+    private Uri GetMonitoringHubUrl()
+    {
+        if (Uri.TryCreate(Configuration["Kast:InternalBaseUrl"], UriKind.Absolute, out var internalBaseUri))
+            return AppendRelativePath(internalBaseUri, "hubs/monitoring");
+
+        return AppendRelativePath(new Uri(Nav.BaseUri, UriKind.Absolute), "hubs/monitoring");
+    }
+
+    private static Uri AppendRelativePath(Uri baseUri, string relativePath)
+    {
+        var builder = new UriBuilder(baseUri);
+        if (!builder.Path.EndsWith('/')) builder.Path += "/";
+        return new Uri(builder.Uri, relativePath);
+    }
 
     private void ClearConsole()
     {

@@ -112,8 +112,10 @@ services:
   kast:
     image: ghcr.io/foxlider/kast:latest
     ports:
-      - "5000:5000"                # KAST Web UI and API
-      - "2302-2322:2302-2322/udp"  # Arma 3 server ports
+      - "5000:5000"                # KAST Web UI + API (TCP)
+      - "2302-2322:2302-2322/udp"  # Arma instance UDP blocks (game + Steam + BattlEye traffic)
+      # Optional: BattlEye RCon (UDP). Use a dedicated port configured in BEServer_x64.cfg.
+      # - "23150:23150/udp"
     volumes:
       - kast-data:/app/data
       - kast-mods:/app/mods
@@ -134,30 +136,34 @@ docker compose up -d
 
 #### **Arma 3 ports**
 
-- Arma 3 server traffic is UDP. Do not add a matching TCP range.
-- Allow `2302-2322/udp` through the Docker host firewall. For access from the internet, forward the same UDP range from the router or NAT gateway to the Docker host.
-- To use another range, update both sides of the mapping and configure the server instances to use ports in that range, for example `2402-2422:2402-2422/udp`.
+- Use UDP for Arma ports.
+- Publish one UDP range for game instances, for example `2302-2322/udp`.
+- Each server instance uses 5 consecutive UDP ports.
+- BattlEye RCon also uses UDP, but on its own `RConPort` from `BEServer_x64.cfg`.
+- `RConPort` must be different from the game instance ports.
 
-Each Arma 3 instance reserves a block of five consecutive UDP ports, from its base game port `n` through `n+4`:
+Per-instance UDP block (base port `n`):
 
-| Port | Purpose |
+| Port | Used for |
 | --- | --- |
-| `n` | Game traffic and BattlEye RCon |
+| `n` | Game traffic |
 | `n+1` | Steam query |
 | `n+2` | Steam traffic |
 | `n+3` | Voice over network (VoN) |
 | `n+4` | BattlEye traffic |
 
-The number of instances a published range can hold is `floor((last port - first port + 1) / 5)`. The default `2302-2322` range contains 21 ports, so it supports four non-overlapping server blocks with one port left unused:
+Example with default range `2302-2322/udp`:
 
-| Server | Base port | Reserved UDP block |
+| Server | Base port | Reserved UDP ports |
 | --- | --- | --- |
 | 1 | `2302` | `2302-2306` |
 | 2 | `2307` | `2307-2311` |
 | 3 | `2312` | `2312-2316` |
 | 4 | `2317` | `2317-2321` |
 
-Port `2322` is spare. KAST does not currently allocate or validate these blocks automatically, so assign a unique base port to every instance and check that its complete `n` through `n+4` block is published.
+`2322` is unused in this example.
+
+If you need remote RCon, publish the dedicated RCon UDP port separately (example: `23150:23150/udp`) and set the same value in `BEServer_x64.cfg`.
 
 Port `5000/tcp` also serves KAST's management API. Do not expose it directly to the public internet; restrict it with a firewall, VPN, or authenticated reverse proxy.
 
