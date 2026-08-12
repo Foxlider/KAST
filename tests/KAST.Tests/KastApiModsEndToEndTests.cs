@@ -220,8 +220,29 @@ public class KastApiModsEndToEndTests
 
     private sealed class NoopAppEventBroadcaster : IAppEventBroadcaster
     {
-        public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
-        public event Action<ModStatusChangedEvent>? OnModStatusChanged;
+        public event Action<ModDownloadProgressEvent>? OnModDownloadProgress
+        {
+            add
+            {
+                // Test double does not publish download progress notifications.
+            }
+            remove
+            {
+                // Test double does not publish download progress notifications.
+            }
+        }
+
+        public event Action<ModStatusChangedEvent>? OnModStatusChanged
+        {
+            add
+            {
+                // Test double does not publish status change notifications.
+            }
+            remove
+            {
+                // Test double does not publish status change notifications.
+            }
+        }
         public Task BroadcastDownloadProgressAsync(ModDownloadProgressEvent progress) => Task.CompletedTask;
         public Task BroadcastModStatusChangedAsync(ModStatusChangedEvent status) => Task.CompletedTask;
         public Task BroadcastServerStatusChangedAsync(ServerStatusChangedEvent status) => Task.CompletedTask;
