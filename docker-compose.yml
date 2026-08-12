@@ -20,6 +20,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Default=Data Source=/app/data/kast.db
+      # Server-rendered components must call Kestrel directly; port 80 is not Nginx inside this container.
+      - Kast__InternalBaseUrl=http://localhost:5000
       - Telemetry__Enabled=true
       - Telemetry__OtlpEndpoint=http://jaeger:4317
     depends_on:

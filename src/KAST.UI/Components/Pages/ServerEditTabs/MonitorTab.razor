@@ -3,6 +3,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IConfiguration Configuration
 @inject KAST.UI.Services.ServerConsoleStore ConsoleStore
 
 <MudGrid Class="mt-3" Spacing="3">
@@ -111,7 +112,7 @@
     private async Task InitializeSignalR()
     {
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(GetMonitoringHubUrl())
             .WithAutomaticReconnect()
             .Build();
 
@@ -155,6 +156,12 @@
         await _hubConnection.StartAsync();
         await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
     }
+
+    // Docker server-side rendering uses Kestrel directly; standalone deployments retain the public URL.
+    private Uri GetMonitoringHubUrl() =>
+        Configuration["Kast:InternalBaseUrl"] is { Length: > 0 } internalBaseUrl
+            ? new Uri(new Uri(internalBaseUrl, UriKind.Absolute), "/hubs/monitoring")
+            : Nav.ToAbsoluteUri("/hubs/monitoring");
 
     private void ClearConsole()
     {

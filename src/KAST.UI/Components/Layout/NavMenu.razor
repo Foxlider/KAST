@@ -2,6 +2,7 @@
 @using KAST.Core.Events
 @inject IServerInstanceService ServerService
 @inject NavigationManager Nav
+@inject IConfiguration Configuration
 @implements IAsyncDisposable
 
 <MudNavMenu>
@@ -36,7 +37,7 @@
         Nav.LocationChanged += OnLocationChanged;
 
         _hub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(GetMonitoringHubUrl())
             .WithAutomaticReconnect()
             .Build();
 
@@ -57,6 +58,12 @@
 
     private async Task RefreshAsync()
         => _servers = await ServerService.GetAllInstancesAsync();
+
+    // Docker server-side rendering uses Kestrel directly; standalone deployments retain the public URL.
+    private Uri GetMonitoringHubUrl() =>
+        Configuration["Kast:InternalBaseUrl"] is { Length: > 0 } internalBaseUrl
+            ? new Uri(new Uri(internalBaseUrl, UriKind.Absolute), "/hubs/monitoring")
+            : Nav.ToAbsoluteUri("/hubs/monitoring");
 
     public async ValueTask DisposeAsync()
     {
