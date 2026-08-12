@@ -11,7 +11,8 @@ namespace KAST.UI.Services;
 public class SignalREventBroadcaster(
     IHubContext<DownloadHub> downloadHub,
     IHubContext<MonitoringHub> monitoringHub,
-    ServerConsoleStore consoleStore) : IAppEventBroadcaster
+    ServerConsoleStore consoleStore,
+    IOutputSanitizer sanitizer) : IAppEventBroadcaster
 {
     public event Action<ModDownloadProgressEvent>? OnModDownloadProgress;
     public event Action<ModStatusChangedEvent>? OnModStatusChanged;
@@ -39,7 +40,8 @@ public class SignalREventBroadcaster(
 
     public Task BroadcastLogEntryAsync(LogEntryEvent logEntry)
     {
-        consoleStore.Add(logEntry);
-        return MonitoringHub.BroadcastLogEntry(monitoringHub, logEntry);
+        var safeLogEntry = logEntry with { Line = sanitizer.Sanitize(logEntry.Line) };
+        consoleStore.Add(safeLogEntry);
+        return MonitoringHub.BroadcastLogEntry(monitoringHub, safeLogEntry);
     }
 }

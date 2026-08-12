@@ -2,6 +2,7 @@ using KAST.Core.Interfaces;
 using KAST.Infrastructure;
 using KAST.Infrastructure.Data;
 using KAST.Infrastructure.Steam;
+using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Telemetry;
 using KAST.UI.Api;
 using KAST.UI.Components;
@@ -15,11 +16,21 @@ using OpenTelemetry.Trace;
 using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
+var contentRoot = builder.Environment.ContentRootPath;
+var outputSanitizer = new OutputSanitizer(
+    new OutputSanitizer.VirtualPathRoot(contentRoot, "KAST"),
+    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(contentRoot, builder.Configuration["Kast:ModsDirectory"] ?? "./mods"), "mods"),
+    new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(contentRoot, builder.Configuration["Kast:ServersDirectory"] ?? "./servers"), "server"));
+builder.Services.AddSingleton<IOutputSanitizer>(outputSanitizer);
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "KAST Panel";
+});
 
 // ── In-memory log capture (UI console) ──────────────────────────────────────
 var kastLogStore = new KastLogStore();
 builder.Services.AddSingleton(kastLogStore);
-builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore));
+builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore, outputSanitizer));
 
 // ── Health checks ────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
@@ -69,7 +80,7 @@ if (telemetry.GetValue("Enabled", true))
     var serviceName  = telemetry["ServiceName"]  ?? KastActivitySources.ServiceName;
 
     // Attach ILogger calls as span events so they appear inside traces in Jaeger
-    builder.Logging.AddProvider(new ActivityEventLoggerProvider());
+    builder.Logging.AddProvider(new ActivityEventLoggerProvider(outputSanitizer));
 
     builder.Services.AddOpenTelemetry()
         .WithTracing(tracing => tracing
@@ -193,4 +204,7 @@ _ = Task.Run(async () =>
 });
 
 app.Run();
+
+static string ResolveConfiguredPath(string contentRoot, string path) =>
+    Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(contentRoot, path));
 

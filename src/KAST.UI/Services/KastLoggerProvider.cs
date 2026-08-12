@@ -1,10 +1,12 @@
+using KAST.Core.Interfaces;
+
 namespace KAST.UI.Services;
 
 [ProviderAlias("KastInMemory")]
-public sealed class KastLoggerProvider(KastLogStore store) : ILoggerProvider
+public sealed class KastLoggerProvider(KastLogStore store, IOutputSanitizer sanitizer) : ILoggerProvider
 {
     public ILogger CreateLogger(string categoryName) =>
-        new KastLogger(store, categoryName);
+        new KastLogger(store, sanitizer, categoryName);
 
     public void Dispose()
     {
@@ -12,7 +14,7 @@ public sealed class KastLoggerProvider(KastLogStore store) : ILoggerProvider
     }
 }
 
-internal sealed class KastLogger(KastLogStore store, string category) : ILogger
+internal sealed class KastLogger(KastLogStore store, IOutputSanitizer sanitizer, string category) : ILogger
 {
     public bool IsEnabled(LogLevel logLevel)
     {
@@ -32,9 +34,9 @@ internal sealed class KastLogger(KastLogStore store, string category) : ILogger
         if (!IsEnabled(logLevel)) 
             return;
 
-        var message = formatter(state, exception);
-        if (exception != null) 
-            message += $"\n{exception}";
+        var message = sanitizer.Sanitize(formatter(state, exception));
+        if (exception != null)
+            message += $"\n{sanitizer.SanitizeException(exception)}";
 
         store.Add(new AppLogEntry(DateTime.Now, logLevel, category, message));
     }
