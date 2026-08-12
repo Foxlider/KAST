@@ -19,7 +19,8 @@ RUN dotnet restore KAST.slnx
 # Copy source and publish
 COPY src/ src/
 WORKDIR /src/src/KAST.UI
-RUN dotnet publish -c Release -o /app/publish --no-restore /p:MinVerVersionOverride=$APP_VERSION
+RUN dotnet publish -c Release -o /app/publish --no-restore /p:MinVerVersionOverride=$APP_VERSION && \
+    test -f /app/publish/wwwroot/_framework/blazor.web.js
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

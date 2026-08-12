@@ -105,17 +105,61 @@ The nightly tag always points to the latest development commit. Download URLs ar
 
 ### **Docker (Compose)**
 
+Create a `docker-compose.yml` file:
+
 ```yaml
 services:
   kast:
     image: ghcr.io/foxlider/kast:latest
     ports:
-      - "8080:8080"
+      - "5000:5000"                # KAST Web UI and API
+      - "2302-2322:2302-2322/udp"  # Arma 3 server ports
     volumes:
       - kast-data:/app/data
+      - kast-mods:/app/mods
+      - kast-servers:/app/servers
+    restart: unless-stopped
+
 volumes:
   kast-data:
+  kast-mods:
+  kast-servers:
 ```
+
+Start KAST and open `http://localhost:5000`:
+
+```bash
+docker compose up -d
+```
+
+#### **Arma 3 ports**
+
+- Arma 3 server traffic is UDP. Do not add a matching TCP range.
+- Allow `2302-2322/udp` through the Docker host firewall. For access from the internet, forward the same UDP range from the router or NAT gateway to the Docker host.
+- To use another range, update both sides of the mapping and configure the server instances to use ports in that range, for example `2402-2422:2402-2422/udp`.
+
+Each Arma 3 instance reserves a block of five consecutive UDP ports, from its base game port `n` through `n+4`:
+
+| Port | Purpose |
+| --- | --- |
+| `n` | Game traffic and BattlEye RCon |
+| `n+1` | Steam query |
+| `n+2` | Steam traffic |
+| `n+3` | Voice over network (VoN) |
+| `n+4` | BattlEye traffic |
+
+The number of instances a published range can hold is `floor((last port - first port + 1) / 5)`. The default `2302-2322` range contains 21 ports, so it supports four non-overlapping server blocks with one port left unused:
+
+| Server | Base port | Reserved UDP block |
+| --- | --- | --- |
+| 1 | `2302` | `2302-2306` |
+| 2 | `2307` | `2307-2311` |
+| 3 | `2312` | `2312-2316` |
+| 4 | `2317` | `2317-2321` |
+
+Port `2322` is spare. KAST does not currently allocate or validate these blocks automatically, so assign a unique base port to every instance and check that its complete `n` through `n+4` block is published.
+
+Port `5000/tcp` also serves KAST's management API. Do not expose it directly to the public internet; restrict it with a firewall, VPN, or authenticated reverse proxy.
 
 ## **VERSIONING**
 
