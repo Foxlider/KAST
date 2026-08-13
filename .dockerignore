@@ -1,2 +1,11 @@
 **/bin
 **/obj
+**/.KAST_DATA
+
+.git
+.venv
+.vs
+graphify-out
+src/graphify-out
+TestResults
+**/artifacts

@@ -2,6 +2,7 @@
 @using KAST.Core.Events
 @inject IServerInstanceService ServerService
 @inject NavigationManager Nav
+@inject IConfiguration Configuration
 @implements IAsyncDisposable
 
 <MudNavMenu>
@@ -36,7 +37,7 @@
         Nav.LocationChanged += OnLocationChanged;
 
         _hub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(GetMonitoringHubUrl())
             .WithAutomaticReconnect()
             .Build();
 
@@ -57,6 +58,22 @@
 
     private async Task RefreshAsync()
         => _servers = await ServerService.GetAllInstancesAsync();
+
+    // Preserve any app path base (e.g. /kast) when targeting the monitoring hub.
+    private Uri GetMonitoringHubUrl()
+    {
+        if (Uri.TryCreate(Configuration["Kast:InternalBaseUrl"], UriKind.Absolute, out var internalBaseUri))
+            return AppendRelativePath(internalBaseUri, "hubs/monitoring");
+
+        return AppendRelativePath(new Uri(Nav.BaseUri, UriKind.Absolute), "hubs/monitoring");
+    }
+
+    private static Uri AppendRelativePath(Uri baseUri, string relativePath)
+    {
+        var builder = new UriBuilder(baseUri);
+        if (!builder.Path.EndsWith('/')) builder.Path += "/";
+        return new Uri(builder.Uri, relativePath);
+    }
 
     public async ValueTask DisposeAsync()
     {

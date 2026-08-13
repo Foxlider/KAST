@@ -3,6 +3,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IConfiguration Configuration
 @inject KAST.UI.Services.ServerConsoleStore ConsoleStore
 
 <MudGrid Class="mt-3" Spacing="3">
@@ -111,7 +112,7 @@
     private async Task InitializeSignalR()
     {
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri("/hubs/monitoring"))
+            .WithUrl(GetMonitoringHubUrl())
             .WithAutomaticReconnect()
             .Build();
 
@@ -154,6 +155,22 @@
 
         await _hubConnection.StartAsync();
         await _hubConnection.InvokeAsync("SubscribeToInstance", Instance.Id);
+    }
+
+    // Preserve any app path base (e.g. /kast) when targeting the monitoring hub.
+    private Uri GetMonitoringHubUrl()
+    {
+        if (Uri.TryCreate(Configuration["Kast:InternalBaseUrl"], UriKind.Absolute, out var internalBaseUri))
+            return AppendRelativePath(internalBaseUri, "hubs/monitoring");
+
+        return AppendRelativePath(new Uri(Nav.BaseUri, UriKind.Absolute), "hubs/monitoring");
+    }
+
+    private static Uri AppendRelativePath(Uri baseUri, string relativePath)
+    {
+        var builder = new UriBuilder(baseUri);
+        if (!builder.Path.EndsWith('/')) builder.Path += "/";
+        return new Uri(builder.Uri, relativePath);
     }
 
     private void ClearConsole()

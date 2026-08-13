@@ -8,6 +8,7 @@ using KAST.UI.Api;
 using KAST.UI.Components;
 using KAST.UI.Hubs;
 using KAST.UI.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
@@ -17,6 +18,15 @@ using ModStatus = KAST.Core.Enums.ModStatus;
 
 var builder = WebApplication.CreateBuilder(args);
 var contentRoot = builder.Environment.ContentRootPath;
+if (builder.Environment.IsProduction())
+{
+    // Docker persists this path in kast-data so protected browser values survive container recreation.
+    var dataProtectionKeysDirectory = Path.Join(contentRoot, "data", "keys");
+    Directory.CreateDirectory(dataProtectionKeysDirectory);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysDirectory));
+}
+
 var outputSanitizer = new OutputSanitizer(
     new OutputSanitizer.VirtualPathRoot(contentRoot, "KAST"),
     new OutputSanitizer.VirtualPathRoot(ResolveConfiguredPath(contentRoot, builder.Configuration["Kast:ModsDirectory"] ?? "./mods"), "mods"),

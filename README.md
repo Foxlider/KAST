@@ -105,17 +105,67 @@ The nightly tag always points to the latest development commit. Download URLs ar
 
 ### **Docker (Compose)**
 
+Create a `docker-compose.yml` file:
+
 ```yaml
 services:
   kast:
     image: ghcr.io/foxlider/kast:latest
     ports:
-      - "8080:8080"
+      - "5000:5000"                # KAST Web UI + API (TCP)
+      - "2302-2322:2302-2322/udp"  # Arma instance UDP blocks (game + Steam + BattlEye traffic)
+      # Optional: BattlEye RCon (UDP). Use a dedicated port configured in BEServer_x64.cfg.
+      # - "23150:23150/udp"
     volumes:
       - kast-data:/app/data
+      - kast-mods:/app/mods
+      - kast-servers:/app/servers
+    restart: unless-stopped
+
 volumes:
   kast-data:
+  kast-mods:
+  kast-servers:
 ```
+
+Start KAST and open `http://localhost:5000`:
+
+```bash
+docker compose up -d
+```
+
+#### **Arma 3 ports**
+
+- Use UDP for Arma ports.
+- Publish one UDP range for game instances, for example `2302-2322/udp`.
+- Each server instance uses 5 consecutive UDP ports.
+- BattlEye RCon also uses UDP, but on its own `RConPort` from `BEServer_x64.cfg`.
+- `RConPort` must be different from the game instance ports.
+
+Per-instance UDP block (base port `n`):
+
+| Port | Used for |
+| --- | --- |
+| `n` | Game traffic |
+| `n+1` | Steam query |
+| `n+2` | Steam traffic |
+| `n+3` | Voice over network (VoN) |
+| `n+4` | BattlEye traffic |
+
+Example with default range `2302-2322/udp`:
+
+| Server | Base port | Reserved UDP ports |
+| --- | --- | --- |
+| 1 | `2302` | `2302-2306` |
+| 2 | `2307` | `2307-2311` |
+| 3 | `2312` | `2312-2316` |
+| 4 | `2317` | `2317-2321` |
+
+`2322` is unused in this example.
+
+If you need remote RCon, publish the dedicated RCon UDP port separately (example: `23150:23150/udp`) and set the same value in `BEServer_x64.cfg`.
+
+Port `5000/tcp` also serves KAST's management API. Do not expose it directly to the public internet; restrict it with a firewall, VPN, or authenticated reverse proxy.
 
 ## **VERSIONING**
 

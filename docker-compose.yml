@@ -4,8 +4,8 @@ services:
     container_name: kast
     ports:
       - "5000:5000"                  # Web UI / API
-      - "2302-2322:2302-2322/udp"    # Arma 3 game + Steam query ports
-      - "2302-2322:2302-2322/tcp"    # BattlEye RCON (TCP)
+      # Arma 3 instance port blocks are UDP-only. Keep configured ports within this range.
+      - "2302-2322:2302-2322/udp"
     volumes:
       - kast-data:/app/data
       - kast-mods:/app/mods
@@ -20,6 +20,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Default=Data Source=/app/data/kast.db
+      # Server-rendered components must call Kestrel directly; port 80 is not Nginx inside this container.
+      - Kast__InternalBaseUrl=http://localhost:5000
       - Telemetry__Enabled=true
       - Telemetry__OtlpEndpoint=http://jaeger:4317
     depends_on:
