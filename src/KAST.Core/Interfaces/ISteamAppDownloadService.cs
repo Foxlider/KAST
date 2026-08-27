@@ -6,6 +6,6 @@ public interface ISteamAppDownloadService
 {
     Task<SteamAppDownloadResult> DownloadAppAsync(
         SteamAppDownloadRequest request,
-        IProgress<SteamDownloadProgress>? progress = null,
+        IProgress<SteamDownloadProgress>? operationProgress = null,
         CancellationToken ct = default);
 }

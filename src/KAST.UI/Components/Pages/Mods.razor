@@ -1114,7 +1114,7 @@ else
         _isUpdatingAll = true;
         _isCheckingUpdates = true;
         _bulkUpdateCts?.Dispose();
-        var bulkUpdateCts = new CancellationTokenSource();
+        using var bulkUpdateCts = new CancellationTokenSource();
         _bulkUpdateCts = bulkUpdateCts;
         var pendingMods = new List<SteamMod>();
         StateHasChanged();
@@ -1162,7 +1162,6 @@ else
             }
             if (_bulkUpdateCts == bulkUpdateCts)
                 _bulkUpdateCts = null;
-            bulkUpdateCts.Dispose();
             _isUpdatingAll = false;
             _isCheckingUpdates = false;
         }

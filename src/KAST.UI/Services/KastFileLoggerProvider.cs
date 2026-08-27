@@ -47,16 +47,28 @@ internal sealed class KastFileLogger(
                 message += $"{Environment.NewLine}{sanitizer.Sanitize(exception.ToString())}";
 
             var entry = $"{timestamp:O} [{logLevel}] {category}: {message}{Environment.NewLine}";
-            var logPath = Path.Combine(logDirectory, $"kast-{timestamp:yyyy-MM-dd}.log");
+            var logPath = Path.Join(logDirectory, $"kast-{timestamp:yyyy-MM-dd}.log");
             lock (sync)
             {
                 Directory.CreateDirectory(logDirectory);
                 File.AppendAllText(logPath, entry);
             }
         }
-        catch
+        catch (IOException)
         {
             // Logging must not interfere with the application when disk I/O fails.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Logging must not interfere with the application when file access is denied.
+        }
+        catch (System.Security.SecurityException)
+        {
+            // Logging must not interfere with the application when security restrictions apply.
+        }
+        catch (NotSupportedException)
+        {
+            // Logging must not interfere with the application when paths are invalid.
         }
     }
 }

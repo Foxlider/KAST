@@ -6,7 +6,7 @@ namespace KAST.Tests;
 
 public sealed class KastFileLoggerProviderTests : IDisposable
 {
-    private readonly string _logDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+    private readonly string _logDirectory = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString());
 
     [Fact]
     public void Log_InformationWritesSanitizedEntry_AndDebugIsExcluded()

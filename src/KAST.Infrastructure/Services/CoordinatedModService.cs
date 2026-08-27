@@ -69,7 +69,11 @@ public sealed class CoordinatedModService(
             {
                 logger.LogInformation(ex, "Bulk update cancelled for mod {Id} ({Name})", mod.Id, mod.Name);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
+            {
+                logger.LogError(ex, "Bulk update failed for mod {Id} ({Name})", mod.Id, mod.Name);
+            }
+            catch (IOException ex)
             {
                 logger.LogError(ex, "Bulk update failed for mod {Id} ({Name})", mod.Id, mod.Name);
             }

@@ -227,9 +227,24 @@ internal sealed class CdnServerPool : IDisposable
                 CellId,
                 _cts.Token);
         }
-        catch
+        catch (SteamKitWebRequestException)
         {
-            // Fallback for unavailable directory service or when no cell ID is known.
+            // Fallback for unavailable directory service.
+            return await _steamContent.GetServersForSteamPipe();
+        }
+        catch (HttpRequestException)
+        {
+            // Fallback for network/transport failures.
+            return await _steamContent.GetServersForSteamPipe();
+        }
+        catch (TaskCanceledException) when (!_cts.IsCancellationRequested)
+        {
+            // Fallback for transient timeout/cancellation from upstream request handling.
+            return await _steamContent.GetServersForSteamPipe();
+        }
+        catch (InvalidOperationException)
+        {
+            // Fallback for invalid directory lookup state (for example missing/unknown cell context).
             return await _steamContent.GetServersForSteamPipe();
         }
     }
