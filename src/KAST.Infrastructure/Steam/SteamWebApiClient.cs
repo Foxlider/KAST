@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using KAST.Core.Interfaces;
+using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 
@@ -9,8 +10,6 @@ namespace KAST.Infrastructure.Steam;
 
 public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient> logger, IOutputSanitizer sanitizer)
 {
-    private const string BaseUrl = "https://api.steampowered.com";
-
     public async Task<WorkshopItemInfo?> GetPublishedFileDetailsAsync(long workshopId, CancellationToken ct = default)
     {
         var results = await GetPublishedFileDetailsBatchAsync([workshopId], ct);
@@ -43,7 +42,7 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         logger.LogDebug("Fetching published file details for {Count} items", workshopIds.Length);
 
         var response = await httpClient.PostAsync(
-            $"{BaseUrl}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+            "ISteamRemoteStorage/GetPublishedFileDetails/v1/",
             content, ct);
         response.EnsureSuccessStatusCode();
 
@@ -90,7 +89,7 @@ public class SteamWebApiClient(HttpClient httpClient, ILogger<SteamWebApiClient>
         try
         {
             var response = await httpClient.GetFromJsonAsync<CdnApiResponse>(
-                $"{BaseUrl}/IContentServerDirectoryService/GetServersForSteamPipe/v1/?cell_id=0&max_servers=20",
+                "IContentServerDirectoryService/GetServersForSteamPipe/v1/?cell_id=0&max_servers=20",
                 ct);
 
             var server = response?.Response?.Servers?

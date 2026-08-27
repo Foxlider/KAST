@@ -9,7 +9,11 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Downloads a Steam Workshop mod via SteamKit2.
 /// </summary>
-public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IOutputSanitizer sanitizer) : IContentInstaller
+public class SteamModInstaller(
+    ISteamAuthenticationService steamAuthentication,
+    ISteamWorkshopDownloadService workshopDownloads,
+    IFileSystemService fs,
+    IOutputSanitizer sanitizer) : IContentInstaller
 {
     public ContentType Type => ContentType.SteamMod;
 
@@ -30,16 +34,16 @@ public class SteamModInstaller(ISteamService steam, IFileSystemService fs, IOutp
         state.BeginStep(0);
         state.AddLog($"Downloading Workshop item {request.WorkshopId} to {sanitizer.ToDisplayPath(request.DestinationPath)}");
 
-        if (!steam.IsConnected)
+        if (!steamAuthentication.IsConnected)
         {
             state.AddLog("Connecting to Steam (anonymous)...");
-            await steam.LoginAnonymousAsync(ct);
+            await steamAuthentication.LoginAnonymousAsync(ct);
         }
-        if (!steam.IsConnected)
+        if (!steamAuthentication.IsConnected)
             throw new InvalidOperationException("Failed to connect to Steam.");
 
         var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
-        var installedManifestId = await steam.DownloadWorkshopItemAsync(
+        var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
             request.WorkshopId, request.DestinationPath, progress, ct,
             Math.Max(DownloadConcurrency.MinimumSteamWorkers, request.MaxParallelDownloads));
         state.InstalledManifestId = installedManifestId;

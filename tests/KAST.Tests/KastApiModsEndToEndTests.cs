@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace KAST.Tests;
 
@@ -174,8 +175,35 @@ public class KastApiModsEndToEndTests
                 ["Kast:Arma3AppId"] = "233780"
             });
 
-            builder.Services.AddKastInfrastructure($"Data Source={dbPath}");
-            builder.Services.AddSingleton<ISteamService>(new FakeSteamService());
+            var steamWebApiBaseAddress = new UriBuilder
+            {
+                Scheme = Uri.UriSchemeHttps,
+                Host = "api.steampowered.com"
+            }.Uri;
+            var directXRedistUri = new UriBuilder
+            {
+                Scheme = Uri.UriSchemeHttps,
+                Host = "download.microsoft.com",
+                Path = "download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe"
+            }.Uri;
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Content:DirectXRedistUri"] = directXRedistUri.ToString()
+            });
+            builder.Services.AddKastInfrastructure($"Data Source={dbPath}", steamWebApiBaseAddress);
+            var workshopCatalog = Substitute.For<ISteamWorkshopCatalogService>();
+            workshopCatalog.GetWorkshopItemInfoAsync(Arg.Any<long>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult<WorkshopItemInfo?>(new WorkshopItemInfo
+                {
+                    WorkshopId = call.Arg<long>(),
+                    Name = EnhancedMovementModName,
+                    Description = "Fake workshop metadata for integration tests",
+                    Author = "test",
+                    SizeBytes = 1024,
+                    LastUpdated = DateTime.UtcNow
+                }));
+            builder.Services.AddSingleton(workshopCatalog);
+            builder.Services.AddSingleton(Substitute.For<ISteamWorkshopDownloadService>());
             builder.Services.AddSingleton<IAppEventBroadcaster, NoopAppEventBroadcaster>();
 
             var app = builder.Build();
@@ -251,57 +279,4 @@ public class KastApiModsEndToEndTests
         public Task BroadcastLogEntryAsync(LogEntryEvent logEntry) => Task.CompletedTask;
     }
 
-    private sealed class FakeSteamService : ISteamService
-    {
-        public bool IsAuthenticated => false;
-        public bool IsConnected => false;
-        public string? CurrentUsername => null;
-        public SteamUserProfile? Profile => null;
-        public event Action? AuthStateChanged
-        {
-            add
-            {
-                // Test double does not publish auth-state changes.
-            }
-            remove
-            {
-                // Test double does not publish auth-state changes.
-            }
-        }
-
-        public Task<bool> LoginAnonymousAsync(CancellationToken ct = default) => Task.FromResult(false);
-        public Task<bool> LoginWithTokenAsync(string username, string refreshToken, CancellationToken ct = default) => Task.FromResult(false);
-        public Task<SteamQrAuthSession> BeginQrLoginAsync(CancellationToken ct = default) => Task.FromResult(new SteamQrAuthSession());
-        public Task<bool> PollQrLoginAsync(SteamQrAuthSession session, CancellationToken ct = default) => Task.FromResult(false);
-        public Task<SteamCredentialAuthSession> BeginCredentialLoginAsync(string username, string password, CancellationToken ct = default) => Task.FromResult(new SteamCredentialAuthSession());
-        public Task<bool> SubmitCredentialGuardCodeAsync(SteamCredentialAuthSession session, string code, CancellationToken ct = default) => Task.FromResult(false);
-        public Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default) => Task.FromResult(false);
-        public Task LogoutAsync() => Task.CompletedTask;
-
-        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null,
-            CancellationToken ct = default, int maxParallelDownloads = 8)
-            => throw new InvalidOperationException("Downloads are intentionally disabled in end-to-end API tests.");
-
-        public Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null,
-            bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 8,
-            CancellationToken ct = default)
-            => throw new InvalidOperationException("Server downloads are intentionally disabled in end-to-end API tests.");
-
-        public Task<WorkshopItemInfo?> GetWorkshopItemInfoAsync(long workshopId, CancellationToken ct = default)
-            => Task.FromResult<WorkshopItemInfo?>(new WorkshopItemInfo
-            {
-                WorkshopId = workshopId,
-                Name = EnhancedMovementModName,
-                Description = "Fake workshop metadata for integration tests",
-                Author = "test",
-                SizeBytes = 1024,
-                LastUpdated = DateTime.UtcNow
-            });
-
-        public Task<IReadOnlyList<WorkshopItemInfo>> SearchWorkshopAsync(string query, int count = 20, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<WorkshopItemInfo>>(Array.Empty<WorkshopItemInfo>());
-
-        public Task<IReadOnlyList<BenchmarkResult>> BenchmarkDownloadAsync(IProgress<string>? log = null, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<BenchmarkResult>>(Array.Empty<BenchmarkResult>());
-    }
 }

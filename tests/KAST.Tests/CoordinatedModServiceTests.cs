@@ -114,12 +114,13 @@ public class CoordinatedModServiceTests
     }
 
     private static ServiceProvider CreateProvider(
-        out ISteamService steam,
+        out ISteamWorkshopDownloadService steam,
         out IModDownloadCancellationRegistry registry,
         int parallelDownloads = 2,
         int bulkModDownloadConcurrency = 2)
     {
-        steam = Substitute.For<ISteamService>();
+        steam = Substitute.For<ISteamWorkshopDownloadService>();
+        var workshopCatalog = Substitute.For<ISteamWorkshopCatalogService>();
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(new KastSettings
@@ -137,6 +138,7 @@ public class CoordinatedModServiceTests
         services.AddDbContext<KastDbContext>(options =>
             options.UseInMemoryDatabase(databaseName, databaseRoot));
         services.AddSingleton(steam);
+        services.AddSingleton(workshopCatalog);
         services.AddSingleton(settings);
         services.AddSingleton(broadcaster);
         services.AddSingleton<IOutputSanitizer, OutputSanitizer>();
@@ -160,7 +162,7 @@ public class CoordinatedModServiceTests
     }
 
     private static void ConfigureBlockingDownload(
-        ISteamService steam,
+        ISteamWorkshopDownloadService steam,
         long workshopId,
         TaskCompletionSource started,
         TaskCompletionSource cancelled)

@@ -12,7 +12,8 @@ using System.Reflection;
 
 namespace KAST.Infrastructure.Steam;
 
-public class SteamClientService : ISteamService, IDisposable
+public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCatalogService,
+    ISteamWorkshopDownloadService, ISteamAppDownloadService, ISteamDownloadBenchmarkService, IDisposable
 {
     private readonly ILogger<SteamClientService> _logger;
     private readonly IOutputSanitizer _sanitizer;
@@ -694,7 +695,7 @@ public class SteamClientService : ISteamService, IDisposable
         workshopActivity?.SetTag("workshop.app_id",      appId);
 
         // 2. Get CDN server pool + depot decryption key
-        var pool = await EnsureCdnPoolAsync(ct);
+        var pool = await EnsureCdnPoolAsync();
         var depotKey = await GetDepotKeyAsync(depotId, appId);
 
         // 3-5. Get manifest request code + download manifest (automatic CDN fallback)
@@ -721,12 +722,21 @@ public class SteamClientService : ISteamService, IDisposable
         var effectiveParallelism = Math.Max(1, maxParallelDownloads);
 
         var (bytesTransferred, _, dlElapsed) = await DownloadFilesInParallelAsync(
-            files, depotId, depotKey, pool, destinationPath,
-            parentSpanContext: workshopActivity?.Context ?? Activity.Current?.Context ?? default,
-            progressBase: 0, progressTotal: totalSize,
-            progress, logProgress: null,
-            logPrefix: $"Workshop {workshopId}",
-            maxParallelWorkers: effectiveParallelism, ct);
+            new FileDownloadRequest
+            {
+                Files = files,
+                DepotId = depotId,
+                DepotKey = depotKey,
+                Pool = pool,
+                DestinationPath = destinationPath,
+                ParentSpanContext = workshopActivity?.Context ?? Activity.Current?.Context ?? default,
+                ProgressBase = 0,
+                ProgressTotal = totalSize,
+                Progress = progress,
+                LogPrefix = $"Workshop {workshopId}",
+                MaxParallelWorkers = effectiveParallelism,
+                CancellationToken = ct
+            });
 
         var totalMbDownloaded = bytesTransferred / 1_048_576.0;
         var avgMbps  = dlElapsed.TotalSeconds > 0 ? totalMbDownloaded / dlElapsed.TotalSeconds : 0;
@@ -808,12 +818,129 @@ public class SteamClientService : ISteamService, IDisposable
         return depotManifests;
     }
 
-    private async Task<(long TotalDownloaded, int Verified, int Downloaded)> DownloadDepotFilesAsync(
-        uint depotId, byte[]? depotKey, DepotManifest manifest, CdnServerPool pool,
-        string destinationPath, long totalSize, long totalDownloaded,
-        IProgress<double>? progress, IProgress<string>? logProgress, int maxParallelDownloads, CancellationToken ct)
+    private async Task<DepotVerificationResult> PrepareDepotFilesAsync(
+        uint depotId,
+        IReadOnlyList<DepotManifest.FileData> files,
+        string destinationPath,
+        IProgress<string>? logProgress,
+        CancellationToken ct)
     {
-        int maxParallelHash = Math.Max(1, Environment.ProcessorCount);
+        var depotTotalBytes = files.Sum(file => (long)file.TotalSize);
+        var depotMb = depotTotalBytes / 1_048_576.0;
+        _logger.LogInformation("Depot {DepotId}: scanning {Count} files ({Size:F0} MB)", depotId, files.Count, depotMb);
+        logProgress?.Report($"  Depot {depotId}: scanning {files.Count} files ({depotMb:F0} MB)...");
+
+        var filesToDownload = new List<DepotManifest.FileData>();
+        var filesToVerify = new List<DepotManifest.FileData>();
+
+        using (var scanActivity = KastActivitySources.Content.StartActivity(
+            "kast.steam.depot.scan", ActivityKind.Internal))
+        {
+            scanActivity?.SetTag("depot.id", depotId);
+            foreach (var file in files)
+            {
+                var filePath = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                var directory = Path.GetDirectoryName(filePath);
+                if (directory != null) Directory.CreateDirectory(directory);
+
+                if (!File.Exists(filePath) || new FileInfo(filePath).Length != (long)file.TotalSize)
+                    filesToDownload.Add(file);
+                else
+                    filesToVerify.Add(file);
+            }
+
+            scanActivity?.SetTag("scan.to_download", filesToDownload.Count);
+            scanActivity?.SetTag("scan.to_verify", filesToVerify.Count);
+        }
+
+        _logger.LogInformation("Depot {DepotId}: {ToDownload} missing/changed, {ToVerify} to hash-check",
+            depotId, filesToDownload.Count, filesToVerify.Count);
+        if (filesToDownload.Count > 0)
+            logProgress?.Report($"  {filesToDownload.Count} file(s) missing or wrong size - will download.");
+        if (filesToVerify.Count > 0)
+            logProgress?.Report($"  {filesToVerify.Count} file(s) size-matched - hash-verifying...");
+
+        if (filesToVerify.Count == 0)
+            return new DepotVerificationResult(filesToDownload, 0, 0);
+
+        var maxParallelHash = Math.Max(1, Environment.ProcessorCount);
+        using var verifyActivity = KastActivitySources.Content.StartActivity(
+            "kast.steam.depot.verify", ActivityKind.Internal);
+        verifyActivity?.SetTag("depot.id", depotId);
+        verifyActivity?.SetTag("verify.files", filesToVerify.Count);
+        verifyActivity?.SetTag("verify.threads", maxParallelHash);
+
+        var hashDone = 0;
+        var hashResults = new System.Collections.Concurrent.ConcurrentBag<(DepotManifest.FileData File, bool Match)>();
+        await Parallel.ForEachAsync(
+            filesToVerify,
+            new ParallelOptions { MaxDegreeOfParallelism = maxParallelHash, CancellationToken = ct },
+            async (file, hashCt) =>
+            {
+                if (file.FileHash is not { Length: > 0 })
+                {
+                    hashResults.Add((file, Match: true));
+                    return;
+                }
+
+                var filePath = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
+                var match = await Task.Run(() =>
+                {
+                    using var sha1 = System.Security.Cryptography.SHA1.Create();
+                    using var stream = File.OpenRead(filePath);
+                    return sha1.ComputeHash(stream).SequenceEqual(file.FileHash);
+                }, hashCt);
+
+                var done = Interlocked.Increment(ref hashDone);
+                if (done % 100 == 0 || done == filesToVerify.Count)
+                    logProgress?.Report($"  Verifying: {done}/{filesToVerify.Count} files checked...");
+
+                hashResults.Add((file, match));
+            });
+
+        var hashFailed = 0;
+        var verifiedBytes = 0L;
+        foreach (var (file, match) in hashResults)
+        {
+            if (match)
+            {
+                verifiedBytes += (long)file.TotalSize;
+                continue;
+            }
+
+            filesToDownload.Add(file);
+            hashFailed++;
+        }
+
+        var verifiedCount = filesToVerify.Count - hashFailed;
+        verifyActivity?.SetTag("verify.ok", verifiedCount);
+        verifyActivity?.SetTag("verify.failed", hashFailed);
+        if (hashFailed > 0)
+            verifyActivity?.SetStatus(ActivityStatusCode.Ok, $"{hashFailed} file(s) corrupted");
+
+        _logger.LogInformation("Depot {DepotId}: hash check complete - {Ok} OK, {Bad} corrupted/changed",
+            depotId, verifiedCount, hashFailed);
+        logProgress?.Report(hashFailed > 0
+            ? $"  {hashFailed} file(s) failed hash check - queued for re-download."
+            : $"  All {filesToVerify.Count} existing file(s) verified OK.");
+
+        return new DepotVerificationResult(filesToDownload, verifiedCount, verifiedBytes);
+    }
+
+    private async Task<(long TotalDownloaded, int Verified, int Downloaded)> DownloadDepotFilesAsync(
+        DepotDownloadRequest request)
+    {
+        var depotId = request.DepotId;
+        var depotKey = request.DepotKey;
+        var manifest = request.Manifest;
+        var pool = request.Pool;
+        var destinationPath = request.DestinationPath;
+        var totalSize = request.TotalSize;
+        var totalDownloaded = request.TotalDownloaded;
+        var progress = request.Progress;
+        var logProgress = request.LogProgress;
+        var maxParallelDownloads = request.MaxParallelDownloads;
+        var ct = request.CancellationToken;
 
         var files = manifest.Files?
             .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
@@ -832,112 +959,10 @@ public class SteamClientService : ISteamService, IDisposable
         try
         {
 
-        // ── Phase 1: Quick scan — existence + size only (no hashing) ─────────
-        var depotMb = depotTotalBytes / 1_048_576.0;
-        _logger.LogInformation("Depot {DepotId}: scanning {Count} files ({Size:F0} MB)", depotId, files.Count, depotMb);
-        logProgress?.Report($"  Depot {depotId}: scanning {files.Count} files ({depotMb:F0} MB)...");
-
-        var toDownload = new List<DepotManifest.FileData>();
-        var toVerify   = new List<DepotManifest.FileData>();
-
-        using (var scanActivity = KastActivitySources.Content.StartActivity(
-            "kast.steam.depot.scan", ActivityKind.Internal))
-        {
-            scanActivity?.SetTag("depot.id", depotId);
-        foreach (var file in files)
-        {
-            var filePath = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
-            var dir = Path.GetDirectoryName(filePath);
-            if (dir != null) Directory.CreateDirectory(dir);
-
-            if (!File.Exists(filePath) || new FileInfo(filePath).Length != (long)file.TotalSize)
-                toDownload.Add(file);
-            else
-                toVerify.Add(file);
-        }
-            scanActivity?.SetTag("scan.to_download", toDownload.Count);
-            scanActivity?.SetTag("scan.to_verify",   toVerify.Count);
-        }
-
-        _logger.LogInformation("Depot {DepotId}: {ToDownload} missing/changed, {ToVerify} to hash-check",
-            depotId, toDownload.Count, toVerify.Count);
-        if (toDownload.Count > 0)
-            logProgress?.Report($"  {toDownload.Count} file(s) missing or wrong size — will download.");
-        if (toVerify.Count > 0)
-            logProgress?.Report($"  {toVerify.Count} file(s) size-matched — hash-verifying...");
-
-        // ── Phase 2: Parallel hash verification of size-matched files ────────
-        if (toVerify.Count > 0)
-        {
-            using var verifyActivity = KastActivitySources.Content.StartActivity(
-                "kast.steam.depot.verify", ActivityKind.Internal);
-            verifyActivity?.SetTag("depot.id",      depotId);
-            verifyActivity?.SetTag("verify.files",  toVerify.Count);
-            verifyActivity?.SetTag("verify.threads", maxParallelHash);
-
-            int hashDone = 0;
-            var hashResults = new System.Collections.Concurrent.ConcurrentBag<(DepotManifest.FileData File, bool Match)>();
-
-            await Parallel.ForEachAsync(
-                toVerify,
-                new ParallelOptions { MaxDegreeOfParallelism = maxParallelHash, CancellationToken = ct },
-                async (file, hashCt) =>
-                {
-                    try
-                    {
-                        if (file.FileHash is not { Length: > 0 })
-                        {
-                            hashResults.Add((file, Match: true));
-                            return;
-                        }
-
-                        var path = Path.Combine(destinationPath, file.FileName.Replace('\\', Path.DirectorySeparatorChar));
-                        var match = await Task.Run(() =>
-                        {
-                            using var sha1 = System.Security.Cryptography.SHA1.Create();
-                            using var fStream = File.OpenRead(path);
-                            return sha1.ComputeHash(fStream).SequenceEqual(file.FileHash);
-                        }, hashCt);
-
-                        var done = Interlocked.Increment(ref hashDone);
-                        if (done % 100 == 0 || done == toVerify.Count)
-                            logProgress?.Report($"  Verifying: {done}/{toVerify.Count} files checked...");
-
-                        hashResults.Add((file, match));
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                });
-
-            int hashFailed = 0;
-            foreach (var (file, match) in hashResults)
-            {
-                if (match)
-                {
-                    verifiedCount++;
-                    totalDownloaded += (long)file.TotalSize;
-                }
-                else
-                {
-                    toDownload.Add(file);
-                    hashFailed++;
-                }
-            }
-
-            verifyActivity?.SetTag("verify.ok",     toVerify.Count - hashFailed);
-            verifyActivity?.SetTag("verify.failed", hashFailed);
-            if (hashFailed > 0)
-                verifyActivity?.SetStatus(ActivityStatusCode.Ok, $"{hashFailed} file(s) corrupted");
-
-            _logger.LogInformation("Depot {DepotId}: hash check complete — {Ok} OK, {Bad} corrupted/changed",
-                depotId, toVerify.Count - hashFailed, hashFailed);
-            if (hashFailed > 0)
-                logProgress?.Report($"  {hashFailed} file(s) failed hash check — queued for re-download.");
-            else
-                logProgress?.Report($"  All {toVerify.Count} existing file(s) verified OK.");
-        }
+        var verification = await PrepareDepotFilesAsync(depotId, files, destinationPath, logProgress, ct);
+        var toDownload = verification.FilesToDownload;
+        verifiedCount = verification.VerifiedCount;
+        totalDownloaded += verification.VerifiedBytes;
 
         if (totalSize > 0)
             progress?.Report((double)totalDownloaded / totalSize * 100.0);
@@ -958,12 +983,22 @@ public class SteamClientService : ISteamService, IDisposable
             dlActivity?.SetTag("download.workers",     maxParallelDownloads);
 
             var (bytesTransferred, filesTransferred, dlElapsed) = await DownloadFilesInParallelAsync(
-                toDownload, depotId, depotKey, pool, destinationPath,
-                parentSpanContext: dlActivity?.Context ?? Activity.Current?.Context ?? default,
-                progressBase: totalDownloaded, progressTotal: totalSize,
-                progress, logProgress,
-                logPrefix: $"Depot {depotId}",
-                maxParallelWorkers: maxParallelDownloads, ct);
+                new FileDownloadRequest
+                {
+                    Files = toDownload,
+                    DepotId = depotId,
+                    DepotKey = depotKey,
+                    Pool = pool,
+                    DestinationPath = destinationPath,
+                    ParentSpanContext = dlActivity?.Context ?? Activity.Current?.Context ?? default,
+                    ProgressBase = totalDownloaded,
+                    ProgressTotal = totalSize,
+                    Progress = progress,
+                    LogProgress = logProgress,
+                    LogPrefix = $"Depot {depotId}",
+                    MaxParallelWorkers = maxParallelDownloads,
+                    CancellationToken = ct
+                });
 
             var totalMbDownloaded = bytesTransferred / 1_048_576.0;
             var avgMbps  = dlElapsed.TotalSeconds > 0 ? totalMbDownloaded / dlElapsed.TotalSeconds : 0;
@@ -1093,18 +1128,21 @@ public class SteamClientService : ISteamService, IDisposable
     /// <param name="logPrefix">Label prepended to debug log messages, e.g. "Workshop 12345" or "Depot 107410".</param>
     /// <returns>Bytes transferred, number of files completed, and wall-clock elapsed time.</returns>
     private async Task<(long BytesTransferred, int FilesTransferred, TimeSpan Elapsed)>
-        DownloadFilesInParallelAsync(
-            IList<DepotManifest.FileData> files,
-            uint depotId, byte[]? depotKey, CdnServerPool pool,
-            string destinationPath,
-            ActivityContext parentSpanContext,
-            long progressBase, long progressTotal,
-            IProgress<double>? progress,
-            IProgress<string>? logProgress,
-            string logPrefix,
-            int maxParallelWorkers,
-            CancellationToken ct)
+        DownloadFilesInParallelAsync(FileDownloadRequest request)
     {
+        var files = request.Files;
+        var depotId = request.DepotId;
+        var depotKey = request.DepotKey;
+        var pool = request.Pool;
+        var destinationPath = request.DestinationPath;
+        var parentSpanContext = request.ParentSpanContext;
+        var progressBase = request.ProgressBase;
+        var progressTotal = request.ProgressTotal;
+        var progress = request.Progress;
+        var logProgress = request.LogProgress;
+        var logPrefix = request.LogPrefix;
+        var maxParallelWorkers = request.MaxParallelWorkers;
+        var ct = request.CancellationToken;
         long bytesDownloaded = 0;
         int  filesDone       = 0;
         var  sw              = System.Diagnostics.Stopwatch.StartNew();
@@ -1298,7 +1336,7 @@ public class SteamClientService : ISteamService, IDisposable
         Server server,
         IDisposable? downloadPermit)
     {
-        if (requestTask is { IsCompletedSuccessfully: true })
+        if (requestTask is { IsCompletedSuccessfully: true } or { IsCanceled: true })
         {
             pool.ReturnServer(server, false);
             downloadPermit?.Dispose();
@@ -1306,11 +1344,6 @@ public class SteamClientService : ISteamService, IDisposable
         else if (requestTask is { IsCompleted: false })
         {
             _ = ReturnServerAfterCancelledRequestAsync(requestTask, pool, server, downloadPermit);
-        }
-        else if (requestTask is { IsCanceled: true })
-        {
-            pool.ReturnServer(server, false);
-            downloadPermit?.Dispose();
         }
         else
         {
@@ -1346,12 +1379,24 @@ public class SteamClientService : ISteamService, IDisposable
         }
     }
 
-    public async Task DownloadAppAsync(
-        uint appId, string destinationPath,
-        IProgress<double>? progress = null, IProgress<string>? logProgress = null,
-        bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null,
-        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers, CancellationToken ct = default)
+    public async Task<SteamAppDownloadResult> DownloadAppAsync(
+        SteamAppDownloadRequest request,
+        IProgress<SteamDownloadProgress>? operationProgress = null,
+        CancellationToken ct = default)
     {
+        var appId = request.AppId;
+        var destinationPath = request.DestinationPath;
+        IProgress<double>? progress = operationProgress is null
+            ? null
+            : new Progress<double>(percent => operationProgress.Report(new SteamDownloadProgress { Percent = percent }));
+        IProgress<string>? logProgress = operationProgress is null
+            ? null
+            : new Progress<string>(message => operationProgress.Report(new SteamDownloadProgress { Message = message }));
+        var ignorePlatformFilter = request.IgnorePlatformFilter;
+        var branch = request.Branch;
+        var depotFilter = request.DepotFilter?.ToArray();
+        var maxParallelDownloads = request.MaxParallelDownloads;
+
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
         // Anonymous login is sufficient for free dedicated server tools (e.g. AppId 233780)
@@ -1401,7 +1446,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 3. Connect to the CDN pool
         logProgress?.Report("Connecting to CDN servers...");
-        var pool = await EnsureCdnPoolAsync(ct);
+        var pool = await EnsureCdnPoolAsync();
         Directory.CreateDirectory(destinationPath);
 
         long totalDownloaded = 0;
@@ -1479,8 +1524,20 @@ public class SteamClientService : ISteamService, IDisposable
             }
 
             var (newTotal, verified, downloaded) = await DownloadDepotFilesAsync(
-                depotId, depotKey, manifest, pool, destinationPath,
-                totalSize, totalDownloaded, progress, logProgress, maxParallelDownloads, ct);
+                new DepotDownloadRequest
+                {
+                    DepotId = depotId,
+                    DepotKey = depotKey,
+                    Manifest = manifest,
+                    Pool = pool,
+                    DestinationPath = destinationPath,
+                    TotalSize = totalSize,
+                    TotalDownloaded = totalDownloaded,
+                    Progress = progress,
+                    LogProgress = logProgress,
+                    MaxParallelDownloads = maxParallelDownloads,
+                    CancellationToken = ct
+                });
 
             totalDownloaded = newTotal;
             grandVerified  += verified;
@@ -1502,6 +1559,14 @@ public class SteamClientService : ISteamService, IDisposable
         appActivity?.SetTag("app.files_verified",  grandVerified);
         appActivity?.SetTag("app.files_downloaded", grandDownloaded);
         appActivity?.SetTag("app.depots_skipped",   skippedDepots);
+
+        return new SteamAppDownloadResult
+        {
+            FilesVerified = grandVerified,
+            FilesDownloaded = grandDownloaded,
+            DepotsSkipped = skippedDepots,
+            TotalBytes = totalSize
+        };
         }
         catch (Exception ex)
         {
@@ -1534,25 +1599,9 @@ public class SteamClientService : ISteamService, IDisposable
         catch { /* non-fatal — next run will re-verify */ }
     }
 
-    /// <summary>
-    /// Returns <c>true</c> if the local file exists, has the correct size, and
-    /// (when the manifest provides one) a matching SHA-1 hash.
-    /// The size check is done first to avoid hashing files that are clearly wrong.
-    /// </summary>
-    private static bool FileMatchesManifest(string filePath, DepotManifest.FileData file)
-    {
-        if (!File.Exists(filePath)) return false;
-        if (new FileInfo(filePath).Length != (long)file.TotalSize) return false;
-        if (file.FileHash is not { Length: > 0 }) return true; // no hash in manifest — size match is sufficient
-
-        using var sha1 = System.Security.Cryptography.SHA1.Create();
-        using var fs   = File.OpenRead(filePath);
-        return sha1.ComputeHash(fs).SequenceEqual(file.FileHash);
-    }
-
     // ───── CDN Server Pool ─────
 
-    private Task<CdnServerPool> EnsureCdnPoolAsync(CancellationToken ct = default)
+    private Task<CdnServerPool> EnsureCdnPoolAsync()
     {
         // If a pool already exists and is healthy, return it immediately
         if (_cdnPool is not null)
@@ -1603,7 +1652,7 @@ public class SteamClientService : ISteamService, IDisposable
         // 2. Get depot key + manifest (with automatic CDN fallback)
         var depotKey = await GetDepotKeyAsync(BenchmarkDepotId, BenchmarkAppId);
 
-        var pool = await EnsureCdnPoolAsync(ct);
+        var pool = await EnsureCdnPoolAsync();
         var reqCode = await _steamContent.GetManifestRequestCode(BenchmarkDepotId, BenchmarkAppId, manifestId);
         var manifest = await DownloadManifestWithFallbackAsync(
             BenchmarkDepotId, manifestId, reqCode, depotKey, pool, benchActivity, ct);

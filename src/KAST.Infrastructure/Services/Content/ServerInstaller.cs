@@ -6,6 +6,7 @@ using KAST.Core.Enums;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services.Content;
@@ -13,11 +14,17 @@ namespace KAST.Infrastructure.Services.Content;
 /// <summary>
 /// Installs the Arma 3 dedicated server + Creator DLC depots via SteamKit2.
 /// </summary>
-public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpClientFactory httpClientFactory, ILogger<ServerInstaller> logger, IOutputSanitizer sanitizer) : IContentInstaller
+public class ServerInstaller(
+    ISteamAuthenticationService steamAuthentication,
+    ISteamAppDownloadService steamDownloads,
+    IFileSystemService fs,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
+    ILogger<ServerInstaller> logger,
+    IOutputSanitizer sanitizer) : IContentInstaller
 {
     public const uint Arma3ServerAppId = 233780;
     private const string CreatorDlcBranch = "creatordlc";
-    private const string DxRedistUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe"; // NOSONAR — fixed Microsoft CDN URI for DirectX End-User Runtimes June 2010
 
     public static readonly (Func<ServerInstance, bool> Enabled, uint DepotId, string? Branch, string Name, string Folder)[] DlcTable =
     [
@@ -73,21 +80,21 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
 
         try
         {
-            if (!steam.IsConnected)
+            if (!steamAuthentication.IsConnected)
             {
                 state.AddLog("Connecting to Steam (anonymous)...");
                 logger.LogInformation("Server install [{Instance}]: connecting to Steam anonymously", instance.Name);
-                await steam.LoginAnonymousAsync(ct);
+                await steamAuthentication.LoginAnonymousAsync(ct);
             }
-            if (!steam.IsConnected)
+            if (!steamAuthentication.IsConnected)
                 throw new InvalidOperationException("Failed to connect to Steam.");
 
-            state.AddLog(steam.IsAuthenticated ? $"Signed in as {steam.CurrentUsername}." : "Connected anonymously.");
+            state.AddLog(steamAuthentication.IsAuthenticated ? $"Signed in as {steamAuthentication.CurrentUsername}." : "Connected anonymously.");
             state.AddLog($"Install target: {sanitizer.ToDisplayPath(request.DestinationPath)}.");
             state.AddLog($"Parallel downloads: {maxPar}.");
             logger.LogInformation("Server install [{Instance}]: steam ready, {Auth}, {Par} workers",
                 instance.Name,
-                steam.IsAuthenticated ? $"authenticated as {steam.CurrentUsername}" : "anonymous",
+                steamAuthentication.IsAuthenticated ? $"authenticated as {steamAuthentication.CurrentUsername}" : "anonymous",
                 maxPar);
 
         int stepIdx = 0;
@@ -98,14 +105,15 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         logger.LogInformation("Server install [{Instance}]: step 1/{Total} — base server (AppId {AppId})",
             instance.Name, state.Steps.Count, Arma3ServerAppId);
 
-        var currentStep = stepIdx;
-        var pctProgress = new Progress<double>(pct => state.SetStepProgress(currentStep, pct));
-        var logProgress = new Progress<string>(state.AddLog);
+        var downloadProgress = CreateDownloadProgress(state, stepIdx);
 
-        await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-            pctProgress, logProgress,
-            ignorePlatformFilter: false, branch: "public",
-            maxParallelDownloads: maxPar, ct: ct);
+        await steamDownloads.DownloadAppAsync(new SteamAppDownloadRequest
+        {
+            AppId = Arma3ServerAppId,
+            DestinationPath = request.DestinationPath,
+            Branch = "public",
+            MaxParallelDownloads = maxPar
+        }, downloadProgress, ct);
 
         var exe = Path.Combine(request.DestinationPath,
             RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "arma3server_x64.exe" : "arma3server_x64");
@@ -132,27 +140,35 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
             }
 
             state.BeginStep(stepIdx);
-            int idx = stepIdx;
-            var pct = new Progress<double>(p => state.SetStepProgress(idx, p));
-            var log = new Progress<string>(state.AddLog);
+            var dlcProgress = CreateDownloadProgress(state, stepIdx);
 
             if (dlc.Branch is not null)
             {
                 state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (branch: {branch}, all depots)...");
                 logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (branch: {Branch})",
                     instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, branch);
-                await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-                    pct, log, ignorePlatformFilter: false, branch: branch,
-                    maxParallelDownloads: maxPar, ct: ct);
+                await steamDownloads.DownloadAppAsync(new SteamAppDownloadRequest
+                {
+                    AppId = Arma3ServerAppId,
+                    DestinationPath = request.DestinationPath,
+                    Branch = branch,
+                    MaxParallelDownloads = maxPar
+                }, dlcProgress, ct);
             }
             else
             {
                 state.AddLog($"[Step {stepIdx + 1}/{state.Steps.Count}] Downloading {dlc.Name} (depot {dlc.DepotId}, branch: {branch})...");
                 logger.LogInformation("Server install [{Instance}]: step {Step}/{Total} — {Dlc} (depot {DepotId}, branch: {Branch})",
                     instance.Name, stepIdx + 1, state.Steps.Count, dlc.Name, dlc.DepotId, branch);
-                await steam.DownloadAppAsync(Arma3ServerAppId, request.DestinationPath,
-                    pct, log, ignorePlatformFilter: true, branch: branch,
-                    depotFilter: [dlc.DepotId], maxParallelDownloads: maxPar, ct: ct);
+                await steamDownloads.DownloadAppAsync(new SteamAppDownloadRequest
+                {
+                    AppId = Arma3ServerAppId,
+                    DestinationPath = request.DestinationPath,
+                    IgnorePlatformFilter = true,
+                    Branch = branch,
+                    DepotFilter = [dlc.DepotId],
+                    MaxParallelDownloads = maxPar
+                }, dlcProgress, ct);
             }
 
             state.CompleteStep(stepIdx);
@@ -223,6 +239,17 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
         return results;
     }
 
+    private static IProgress<SteamDownloadProgress> CreateDownloadProgress(
+        ContentInstallState state,
+        int stepIndex) =>
+        new Progress<SteamDownloadProgress>(update =>
+        {
+            if (update.Percent is { } percent)
+                state.SetStepProgress(stepIndex, percent);
+            if (!string.IsNullOrWhiteSpace(update.Message))
+                state.AddLog(update.Message);
+        });
+
     [SupportedOSPlatform("windows")]
     private async Task InstallDirectXAsync(ContentInstallRequest request, ContentInstallState state, int stepIdx, CancellationToken ct)
     {
@@ -265,7 +292,9 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
             logger.LogInformation("Server install [{Instance}]: downloading DirectX June 2010 redistributable", instance.Name);
 
             using var http = httpClientFactory.CreateClient();
-            await DownloadFileWithProgressAsync(http, DxRedistUrl, tempRedist,
+            var directXRedistUri = configuration.GetValue<Uri>("Content:DirectXRedistUri")
+                ?? throw new InvalidOperationException("Content:DirectXRedistUri must be configured.");
+            await DownloadFileWithProgressAsync(http, directXRedistUri, tempRedist,
                 pct => state.SetStepProgress(stepIdx, pct), ct);
             // file is closed inside helper before returning
 
@@ -351,7 +380,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
     /// The destination file is fully closed before this method returns.
     /// </summary>
     private static async Task DownloadFileWithProgressAsync(
-        HttpClient http, string url, string destPath,
+        HttpClient http, Uri url, string destPath,
         Action<double> onProgress, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);

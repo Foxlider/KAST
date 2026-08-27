@@ -108,6 +108,9 @@ internal sealed class CdnServerPool : IDisposable
 
     // ── Background monitor ────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Monitors the CDN server pool and refills it as needed.
+    /// </summary>
     private async Task MonitorAsync()
     {
         int throttleSeconds = 0;
@@ -116,7 +119,6 @@ internal sealed class CdnServerPool : IDisposable
         {
             try
             {
-                // Sleep up to 5 s between checks; wake early if the pool dips below minimum
                 _refillNeeded.WaitOne(TimeSpan.FromSeconds(5));
 
                 if (_cts.Token.IsCancellationRequested)
@@ -128,69 +130,10 @@ internal sealed class CdnServerPool : IDisposable
                 _logger.LogDebug("CDN pool below minimum ({Count}/{Min}) — refilling (cell {Cell})",
                     _available.Count, MinimumPoolSize, CellId);
 
-                if (throttleSeconds > 0)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(throttleSeconds), _cts.Token);
-                    throttleSeconds = 0;
-                }
+                await DelayForThrottleAsync(throttleSeconds);
+                throttleSeconds = 0;
 
-                using var refillActivity = KastActivitySources.Steam.StartActivity(
-                    "kast.steam.cdn_pool.refill", ActivityKind.Internal);
-                refillActivity?.SetTag("cdn.cell_id",          CellId);
-                refillActivity?.SetTag("cdn.pool_size_before", _available.Count);
-
-                try
-                {
-
-                    // Use ContentServerDirectoryService with our cell ID so Steam routes to
-                    // the closest CDN nodes (the same API BytexDigital uses)
-                    IReadOnlyCollection<Server> servers;
-                    try
-                    {
-                        servers = await ContentServerDirectoryService.LoadAsync(
-                            _steamClient.Configuration,
-                            CellId,
-                            _cts.Token);
-                    }
-                    catch
-                    {
-                        // Fallback: use the SteamContent handler (does not carry cell ID hint
-                        // but always works, even before the cell ID is known)
-                        servers = await _steamContent.GetServersForSteamPipe();
-                    }
-
-                    if (servers.Count == 0)
-                    {
-                        _logger.LogWarning("CDN server discovery returned no results — will retry");
-                        continue;
-                    }
-
-                    var sorted = servers
-                        .Where(s => s.Type is "CDN" or "SteamCache")
-                        .OrderBy(s => s.WeightedLoad)
-                        .ToList();
-
-                    foreach (var s in sorted)
-                        _available.Add(s);
-
-                    _logger.LogInformation("CDN pool refilled with {Count} servers (cell {Cell}, best: {Host})",
-                        sorted.Count, CellId, sorted.FirstOrDefault()?.Host ?? "none");
-
-                    refillActivity?.SetTag("cdn.servers_added",  sorted.Count);
-                    refillActivity?.SetTag("cdn.best_server",    sorted.FirstOrDefault()?.Host ?? "none");
-                    refillActivity?.SetTag("cdn.pool_size_after", _available.Count);
-                }
-                catch (Exception refillEx) when (refillEx is not OperationCanceledException)
-                {
-                    var safeMessage = _sanitizer.Sanitize(refillEx.Message);
-                    refillActivity?.SetStatus(ActivityStatusCode.Error, safeMessage);
-                    refillActivity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
-                    {
-                        ["exception.type"]    = refillEx.GetType().Name,
-                        ["exception.message"] = safeMessage
-                    }));
-                    throw;
-                }
+                await RefillPoolAsync();
             }
             catch (OperationCanceledException)
             {
@@ -200,7 +143,7 @@ internal sealed class CdnServerPool : IDisposable
             {
                 break;
             }
-            catch (Exception ex) when (ex.Message.Contains("429") || ex.Message.Contains("Too Many Requests"))
+            catch (Exception ex) when (IsRateLimited(ex))
             {
                 throttleSeconds = Math.Min(throttleSeconds + 5, 60);
                 _logger.LogWarning("CDN directory rate-limited — backing off {Sec}s", throttleSeconds);
@@ -212,6 +155,112 @@ internal sealed class CdnServerPool : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Delays the execution for the specified throttle duration.
+    /// </summary>
+    /// <param name="throttleSeconds">The number of seconds to delay.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task DelayForThrottleAsync(int throttleSeconds)
+    {
+        if (throttleSeconds > 0)
+            await Task.Delay(TimeSpan.FromSeconds(throttleSeconds), _cts.Token);
+    }
+
+    /// <summary>
+    /// Refills the CDN server pool by discovering available servers and adding them to the pool.
+    /// </summary>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task RefillPoolAsync()
+    {
+        using var refillActivity = KastActivitySources.Steam.StartActivity(
+            "kast.steam.cdn_pool.refill", ActivityKind.Internal);
+
+        refillActivity?.SetTag("cdn.cell_id", CellId);
+        refillActivity?.SetTag("cdn.pool_size_before", _available.Count);
+
+        try
+        {
+            var servers = await LoadServersAsync();
+
+            if (servers.Count == 0)
+            {
+                _logger.LogWarning("CDN server discovery returned no results — will retry");
+                return;
+            }
+
+            var sorted = servers
+                .Where(s => s.Type is "CDN" or "SteamCache")
+                .OrderBy(s => s.WeightedLoad)
+                .ToList();
+
+            foreach (var server in sorted)
+                _available.Add(server);
+
+            _logger.LogInformation(
+                "CDN pool refilled with {Count} servers (cell {Cell}, best: {Host})",
+                sorted.Count,
+                CellId,
+                sorted.FirstOrDefault()?.Host ?? "none");
+
+            refillActivity?.SetTag("cdn.servers_added", sorted.Count);
+            refillActivity?.SetTag("cdn.best_server", sorted.FirstOrDefault()?.Host ?? "none");
+            refillActivity?.SetTag("cdn.pool_size_after", _available.Count);
+        }
+        catch (Exception refillEx) when (refillEx is not OperationCanceledException)
+        {
+            RecordRefillFailure(refillActivity, refillEx);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Loads the list of available CDN servers for the current cell.
+    /// </summary>
+    /// <returns>A read-only collection of CDN servers.</returns>
+    private async Task<IReadOnlyCollection<Server>> LoadServersAsync()
+    {
+        try
+        {
+            return await ContentServerDirectoryService.LoadAsync(
+                _steamClient.Configuration,
+                CellId,
+                _cts.Token);
+        }
+        catch
+        {
+            // Fallback for unavailable directory service or when no cell ID is known.
+            return await _steamContent.GetServersForSteamPipe();
+        }
+    }
+
+    /// <summary>
+    /// Records a refill failure for the CDN server pool.
+    /// </summary>
+    /// <param name="refillActivity">The activity associated with the refill attempt.</param>
+    /// <param name="refillEx">The exception that occurred during the refill.</param>
+    private void RecordRefillFailure(Activity? refillActivity, Exception refillEx)
+    {
+        var safeMessage = _sanitizer.Sanitize(refillEx.Message);
+
+        refillActivity?.SetStatus(ActivityStatusCode.Error, safeMessage);
+        refillActivity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+        {
+            ["exception.type"] = refillEx.GetType().Name,
+            ["exception.message"] = safeMessage
+        }));
+    }
+
+    /// <summary>
+    /// Determines whether the specified exception indicates that the request was rate limited.
+    /// </summary>
+    /// <param name="exception">The exception to check.</param>
+    /// <returns><c>true</c> if the exception indicates a rate limit; otherwise, <c>false</c>.</returns>
+    private static bool IsRateLimited(Exception exception) =>
+        exception.Message.Contains("429", StringComparison.Ordinal) ||
+        exception.Message.Contains("Too Many Requests", StringComparison.Ordinal);
+
+    public bool IsMonitoring => !_monitorTask.IsCompleted;
 
     // ── IDisposable ───────────────────────────────────────────────────────────
 

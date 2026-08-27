@@ -3,6 +3,7 @@ using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Services;
 using KAST.Infrastructure.Services.Content;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using System.Net.Http;
@@ -15,10 +16,7 @@ public class ServerInstallerTests
     [Fact]
     public void PlanSteps_WhenInstanceMissing_ReturnsBaseOnly()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut();
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -34,10 +32,7 @@ public class ServerInstallerTests
     [Fact]
     public void PlanSteps_OnlyIncludesEnabledDlcs()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut();
 
         var instance = new ServerInstance
         {
@@ -67,13 +62,11 @@ public class ServerInstallerTests
     [Fact]
     public async Task InstallAsync_WhenSteamCannotConnect_Throws()
     {
-        var steam = Substitute.For<ISteamService>();
-        steam.IsConnected.Returns(false);
-        steam.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+        var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
+        steamAuthentication.IsConnected.Returns(false);
+        steamAuthentication.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
 
-        var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut(steamAuthentication);
 
         var instance = new ServerInstance { Id = 10, Name = "Srv" };
         var request = new ContentInstallRequest
@@ -99,10 +92,7 @@ public class ServerInstallerTests
     [Fact]
     public async Task InstallAsync_WhenInstanceMissing_Throws()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut();
 
         var request = new ContentInstallRequest
         {
@@ -127,21 +117,23 @@ public class ServerInstallerTests
     [Fact]
     public async Task InstallAsync_Connected_DownloadsBaseAndEnabledDlcs()
     {
-        var steam = Substitute.For<ISteamService>();
-        steam.IsConnected.Returns(true);
-        steam.IsAuthenticated.Returns(false);
-        steam.DownloadAppAsync(
-                Arg.Any<uint>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<IProgress<string>>(),
-                Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<uint[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
+        steamAuthentication.IsConnected.Returns(true);
+        steamAuthentication.IsAuthenticated.Returns(false);
+        var steamDownloads = Substitute.For<ISteamAppDownloadService>();
+        steamDownloads.DownloadAppAsync(
+                Arg.Any<SteamAppDownloadRequest>(),
+                Arg.Any<IProgress<SteamDownloadProgress>>(),
+                Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                call.Arg<IProgress<double>>().Report(100);
-                return Task.CompletedTask;
+                call.Arg<IProgress<SteamDownloadProgress>>()?.Report(
+                    new SteamDownloadProgress { Percent = 100 });
+                return Task.FromResult(new SteamAppDownloadResult());
             });
 
         var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut(steamAuthentication, steamDownloads, fs);
 
         var instance = new ServerInstance
         {
@@ -174,15 +166,12 @@ public class ServerInstallerTests
         Assert.All(state.Steps, s => Assert.True(
             s.Status is ContentStepStatus.Completed or ContentStepStatus.Skipped,
             $"Step '{s.Name}' ended with unexpected status {s.Status}"));
-        await steam.Received(3).DownloadAppAsync(
-            ServerInstaller.Arma3ServerAppId,
-            "/tmp/server",
-            Arg.Any<IProgress<double>>(),
-            Arg.Any<IProgress<string>>(),
-            Arg.Any<bool>(),
-            Arg.Any<string>(),
-            Arg.Any<uint[]?>(),
-            4,
+        await steamDownloads.Received(3).DownloadAppAsync(
+            Arg.Is<SteamAppDownloadRequest>(download =>
+                download.AppId == ServerInstaller.Arma3ServerAppId &&
+                download.DestinationPath == "/tmp/server" &&
+                download.MaxParallelDownloads == 4),
+            Arg.Any<IProgress<SteamDownloadProgress>>(),
             Arg.Any<CancellationToken>());
         fs.Received(1).SetExecutable(Arg.Is<string>(s => s.Contains("arma3server_x64")));
     }
@@ -190,10 +179,7 @@ public class ServerInstallerTests
     [Fact]
     public void Validate_WhenInstallMissing_ReturnsSingleFailure()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var logger = Substitute.For<ILogger<ServerInstaller>>();
-        var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+        var sut = CreateSut();
 
         var results = sut.Validate(new ContentInstallRequest
         {
@@ -228,10 +214,8 @@ public class ServerInstallerTests
                     UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
-            var steam = Substitute.For<ISteamService>();
             var fs = Substitute.For<IFileSystemService>();
-            var logger = Substitute.For<ILogger<ServerInstaller>>();
-            var sut = new ServerInstaller(steam, fs, Substitute.For<IHttpClientFactory>(), logger, new OutputSanitizer());
+            var sut = CreateSut(fileSystem: fs);
 
             var results = sut.Validate(new ContentInstallRequest
             {
@@ -265,4 +249,27 @@ public class ServerInstallerTests
 
         Assert.True(ServerInstaller.IsDirectXInstalled());
     }
+
+    private static ServerInstaller CreateSut(
+        ISteamAuthenticationService? steamAuthentication = null,
+        ISteamAppDownloadService? steamDownloads = null,
+        IFileSystemService? fileSystem = null) =>
+        new(
+            steamAuthentication ?? Substitute.For<ISteamAuthenticationService>(),
+            steamDownloads ?? Substitute.For<ISteamAppDownloadService>(),
+            fileSystem ?? Substitute.For<IFileSystemService>(),
+            Substitute.For<IHttpClientFactory>(),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Content:DirectXRedistUri"] = new UriBuilder
+                    {
+                        Scheme = Uri.UriSchemeHttps,
+                        Host = "download.microsoft.com",
+                        Path = "download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe"
+                    }.Uri.ToString()
+                })
+                .Build(),
+            Substitute.For<ILogger<ServerInstaller>>(),
+            new OutputSanitizer());
 }

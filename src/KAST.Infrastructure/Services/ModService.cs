@@ -11,7 +11,14 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService, ISettingsService settingsService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger, IOutputSanitizer sanitizer) : IModService
+public class ModService(
+    KastDbContext db,
+    ISteamWorkshopCatalogService workshopCatalog,
+    ISteamWorkshopDownloadService workshopDownloads,
+    ISettingsService settingsService,
+    IAppEventBroadcaster broadcaster,
+    ILogger<ModService> logger,
+    IOutputSanitizer sanitizer) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -39,7 +46,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 return existing;
             }
 
-            var info = await steamService.GetWorkshopItemInfoAsync(workshopId, ct);
+            var info = await workshopCatalog.GetWorkshopItemInfoAsync(workshopId, ct);
 
             var mod = new SteamMod
             {
@@ -172,7 +179,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             var settings = await settingsService.GetSettingsAsync(ct);
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(
+            var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
                 mod.WorkshopId, destPath, broadcastProgress, ct,
                 Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
 
@@ -233,7 +240,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 ? Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString())
                 : mod.LocalPath;
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(
+            var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
                 mod.WorkshopId, destPath, broadcastProgress, ct,
                 Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
             mod.Status = ModStatus.Installed;
@@ -292,7 +299,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             },
             async (mod, workerCt) =>
             {
-                var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, workerCt);
+                var info = await workshopCatalog.GetWorkshopItemInfoAsync(mod.WorkshopId, workerCt);
                 if (info is not null)
                     workshopInfoByModId[mod.Id] = info;
             });
@@ -328,7 +335,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         if (mod.Source != ModSource.SteamWorkshop) return;
 
-        var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
+        var info = await workshopCatalog.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
         if (info == null) return;
 
         mod.SteamManifestId = info.ManifestId;

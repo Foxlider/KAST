@@ -14,7 +14,7 @@ public class SteamWebApiClientTests
     {
         var handler = new RecordingHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsBatchAsync([]);
@@ -67,7 +67,7 @@ public class SteamWebApiClientTests
             });
         });
 
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsBatchAsync([333310405]);
@@ -110,7 +110,7 @@ public class SteamWebApiClientTests
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             }));
 
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var result = await sut.GetPublishedFileDetailsAsync(123);
@@ -123,7 +123,7 @@ public class SteamWebApiClientTests
     {
         var handler = new RecordingHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)));
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
@@ -154,7 +154,7 @@ public class SteamWebApiClientTests
             });
         });
 
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var host = await sut.DiscoverCdnServerAsync();
@@ -166,7 +166,7 @@ public class SteamWebApiClientTests
     public async Task DiscoverCdnServerAsync_OnHttpFailure_ReturnsNull()
     {
         var handler = new RecordingHandler((_, _) => throw new HttpRequestException("boom"));
-        var client = new HttpClient(handler);
+        var client = CreateHttpClient(handler);
         var sut = new SteamWebApiClient(client, Substitute.For<ILogger<SteamWebApiClient>>(), new OutputSanitizer());
 
         var host = await sut.DiscoverCdnServerAsync();
@@ -191,4 +191,14 @@ public class SteamWebApiClientTests
             return await _onSend(request, cancellationToken);
         }
     }
+
+    private static HttpClient CreateHttpClient(HttpMessageHandler handler) =>
+      new(handler)
+      {
+        BaseAddress = new UriBuilder
+        {
+          Scheme = Uri.UriSchemeHttp,
+          Host = "localhost"
+        }.Uri
+      };
 }

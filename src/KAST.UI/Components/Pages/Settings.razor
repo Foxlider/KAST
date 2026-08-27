@@ -2,7 +2,8 @@
 @implements IDisposable
 @inject IApiKeyService ApiKeyService
 @inject ISettingsService SettingsService
-@inject ISteamService SteamService
+@inject ISteamAuthenticationService SteamService
+@inject ISteamDownloadBenchmarkService SteamBenchmark
 @inject IOutputSanitizer OutputSanitizer
 @inject ISnackbar Snackbar
 @inject ThemeService ThemeService
@@ -512,7 +513,7 @@
             if (!SteamService.IsConnected)
             { _benchmarkStatus = "Connecting to Steam..."; StateHasChanged(); await SteamService.LoginAnonymousAsync(); }
             var log = new Progress<string>(msg => InvokeAsync(() => { _benchmarkStatus = OutputSanitizer.Sanitize(msg); StateHasChanged(); }));
-            _benchmarkResults = await SteamService.BenchmarkDownloadAsync(log);
+            _benchmarkResults = await SteamBenchmark.BenchmarkDownloadAsync(log);
         }
         catch (Exception ex) { Snackbar.Add($"Benchmark failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally { _benchmarkRunning = false; _benchmarkStatus = null; StateHasChanged(); }
