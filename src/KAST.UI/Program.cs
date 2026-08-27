@@ -42,6 +42,11 @@ var kastLogStore = new KastLogStore();
 builder.Services.AddSingleton(kastLogStore);
 builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore, outputSanitizer));
 
+var logsDirectory = ResolveConfiguredPath(
+    contentRoot,
+    builder.Configuration["Kast:LogsDirectory"] ?? "./logs");
+builder.Logging.AddProvider(new KastFileLoggerProvider(logsDirectory, outputSanitizer));
+
 // ── Health checks ────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<KastDbContext>("database");

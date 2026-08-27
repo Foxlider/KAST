@@ -224,6 +224,23 @@ public class ModServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DownloadMod_UsesConfiguredSteamWorkerCount()
+    {
+        _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings { ModsDirectory = ".KAST_DATA/mods", ParallelDownloads = 9 });
+        var mod = new SteamMod { Name = "Configured", WorkshopId = 554 };
+        _db.Mods.Add(mod);
+        await _db.SaveChangesAsync();
+        _steamService.DownloadWorkshopItemAsync(554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9)
+            .Returns(Task.FromResult(0UL));
+
+        await _sut.DownloadModAsync(mod.Id);
+
+        await _steamService.Received(1).DownloadWorkshopItemAsync(
+            554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9);
+    }
+
+    [Fact]
     public async Task DownloadMod_SetsStatusToDownloading_ThenInstalled()
     {
         var mod = new SteamMod { Name = "DL Mod", WorkshopId = 555, ExpectedSizeBytes = 1000 };
@@ -326,5 +343,47 @@ public class ModServiceTests : IDisposable
 
         var updated = await _db.Mods.FindAsync(mod.Id);
         Assert.Equal(ModStatus.Installed, updated!.Status);
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_UsesConfiguredConcurrentMetadataRequests()
+    {
+        _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings
+            {
+                ModsDirectory = ".KAST_DATA/mods",
+                BulkModDownloadConcurrency = 2
+            });
+        _db.Mods.AddRange(
+            new SteamMod { Name = "First", WorkshopId = 1, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed },
+            new SteamMod { Name = "Second", WorkshopId = 2, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed },
+            new SteamMod { Name = "Third", WorkshopId = 3, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed });
+        await _db.SaveChangesAsync();
+
+        var twoRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRequestsToComplete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestCount = 0;
+        _steamService.GetWorkshopItemInfoAsync(Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref requestCount) == 2)
+                    twoRequestsStarted.TrySetResult();
+
+                await allowRequestsToComplete.Task.WaitAsync(call.Arg<CancellationToken>());
+                return (WorkshopItemInfo?)new WorkshopItemInfo
+                {
+                    WorkshopId = call.Arg<long>(),
+                    LastUpdated = DateTime.UtcNow
+                };
+            });
+
+        var checkForUpdates = _sut.CheckForUpdatesAsync();
+        await twoRequestsStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, Volatile.Read(ref requestCount));
+
+        allowRequestsToComplete.TrySetResult();
+        await checkForUpdates;
+        Assert.Equal(3, Volatile.Read(ref requestCount));
     }
 }

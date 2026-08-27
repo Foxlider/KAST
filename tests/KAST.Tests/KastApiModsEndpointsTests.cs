@@ -297,8 +297,23 @@ public class KastApiModsEndpointsTests
         await modService.Received(1).CheckForUpdatesAsync(Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task UpdateAll_AwaitsServiceBeforeReturningSuccess()
+    {
+        var coordinator = Substitute.For<IModUpdateCoordinator>();
+        coordinator.UpdateAllOutdatedModsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        await using var app = await CreateApiAppAsync(updateCoordinator: coordinator);
+
+        var response = await app.Client.PostAsync("/api/mods/update-all", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await coordinator.Received(1).UpdateAllOutdatedModsAsync(Arg.Any<CancellationToken>());
+    }
+
     private static async Task<ApiAppContext> CreateApiAppAsync(
         IModService? modService = null,
+        IModUpdateCoordinator? updateCoordinator = null,
         IServerInstanceService? serverService = null,
         IContentOrchestrator? orchestrator = null,
         ISettingsService? settingsService = null,
@@ -313,6 +328,7 @@ public class KastApiModsEndpointsTests
         builder.WebHost.UseTestServer();
 
         builder.Services.AddSingleton(modService ?? Substitute.For<IModService>());
+    builder.Services.AddSingleton(updateCoordinator ?? Substitute.For<IModUpdateCoordinator>());
         builder.Services.AddSingleton(serverService ?? Substitute.For<IServerInstanceService>());
         builder.Services.AddSingleton(Substitute.For<IMonitoringService>());
         builder.Services.AddSingleton(Substitute.For<IApiKeyService>());

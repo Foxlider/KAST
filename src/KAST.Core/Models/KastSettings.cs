@@ -16,5 +16,6 @@ public class KastSettings
     public int Arma3ServerAppId { get; set; } = 233780;
     public string ThemeMode { get; set; } = "dark"; // "dark" or "light"
     public int MetricsIntervalSeconds { get; set; } = 5;
-    public int ParallelDownloads { get; set; } = 4;
+    public int ParallelDownloads { get; set; } = DownloadConcurrency.DefaultSteamWorkers;
+    public int BulkModDownloadConcurrency { get; set; } = DownloadConcurrency.DefaultBulkModDownloads;
 }

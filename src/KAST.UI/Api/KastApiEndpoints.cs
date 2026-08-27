@@ -3,7 +3,6 @@ using KAST.Core.Events;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Data;
-using KAST.Infrastructure.Services.Content;
 using Microsoft.AspNetCore.Mvc;
 
 namespace KAST.UI.Api;
@@ -218,10 +217,12 @@ public static class KastApiEndpoints
             return Results.Ok();
         });
 
-        g.MapPost("/update-all", async (IModService svc, CancellationToken ct) =>
+        g.MapPost("/update-all", async (IModUpdateCoordinator coordinator, CancellationToken ct) =>
         {
-            _ = Task.Run(() => svc.UpdateAllOutdatedModsAsync(ct), ct);
-            return Results.Accepted();
+            // Do not detach a scoped service from the request: its DbContext would
+            // be disposed while the updates were still running.
+            await coordinator.UpdateAllOutdatedModsAsync(ct);
+            return Results.Ok();
         });
     }
 
@@ -354,7 +355,8 @@ public static class KastApiEndpoints
         sanitizer.ToDisplayPath(settings.ServersDirectory),
         settings.ThemeMode,
         settings.MetricsIntervalSeconds,
-        settings.ParallelDownloads);
+        settings.ParallelDownloads,
+        settings.BulkModDownloadConcurrency);
 
     public record SafeServerInstanceDto(
         int Id,
@@ -435,7 +437,8 @@ public static class KastApiEndpoints
         string ServersDirectory,
         string ThemeMode,
         int MetricsIntervalSeconds,
-        int ParallelDownloads);
+        int ParallelDownloads,
+        int BulkModDownloadConcurrency);
 
     public record ImportLocalModRequest(string Path, string Name);
     public record CreateApiKeyRequest(string Name);

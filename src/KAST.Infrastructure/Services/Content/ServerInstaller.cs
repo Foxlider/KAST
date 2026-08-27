@@ -63,7 +63,7 @@ public class ServerInstaller(ISteamService steam, IFileSystemService fs, IHttpCl
     {
         var instance = request.Instance
             ?? throw new InvalidOperationException("ServerInstaller requires an Instance on the request.");
-        int maxPar = request.MaxParallelDownloads;
+        int maxPar = Math.Max(DownloadConcurrency.MinimumSteamWorkers, request.MaxParallelDownloads);
 
         using var activity = KastActivitySources.Content.StartActivity(
             "kast.server.install", ActivityKind.Internal);

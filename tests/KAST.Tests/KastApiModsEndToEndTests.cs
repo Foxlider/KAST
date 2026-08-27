@@ -278,11 +278,12 @@ public class KastApiModsEndToEndTests
         public Task<bool> PollCredentialLoginAsync(SteamCredentialAuthSession session, CancellationToken ct = default) => Task.FromResult(false);
         public Task LogoutAsync() => Task.CompletedTask;
 
-        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null, CancellationToken ct = default)
+        public Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath, IProgress<double>? progress = null,
+            CancellationToken ct = default, int maxParallelDownloads = 8)
             => throw new InvalidOperationException("Downloads are intentionally disabled in end-to-end API tests.");
 
         public Task DownloadAppAsync(uint appId, string destinationPath, IProgress<double>? progress = null, IProgress<string>? logProgress = null,
-            bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 4,
+            bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 8,
             CancellationToken ct = default)
             => throw new InvalidOperationException("Server downloads are intentionally disabled in end-to-end API tests.");
 

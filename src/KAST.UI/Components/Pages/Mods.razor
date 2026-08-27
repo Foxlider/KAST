@@ -4,8 +4,10 @@
 @using System.Net
 @using Microsoft.AspNetCore.Components.Forms
 @inject IModService ModService
+@inject IModUpdateCoordinator ModUpdateCoordinator
 @inject IAppEventBroadcaster Broadcaster
 @inject IOutputSanitizer OutputSanitizer
+@inject IModDownloadCancellationRegistry ModDownloadCancellationRegistry
 @inject ISnackbar Snackbar
 @implements IAsyncDisposable
 
@@ -91,13 +93,15 @@ else
 {
     <MudDataGrid T="SteamMod" Items="@_mods" Filterable="true" SortMode="SortMode.Multiple"
                  Hover="true" Dense="true" RowClick="@(args => ShowModDetails(args.Item))"
-                 Virtualize="true" FixedHeader="true" Height="@GridHeight">
+                 Virtualize="true" FixedHeader="true" Height="@GridHeight"
+                 ItemSize="56" OverscanCount="12">
         <Columns>
             <TemplateColumn Title="" HeaderStyle="width:48px" Sortable="false" Filterable="false">
                 <CellTemplate>
                     @if (!string.IsNullOrEmpty(context.Item.ThumbnailUrl))
                     {
-                        <img src="@context.Item.ThumbnailUrl" alt=""
+                        <img src="@context.Item.ThumbnailUrl" alt="" width="36" height="36"
+                             loading="lazy" decoding="async"
                              style="width:36px;height:36px;object-fit:cover;border-radius:4px;display:block;" />
                     }
                     else
@@ -122,18 +126,26 @@ else
             <TemplateColumn Title="Status" Sortable="false" HeaderStyle="width:180px">
                 <CellTemplate>
                     @{
-                        var isActive = context.Item.Status is ModStatus.Downloading or ModStatus.Updating;
+                        var isQueued = IsTaskQueued(context.Item.Id);
+                        var isCancelling = IsTaskCancelling(context.Item.Id);
+                        var isActive = IsTaskActive(context.Item);
                         var pct = GetModProgress(context.Item.Id);
                     }
                     @if (isActive)
                     {
                         <div style="min-width:140px;">
                             <div class="d-flex justify-space-between mb-1">
-                                <MudText Typo="Typo.caption" Color="Color.Warning">@context.Item.Status</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
+                                <MudText Typo="Typo.caption" Color="@GetTaskStatusColor(context.Item)">@GetTaskStatusLabel(context.Item)</MudText>
+                                @if (!isQueued && !isCancelling)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
+                                }
                             </div>
-                            <MudProgressLinear Value="@pct" Min="0" Max="100"
-                                              Color="Color.Warning" Rounded="true" Size="Size.Small" />
+                            @if (!isQueued && !isCancelling)
+                            {
+                                <MudProgressLinear Value="@pct" Min="0" Max="100"
+                                                   Color="Color.Warning" Rounded="true" Size="Size.Small" />
+                            }
                         </div>
                     }
                     else
@@ -214,13 +226,20 @@ else
                                                OnClick="@(() => CheckSingleModUpdate(context.Item))" />
                             </MudTooltip>
                         }
-                        @if (context.Item.Status is ModStatus.Downloading or ModStatus.Updating)
+                        @if (IsTaskActive(context.Item))
                         {
-                            <MudTooltip Text="Cancel" Arrow="true">
-                                <MudIconButton Icon="@Icons.Material.Filled.Cancel"
-                                               Size="Size.Small" Color="Color.Warning"
-                                               OnClick="@(() => CancelModDownload(context.Item.Id))" />
-                            </MudTooltip>
+                            @if (IsTaskCancelling(context.Item.Id))
+                            {
+                                <MudProgressCircular Size="Size.Small" Color="Color.Warning" />
+                            }
+                            else
+                            {
+                                <MudTooltip Text="Cancel" Arrow="true">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Cancel"
+                                                   Size="Size.Small" Color="Color.Warning"
+                                                   OnClick="@(() => CancelModDownload(context.Item.Id))" />
+                                </MudTooltip>
+                            }
                         }
                         else if (CanDownloadOrUpdate(context.Item))
                         {
@@ -250,12 +269,14 @@ else
             <TitleContent>
                 <div class="d-flex align-center gap-2" style="width:100%;">
                     @{
-                        var activeCount = _taskIds.Count(id => _mods.Any(m => m.Id == id &&
-                            m.Status is ModStatus.Downloading or ModStatus.Updating));
+                        var activeCount = _taskIds.Count(id => _mods.FirstOrDefault(m => m.Id == id) is { } mod && IsTaskActive(mod));
                         var taskErrCount = _taskIds.Count(id => _mods.Any(m => m.Id == id &&
                             m.Status == ModStatus.Error));
+                        var isCheckingAll = _isUpdatingAll && _isCheckingUpdates;
+                        var hasActiveWork = activeCount > 0 || _isUpdatingAll;
+                        var bulkCancellationRequested = _bulkUpdateCts?.IsCancellationRequested == true;
                     }
-                    @if (activeCount > 0)
+                    @if (hasActiveWork)
                     {
                         <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info" />
                     }
@@ -266,11 +287,11 @@ else
                                  Style="opacity:.7;" />
                     }
                     <MudText Typo="Typo.body2" Style="font-weight:600;">Downloads</MudText>
-                    @if (activeCount > 0)
+                        @if (hasActiveWork)
                     {
                         <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled"
                                  Style="height:20px; font-size:11px; margin:0;">
-                            @activeCount active
+                            @(bulkCancellationRequested ? "Cancelling" : isCheckingAll ? "Checking updates" : $"{activeCount} active")
                         </MudChip>
                     }
                     @if (taskErrCount > 0)
@@ -285,7 +306,7 @@ else
                         <MudText Typo="Typo.caption" Color="Color.Secondary" Style="opacity:.55;">No recent tasks</MudText>
                     }
                     <div style="flex:1" />
-                    @if (activeCount > 0)
+                    @if (hasActiveWork)
                     {
                         <div @onclick:stopPropagation="true">
                             <MudTooltip Text="Cancel all" Arrow="true">
@@ -313,7 +334,9 @@ else
                             var dlMod = _mods.FirstOrDefault(m => m.Id == modId);
                             if (dlMod is null) continue;
                             var pct = _taskProgress.TryGetValue(modId, out var tp) ? tp : 100.0;
-                            var isActive = dlMod.Status is ModStatus.Downloading or ModStatus.Updating;
+                            var isQueued = IsTaskQueued(modId);
+                            var isCancelling = IsTaskCancelling(modId);
+                            var isActive = IsTaskActive(dlMod);
                             <div class="dl-row">
                                 <div class="dl-thumb">
                                     @if (!string.IsNullOrEmpty(dlMod.ThumbnailUrl))
@@ -337,13 +360,23 @@ else
                                         <div class="d-flex align-center" style="flex-shrink:0;">
                                             @if (isActive)
                                             {
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
-                                                <MudTooltip Text="Cancel" Arrow="true">
-                                                    <MudIconButton Icon="@Icons.Material.Outlined.Cancel"
-                                                                   Size="Size.Small" Color="Color.Error"
-                                                                   Style="width:28px;height:28px;"
-                                                                   OnClick="@(() => CancelModDownload(modId))" />
-                                                </MudTooltip>
+                                                @if (!isQueued && !isCancelling)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@pct.ToString("F0")%</MudText>
+                                                }
+                                                @if (isCancelling)
+                                                {
+                                                    <MudProgressCircular Size="Size.Small" Color="Color.Warning" />
+                                                }
+                                                else
+                                                {
+                                                    <MudTooltip Text="Cancel" Arrow="true">
+                                                        <MudIconButton Icon="@Icons.Material.Outlined.Cancel"
+                                                                       Size="Size.Small" Color="Color.Error"
+                                                                       Style="width:28px;height:28px;"
+                                                                       OnClick="@(() => CancelModDownload(modId))" />
+                                                    </MudTooltip>
+                                                }
                                             }
                                             else
                                             {
@@ -355,19 +388,19 @@ else
                                     </div>
                                     <div class="d-flex align-center gap-2 mb-1">
                                         <MudChip T="string" Size="Size.Small"
-                                                 Color="@GetStatusColor(dlMod.Status)"
+                                                 Color="@GetTaskStatusColor(dlMod)"
                                                  Variant="Variant.Text"
                                                  Style="height:18px; font-size:10px; padding:0 4px; margin:0;">
-                                            @dlMod.Status
+                                            @GetTaskStatusLabel(dlMod)
                                         </MudChip>
-                                        @if (isActive && dlMod.ExpectedSizeBytes > 0)
+                                        @if (isActive && !isQueued && !isCancelling && dlMod.ExpectedSizeBytes > 0)
                                         {
                                             <MudText Typo="Typo.caption" Color="Color.Secondary" Style="white-space:nowrap;">
                                                 @FormatBytes((long)(pct / 100.0 * dlMod.ExpectedSizeBytes)) / @FormatBytes(dlMod.ExpectedSizeBytes)
                                             </MudText>
                                         }
                                     </div>
-                                    @if (isActive)
+                                    @if (isActive && !isQueued && !isCancelling)
                                     {
                                         <MudProgressLinear Value="@pct" Min="0" Max="100"
                                                           Color="Color.Warning" Rounded="true" Size="Size.Small" />
@@ -658,6 +691,12 @@ else
     private readonly Dictionary<int, double> _taskProgress = new(); // progress for active downloads
     private readonly List<int> _taskIds = new();                    // all task mod IDs, newest first
     private readonly Dictionary<int, CancellationTokenSource> _downloadCts = new();
+    private readonly HashSet<int> _queuedTaskIds = new();
+    private readonly HashSet<int> _cancellingTaskIds = new();
+    private readonly Dictionary<int, double> _pendingTaskProgress = new();
+    private readonly object _progressSync = new();
+    private readonly CancellationTokenSource _componentCts = new();
+    private bool _progressFlushScheduled;
     private CancellationTokenSource? _bulkUpdateCts;
     private readonly HashSet<int> _checkingMods = new();
 
@@ -688,29 +727,91 @@ else
         foreach (var cts in _downloadCts.Values) cts.Cancel();
         _bulkUpdateCts?.Cancel();
         _bulkUpdateCts?.Dispose();
+        _componentCts.Cancel();
+        _componentCts.Dispose();
         await Task.CompletedTask;
     }
 
     // ── In-process event handlers ─────────────────────────────────────────────
     private void HandleDownloadProgress(ModDownloadProgressEvent evt)
     {
-        _taskProgress[evt.ModId] = evt.ProgressPercent;
-        if (!_taskIds.Contains(evt.ModId))
-            _taskIds.Insert(0, evt.ModId);
-        InvokeAsync(StateHasChanged);
+        lock (_progressSync)
+        {
+            _pendingTaskProgress[evt.ModId] = evt.ProgressPercent;
+            if (_progressFlushScheduled)
+                return;
+
+            _progressFlushScheduled = true;
+        }
+
+        _ = FlushProgressAsync();
     }
 
-    private void HandleStatusChanged(ModStatusChangedEvent _)
+    private async Task FlushProgressAsync()
     {
-        InvokeAsync(async () =>
+        try
         {
-            await RefreshMods();
-            // Clear progress for mods no longer actively downloading (keep in _taskIds for history)
-            foreach (var id in _taskProgress.Keys
-                .Where(id => !_mods.Any(m => m.Id == id &&
-                             m.Status is ModStatus.Downloading or ModStatus.Updating))
-                .ToList())
-                _taskProgress.Remove(id);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), _componentCts.Token);
+            Dictionary<int, double> progress;
+            lock (_progressSync)
+            {
+                progress = new Dictionary<int, double>(_pendingTaskProgress);
+                _pendingTaskProgress.Clear();
+                _progressFlushScheduled = false;
+            }
+
+            await InvokeAsync(() =>
+            {
+                foreach (var (modId, percent) in progress)
+                {
+                    var mod = _mods.FirstOrDefault(candidate => candidate.Id == modId);
+                    if (mod is null || !IsTaskActive(mod))
+                        continue;
+
+                    _taskProgress[modId] = percent;
+                    AddTask(modId);
+                }
+                StateHasChanged();
+            });
+
+            lock (_progressSync)
+            {
+                if (_pendingTaskProgress.Count == 0 || _progressFlushScheduled)
+                    return;
+
+                _progressFlushScheduled = true;
+            }
+            _ = FlushProgressAsync();
+        }
+        catch (OperationCanceledException) when (_componentCts.IsCancellationRequested)
+        {
+            lock (_progressSync)
+                _progressFlushScheduled = false;
+        }
+    }
+
+    private void HandleStatusChanged(ModStatusChangedEvent evt)
+    {
+        _ = InvokeAsync(() =>
+        {
+            var mod = _mods.FirstOrDefault(m => m.Id == evt.ModId);
+            if (mod is null || !Enum.TryParse<ModStatus>(evt.NewStatus, out var status))
+                return;
+
+            mod.Status = status;
+            if (status is ModStatus.Downloading or ModStatus.Updating)
+            {
+                _queuedTaskIds.Remove(mod.Id);
+                AddTask(mod.Id);
+            }
+            else
+            {
+                _queuedTaskIds.Remove(mod.Id);
+                _cancellingTaskIds.Remove(mod.Id);
+                _taskProgress.Remove(mod.Id);
+            }
+
+            RecalculateModCounts();
             StateHasChanged();
         });
     }
@@ -719,6 +820,11 @@ else
     private async Task RefreshMods()
     {
         _mods = await ModService.GetAllModsAsync();
+        RecalculateModCounts();
+    }
+
+    private void RecalculateModCounts()
+    {
         _outdatedCount = _mods.Count(m => m.Status == ModStatus.UpdateAvailable);
         _errorCount    = _mods.Count(m => m.Status == ModStatus.Error);
         _pendingCount  = _mods.Count(m => m.Source == ModSource.SteamWorkshop &&
@@ -729,6 +835,39 @@ else
 
     private double GetModProgress(int modId) =>
         _taskProgress.TryGetValue(modId, out var p) ? p : 0;
+
+    private bool IsTaskQueued(int modId) => _queuedTaskIds.Contains(modId);
+    private bool IsTaskCancelling(int modId) => _cancellingTaskIds.Contains(modId);
+    private bool IsTaskActive(SteamMod mod) =>
+        IsTaskQueued(mod.Id) ||
+        IsTaskCancelling(mod.Id) ||
+        mod.Status is ModStatus.Downloading or ModStatus.Updating;
+
+    private string GetTaskStatusLabel(SteamMod mod) =>
+        IsTaskCancelling(mod.Id) ? "Cancelling" :
+        IsTaskQueued(mod.Id) ? "Queued" :
+        mod.Status.ToString();
+
+    private Color GetTaskStatusColor(SteamMod mod) =>
+        IsTaskCancelling(mod.Id) ? Color.Warning :
+        IsTaskQueued(mod.Id) ? Color.Info :
+        GetStatusColor(mod.Status);
+
+    private void AddTask(int modId)
+    {
+        if (!_taskIds.Contains(modId))
+            _taskIds.Insert(0, modId);
+    }
+
+    private void QueueTasks(IEnumerable<SteamMod> mods)
+    {
+        foreach (var mod in mods)
+        {
+            AddTask(mod.Id);
+            _queuedTaskIds.Add(mod.Id);
+            _taskProgress[mod.Id] = 0;
+        }
+    }
 
     private static string GridHeight => "calc(100vh - 232px)"; // task panel always present
 
@@ -928,6 +1067,8 @@ else
         finally
         {
             _downloadCts.Remove(mod.Id);
+            _queuedTaskIds.Remove(mod.Id);
+            _cancellingTaskIds.Remove(mod.Id);
             cts.Dispose();
         }
     }
@@ -972,17 +1113,21 @@ else
         if (_isUpdatingAll || _isCheckingUpdates) return;
         _isUpdatingAll = true;
         _isCheckingUpdates = true;
+        _bulkUpdateCts?.Dispose();
+        var bulkUpdateCts = new CancellationTokenSource();
+        _bulkUpdateCts = bulkUpdateCts;
+        var pendingMods = new List<SteamMod>();
         StateHasChanged();
         try
         {
             // Phase 1: check Steam for manifest changes
-            await ModService.CheckForUpdatesAsync();
+            await ModService.CheckForUpdatesAsync(bulkUpdateCts.Token);
             await RefreshMods();
             _isCheckingUpdates = false;
             StateHasChanged();
 
-            // Phase 2: fire individual downloads — each gets its own CTS linked to the bulk CTS
-            var pendingMods = _mods
+            // Phase 2: update the selected mods through the service-owned queue.
+            pendingMods = _mods
                 .Where(m => m.Source == ModSource.SteamWorkshop &&
                             m.Status is ModStatus.NotInstalled or ModStatus.UpdateAvailable or ModStatus.Error)
                 .ToList();
@@ -991,15 +1136,33 @@ else
                 Snackbar.Add("All mods are already up to date", Severity.Success);
                 return;
             }
-            _bulkUpdateCts?.Dispose();
-            _bulkUpdateCts = new CancellationTokenSource();
-            foreach (var mod in pendingMods)
-                _ = DownloadMod(mod, _bulkUpdateCts.Token);
-            Snackbar.Add($"Updating {pendingMods.Count} mod(s) in parallel…", Severity.Info);
+            QueueTasks(pendingMods);
+            _showDownloadsDrawer = true;
+            StateHasChanged();
+
+            // The service creates isolated, bounded-parallel workers. Awaiting
+            // keeps the bulk operation tracked by this circuit for cancellation.
+            await ModUpdateCoordinator.UpdateAllOutdatedModsAsync(bulkUpdateCts.Token);
+            await RefreshMods();
+            var failedCount = _mods.Count(m => pendingMods.Any(p => p.Id == m.Id) && m.Status == ModStatus.Error);
+            Snackbar.Add(
+                failedCount == 0
+                    ? $"Finished updating {pendingMods.Count} mod(s)"
+                    : $"Finished updating {pendingMods.Count - failedCount} mod(s); {failedCount} failed",
+                failedCount == 0 ? Severity.Success : Severity.Warning);
         }
+        catch (OperationCanceledException) { Snackbar.Add("Update all cancelled", Severity.Info); }
         catch (Exception ex) { Snackbar.Add($"Update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally
         {
+            foreach (var mod in pendingMods)
+            {
+                _queuedTaskIds.Remove(mod.Id);
+                _cancellingTaskIds.Remove(mod.Id);
+            }
+            if (_bulkUpdateCts == bulkUpdateCts)
+                _bulkUpdateCts = null;
+            bulkUpdateCts.Dispose();
             _isUpdatingAll = false;
             _isCheckingUpdates = false;
         }
@@ -1009,15 +1172,38 @@ else
     private static bool CanDownloadOrUpdate(SteamMod mod) => mod.Source == ModSource.SteamWorkshop;
     private void CancelModDownload(int modId)
     {
+        var wasQueued = IsTaskQueued(modId);
+        var cancellationRequested = false;
         if (_downloadCts.TryGetValue(modId, out var cts))
+        {
             cts.Cancel();
-        // For mods started via bulk update, use Cancel All
+            cancellationRequested = true;
+        }
+        else
+        {
+            cancellationRequested = wasQueued
+                ? ModDownloadCancellationRegistry.CancelOrMarkPending(modId)
+                : ModDownloadCancellationRegistry.Cancel(modId);
+        }
+
+        if (!cancellationRequested)
+            return;
+
+        _queuedTaskIds.Remove(modId);
+        _cancellingTaskIds.Add(modId);
+        StateHasChanged();
     }
 
     private void CancelAllDownloads()
     {
-        foreach (var cts in _downloadCts.Values) cts.Cancel();
+        foreach (var cts in _downloadCts.Values.ToArray()) cts.Cancel();
         _bulkUpdateCts?.Cancel();
+        foreach (var mod in _mods.Where(IsTaskActive))
+        {
+            _queuedTaskIds.Remove(mod.Id);
+            _cancellingTaskIds.Add(mod.Id);
+        }
+        StateHasChanged();
     }
 
     private async Task CheckSingleModUpdate(SteamMod mod)

@@ -19,15 +19,19 @@ public static class DependencyInjection
 
         // Steam services
         services.TryAddSingleton<IOutputSanitizer, OutputSanitizer>();
+        services.AddSingleton<ISteamDownloadScheduler, SteamDownloadScheduler>();
         services.AddSingleton<ISteamService>(sp =>
         {
             var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SteamClientService>>();
             var sanitizer = sp.GetRequiredService<IOutputSanitizer>();
-            return new SteamClientService(logger, sanitizer);
+            var downloadScheduler = sp.GetRequiredService<ISteamDownloadScheduler>();
+            return new SteamClientService(logger, sanitizer, downloadScheduler);
         });
 
         services.AddSingleton<IProcessManagerService, ProcessManagerService>();
+        services.AddSingleton<IModDownloadCancellationRegistry, ModDownloadCancellationRegistry>();
         services.AddScoped<IModService, ModService>();
+        services.AddScoped<IModUpdateCoordinator, CoordinatedModService>();
         services.AddScoped<IServerInstanceService, ServerInstanceService>();
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();

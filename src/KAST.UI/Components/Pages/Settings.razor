@@ -22,9 +22,16 @@
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Downloads</MudText>
                 <div class="d-flex align-center gap-4 flex-wrap">
                     <MudNumericField @bind-Value="_parallelDownloads" Label="Parallel Downloads"
-                                     Min="1" Max="64" Step="1" Style="width:160px;" />
+                                     Min="@DownloadConcurrency.MinimumSteamWorkers" Max="@DownloadConcurrency.MaximumSteamWorkers" Step="1" Style="width:160px;" />
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Number of concurrent file downloads when installing server files (1–64).
+                        Concurrent Steam content file downloads per mod or server install (@DownloadConcurrency.MinimumSteamWorkers–@DownloadConcurrency.MaximumSteamWorkers).
+                    </MudText>
+                </div>
+                <div class="d-flex align-center gap-4 flex-wrap mt-3">
+                    <MudNumericField @bind-Value="_bulkModDownloadConcurrency" Label="Update All Mod Downloads"
+                                     Min="@DownloadConcurrency.MinimumBulkModDownloads" Max="@DownloadConcurrency.MaximumBulkModDownloads" Step="1" Style="width:160px;" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Concurrent mod downloads when using Update All (@DownloadConcurrency.MinimumBulkModDownloads–@DownloadConcurrency.MaximumBulkModDownloads).
                     </MudText>
                 </div>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveGeneralSettings">Save</MudButton>
@@ -33,7 +40,7 @@
 
                 <MudText Typo="Typo.subtitle2" Class="mb-1">Speed Benchmark</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
-                    Downloads ~30 MB from Steam CDN at different parallelism levels to find the optimal setting for your connection.
+                    Downloads ~80 MB from Steam CDN at different parallelism levels to find the optimal setting for your connection.
                 </MudText>
 
                 @if (_benchmarkRunning)
@@ -309,7 +316,8 @@
     private IReadOnlyList<ApiKey> _apiKeys = [];
     private string _newKeyName = "";
     private string _newRawKey = "";
-    private int _parallelDownloads = 4;
+    private int _parallelDownloads = DownloadConcurrency.DefaultSteamWorkers;
+    private int _bulkModDownloadConcurrency = DownloadConcurrency.DefaultBulkModDownloads;
 
     private bool _benchmarkRunning;
     private string? _benchmarkStatus;
@@ -324,6 +332,7 @@
         _apiKeys = await ApiKeyService.GetAllKeysAsync();
         var settings = await SettingsService.GetSettingsAsync();
         _parallelDownloads = settings.ParallelDownloads;
+        _bulkModDownloadConcurrency = settings.BulkModDownloadConcurrency;
         _accentMud  = ThemeService.AccentColor;
         _isDarkMode = ThemeService.IsDarkMode;
 
@@ -482,7 +491,14 @@
     private async Task SaveGeneralSettings()
     {
         var settings = await SettingsService.GetSettingsAsync();
-        settings.ParallelDownloads = Math.Clamp(_parallelDownloads, 1, 64);
+        settings.ParallelDownloads = Math.Clamp(
+            _parallelDownloads,
+            DownloadConcurrency.MinimumSteamWorkers,
+            DownloadConcurrency.MaximumSteamWorkers);
+        settings.BulkModDownloadConcurrency = Math.Clamp(
+            _bulkModDownloadConcurrency,
+            DownloadConcurrency.MinimumBulkModDownloads,
+            DownloadConcurrency.MaximumBulkModDownloads);
         await SettingsService.UpdateSettingsAsync(settings);
         Snackbar.Add("Settings saved", Severity.Success);
     }

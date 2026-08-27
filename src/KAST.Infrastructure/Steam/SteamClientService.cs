@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using KAST.Core.Interfaces;
+using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
@@ -15,6 +16,7 @@ public class SteamClientService : ISteamService, IDisposable
 {
     private readonly ILogger<SteamClientService> _logger;
     private readonly IOutputSanitizer _sanitizer;
+    private readonly ISteamDownloadScheduler _downloadScheduler;
     private readonly SteamClient _steamClient;
     private readonly CallbackManager _callbackManager;
     private readonly SteamUser _steamUser;
@@ -127,10 +129,14 @@ public class SteamClientService : ISteamService, IDisposable
     public SteamUserProfile? Profile => _profile;
     public event Action? AuthStateChanged;
 
-    public SteamClientService(ILogger<SteamClientService> logger, IOutputSanitizer sanitizer)
+    public SteamClientService(
+        ILogger<SteamClientService> logger,
+        IOutputSanitizer sanitizer,
+        ISteamDownloadScheduler downloadScheduler)
     {
         _logger = logger;
         _sanitizer = sanitizer;
+        _downloadScheduler = downloadScheduler;
         _steamClient = new SteamClient();
         _callbackManager = new CallbackManager(_steamClient);
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
@@ -643,7 +649,8 @@ public class SteamClientService : ISteamService, IDisposable
     private const uint Arma3AppId = 107410;
 
     public async Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        IProgress<double>? progress = null, CancellationToken ct = default,
+        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -711,13 +718,15 @@ public class SteamClientService : ISteamService, IDisposable
         long totalSize = files.Sum(f => (long)f.TotalSize);
         Directory.CreateDirectory(destinationPath);
 
+        var effectiveParallelism = Math.Max(1, maxParallelDownloads);
+
         var (bytesTransferred, _, dlElapsed) = await DownloadFilesInParallelAsync(
             files, depotId, depotKey, pool, destinationPath,
             parentSpanContext: workshopActivity?.Context ?? Activity.Current?.Context ?? default,
             progressBase: 0, progressTotal: totalSize,
             progress, logProgress: null,
             logPrefix: $"Workshop {workshopId}",
-            maxParallelWorkers: 4, ct);
+            maxParallelWorkers: effectiveParallelism, ct);
 
         var totalMbDownloaded = bytesTransferred / 1_048_576.0;
         var avgMbps  = dlElapsed.TotalSeconds > 0 ? totalMbDownloaded / dlElapsed.TotalSeconds : 0;
@@ -1207,7 +1216,8 @@ public class SteamClientService : ISteamService, IDisposable
 
     private async Task<int> DownloadChunkWithRetryAsync(
         uint depotId, DepotManifest.ChunkData chunk, CdnServerPool pool,
-        byte[] buf, byte[]? depotKey, CancellationToken ct)
+        byte[] buf, byte[]? depotKey, CancellationToken ct,
+        bool useGlobalDownloadScheduler = true)
     {
         Exception? lastEx = null;
 
@@ -1215,17 +1225,41 @@ public class SteamClientService : ISteamService, IDisposable
         {
             ct.ThrowIfCancellationRequested();
 
-            var server = pool.GetServer(ct);
+            IDisposable? downloadPermit = useGlobalDownloadScheduler
+                ? await _downloadScheduler.AcquireAsync(ct)
+                : null;
+            Server server;
             try
             {
-                var written = await _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
+                server = pool.GetServer(ct);
+            }
+            catch
+            {
+                downloadPermit?.Dispose();
+                throw;
+            }
+
+            Task<int>? downloadTask = null;
+            try
+            {
+                // SteamKit does not expose a cancellation token for this request. WaitAsync
+                // lets KAST stop the owning worker promptly while the HTTP request drains.
+                downloadTask = _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
+                var written = await downloadTask.WaitAsync(ct);
                 pool.ReturnServer(server, false); // proven good — reuse it
                 return written;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException ex)
             {
-                pool.ReturnServer(server, false);
-                throw;
+                // SteamKit can cancel its own HttpClient request concurrently with
+                // the caller's token. Neither case is a retryable CDN failure.
+                HandleCancelledRequest(downloadTask, pool, server, downloadPermit);
+                downloadPermit = null;
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ct);
+
+                throw new OperationCanceledException(
+                    "Steam cancelled the CDN chunk request.", ex, ex.CancellationToken);
             }
             catch (Exception ex)
             {
@@ -1247,6 +1281,10 @@ public class SteamClientService : ISteamService, IDisposable
                 if (attempt < MaxChunkRetries - 1)
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct); // 1s, 2s back-off
             }
+            finally
+            {
+                downloadPermit?.Dispose();
+            }
         }
 
         throw new IOException(
@@ -1254,10 +1292,65 @@ public class SteamClientService : ISteamService, IDisposable
             lastEx);
     }
 
+    private void HandleCancelledRequest(
+        Task? requestTask,
+        CdnServerPool pool,
+        Server server,
+        IDisposable? downloadPermit)
+    {
+        if (requestTask is { IsCompletedSuccessfully: true })
+        {
+            pool.ReturnServer(server, false);
+            downloadPermit?.Dispose();
+        }
+        else if (requestTask is { IsCompleted: false })
+        {
+            _ = ReturnServerAfterCancelledRequestAsync(requestTask, pool, server, downloadPermit);
+        }
+        else if (requestTask is { IsCanceled: true })
+        {
+            pool.ReturnServer(server, false);
+            downloadPermit?.Dispose();
+        }
+        else
+        {
+            pool.ReturnServer(server, true);
+            downloadPermit?.Dispose();
+        }
+    }
+
+    private async Task ReturnServerAfterCancelledRequestAsync(
+        Task requestTask, CdnServerPool pool, Server server, IDisposable? downloadPermit)
+    {
+        try
+        {
+            await requestTask.ConfigureAwait(false);
+            pool.ReturnServer(server, false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The user cancelled KAST's wait while SteamKit was still using the
+            // request. A cancelled transport does not make the CDN host faulty.
+            pool.ReturnServer(server, false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex,
+                "Cancelled CDN request on {Server} completed with an error; discarding server",
+                server.Host);
+            pool.ReturnServer(server, true);
+        }
+        finally
+        {
+            downloadPermit?.Dispose();
+        }
+    }
+
     public async Task DownloadAppAsync(
         uint appId, string destinationPath,
         IProgress<double>? progress = null, IProgress<string>? logProgress = null,
-        bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null, int maxParallelDownloads = 4, CancellationToken ct = default)
+        bool ignorePlatformFilter = false, string branch = "public", uint[]? depotFilter = null,
+        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers, CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -1474,7 +1567,6 @@ public class SteamClientService : ISteamService, IDisposable
 
     private const uint BenchmarkAppId   = 233780; // Arma 3 DS
     private const uint BenchmarkDepotId = 233781; // Server Content depot
-    private static readonly int[] BenchmarkLevels = [1, 2, 4, 8, 16, 32, 64];
     // Each level gets its own slice of unique chunks so CDN edge-cache from one
     // run cannot inflate the apparent speed of the next level.
     private const long BenchmarkTargetBytesPerLevel = 10 * 1024 * 1024; // 10 MB per level
@@ -1489,7 +1581,7 @@ public class SteamClientService : ISteamService, IDisposable
             "kast.steam.benchmark", ActivityKind.Internal);
         benchActivity?.SetTag("benchmark.app_id",   BenchmarkAppId);
         benchActivity?.SetTag("benchmark.depot_id", BenchmarkDepotId);
-        benchActivity?.SetTag("benchmark.levels",   string.Join(",", BenchmarkLevels));
+        benchActivity?.SetTag("benchmark.levels", string.Join(",", DownloadConcurrency.BenchmarkLevels));
         benchActivity?.SetTag("benchmark.mb_per_level",
             BenchmarkTargetBytesPerLevel / 1_048_576.0);
 
@@ -1518,7 +1610,7 @@ public class SteamClientService : ISteamService, IDisposable
 
         // 3. Collect enough UNIQUE chunks to give each level its own non-overlapping slice.
         //    This prevents CDN edge-cache warm-up from the previous level inflating results.
-        long totalNeeded = BenchmarkTargetBytesPerLevel * BenchmarkLevels.Length;
+        long totalNeeded = BenchmarkTargetBytesPerLevel * DownloadConcurrency.BenchmarkLevels.Count;
         var allChunks = new List<DepotManifest.ChunkData>();
         long collected = 0;
 
@@ -1533,22 +1625,22 @@ public class SteamClientService : ISteamService, IDisposable
             if (collected >= totalNeeded) break;
         }
 
-        log?.Report($"Collected {allChunks.Count} unique chunks ({collected / 1_048_576.0:F0} MB) partitioned across {BenchmarkLevels.Length} levels");
+        log?.Report($"Collected {allChunks.Count} unique chunks ({collected / 1_048_576.0:F0} MB) partitioned across {DownloadConcurrency.BenchmarkLevels.Count} levels");
         benchActivity?.SetTag("benchmark.chunks_collected", allChunks.Count);
         benchActivity?.SetTag("benchmark.mb_collected",     Math.Round(collected / 1_048_576.0, 1));
 
         // Partition chunks into non-overlapping slices — one slice per level
-        int chunksPerLevel = Math.Max(1, allChunks.Count / BenchmarkLevels.Length);
+        int chunksPerLevel = Math.Max(1, allChunks.Count / DownloadConcurrency.BenchmarkLevels.Count);
         var results = new List<BenchmarkResult>();
 
         // 4. Run each parallelism level on its own private chunk slice
-        for (int i = 0; i < BenchmarkLevels.Length; i++)
+        for (int i = 0; i < DownloadConcurrency.BenchmarkLevels.Count; i++)
         {
-            var level = BenchmarkLevels[i];
+            var level = DownloadConcurrency.BenchmarkLevels[i];
             ct.ThrowIfCancellationRequested();
 
             int sliceStart = i * chunksPerLevel;
-            int sliceEnd   = (i == BenchmarkLevels.Length - 1) ? allChunks.Count : sliceStart + chunksPerLevel;
+            int sliceEnd   = (i == DownloadConcurrency.BenchmarkLevels.Count - 1) ? allChunks.Count : sliceStart + chunksPerLevel;
             if (sliceStart >= allChunks.Count) sliceStart = 0; // fallback: reuse from start if manifest too small
             if (sliceEnd   >  allChunks.Count) sliceEnd   = allChunks.Count;
 
@@ -1577,7 +1669,9 @@ public class SteamClientService : ISteamService, IDisposable
                 {
                     ct.ThrowIfCancellationRequested();
                     var buf = new byte[chunk.UncompressedLength];
-                    var written = await DownloadChunkWithRetryAsync(BenchmarkDepotId, chunk, pool, buf, depotKey, ct);
+                    var written = await DownloadChunkWithRetryAsync(
+                        BenchmarkDepotId, chunk, pool, buf, depotKey, ct,
+                        useGlobalDownloadScheduler: false);
                     Interlocked.Add(ref bytesDown, written);
                 }
                 finally { sem.Release(); }
