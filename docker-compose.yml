@@ -8,6 +8,7 @@ services:
       - "2302-2322:2302-2322/udp"
     volumes:
       - kast-data:/app/data
+      - kast-logs:/app/logs
       - kast-mods:/app/mods
       - kast-servers:/app/servers
     restart: unless-stopped
@@ -20,6 +21,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__Default=Data Source=/app/data/kast.db
+      - Kast__LogsDirectory=/app/logs
       # Server-rendered components must call Kestrel directly; port 80 is not Nginx inside this container.
       - Kast__InternalBaseUrl=http://localhost:5000
       - Telemetry__Enabled=true
@@ -49,5 +51,6 @@ services:
 
 volumes:
   kast-data:
+  kast-logs:
   kast-mods:
   kast-servers:

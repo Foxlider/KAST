@@ -6,7 +6,10 @@ using Microsoft.Extensions.Configuration;
 
 namespace KAST.Infrastructure.Services;
 
-public class SettingsService(KastDbContext db, IConfiguration configuration) : ISettingsService
+public class SettingsService(
+    KastDbContext db,
+    IConfiguration configuration,
+    ISteamDownloadScheduler steamDownloadScheduler) : ISettingsService
 {
     public async Task<KastSettings> GetSettingsAsync(CancellationToken ct = default)
     {
@@ -31,6 +34,7 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
         var serversEnv = Environment.GetEnvironmentVariable("Kast__ServersDirectory");
         if (!string.IsNullOrEmpty(serversEnv)) settings.ServersDirectory = serversEnv;
 
+        steamDownloadScheduler.SetMaximumConcurrency(settings.ParallelDownloads);
         return settings;
     }
 
@@ -49,7 +53,9 @@ public class SettingsService(KastDbContext db, IConfiguration configuration) : I
             existing.ThemeMode = settings.ThemeMode;
             existing.MetricsIntervalSeconds = settings.MetricsIntervalSeconds;
             existing.ParallelDownloads = settings.ParallelDownloads;
+            existing.BulkModDownloadConcurrency = settings.BulkModDownloadConcurrency;
         }
         await db.SaveChangesAsync(ct);
+        steamDownloadScheduler.SetMaximumConcurrency(settings.ParallelDownloads);
     }
 }

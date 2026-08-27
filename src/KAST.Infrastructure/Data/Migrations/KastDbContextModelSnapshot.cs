@@ -124,6 +124,9 @@ namespace KAST.Infrastructure.Data.Migrations
                     b.Property<int>("Arma3ServerAppId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("BulkModDownloadConcurrency")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("MetricsIntervalSeconds")
                         .HasColumnType("INTEGER");
 

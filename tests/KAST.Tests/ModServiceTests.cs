@@ -13,7 +13,8 @@ namespace KAST.Tests;
 public class ModServiceTests : IDisposable
 {
     private readonly Infrastructure.Data.KastDbContext _db;
-    private readonly ISteamService _steamService;
+    private readonly ISteamWorkshopCatalogService _workshopCatalog;
+    private readonly ISteamWorkshopDownloadService _workshopDownloads;
     private readonly ISettingsService _settingsService;
     private readonly IAppEventBroadcaster _broadcaster;
     private readonly ILogger<ModService> _logger;
@@ -23,13 +24,21 @@ public class ModServiceTests : IDisposable
     public ModServiceTests()
     {
         _db = DbHelper.CreateInMemoryDb();
-        _steamService = Substitute.For<ISteamService>();
+        _workshopCatalog = Substitute.For<ISteamWorkshopCatalogService>();
+        _workshopDownloads = Substitute.For<ISteamWorkshopDownloadService>();
         _settingsService = Substitute.For<ISettingsService>();
         _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(new KastSettings { ModsDirectory = ".KAST_DATA/mods" });
         _broadcaster = Substitute.For<IAppEventBroadcaster>();
         _logger = Substitute.For<ILogger<ModService>>();
-        _sut = new ModService(_db, _steamService, _settingsService, _broadcaster, _logger, new OutputSanitizer());
+        _sut = new ModService(
+            _db,
+            _workshopCatalog,
+            _workshopDownloads,
+            _settingsService,
+            _broadcaster,
+            _logger,
+            new OutputSanitizer());
     }
 
     ~ModServiceTests()
@@ -60,7 +69,7 @@ public class ModServiceTests : IDisposable
     [Fact]
     public async Task AddWorkshopMod_NewMod_CreatesEntry()
     {
-        _steamService.GetWorkshopItemInfoAsync(123456, Arg.Any<CancellationToken>())
+        _workshopCatalog.GetWorkshopItemInfoAsync(123456, Arg.Any<CancellationToken>())
             .Returns(new WorkshopItemInfo
             {
                 WorkshopId = 123456,
@@ -84,7 +93,7 @@ public class ModServiceTests : IDisposable
     [Fact]
     public async Task AddWorkshopMod_DuplicateId_ReturnsExisting()
     {
-        _steamService.GetWorkshopItemInfoAsync(123456, Arg.Any<CancellationToken>())
+        _workshopCatalog.GetWorkshopItemInfoAsync(123456, Arg.Any<CancellationToken>())
             .Returns(new WorkshopItemInfo { WorkshopId = 123456, Name = "Mod" });
 
         var first = await _sut.AddWorkshopModAsync(123456);
@@ -97,7 +106,7 @@ public class ModServiceTests : IDisposable
     [Fact]
     public async Task AddWorkshopMod_SteamInfoNull_UsesFallbackName()
     {
-        _steamService.GetWorkshopItemInfoAsync(999, Arg.Any<CancellationToken>())
+        _workshopCatalog.GetWorkshopItemInfoAsync(999, Arg.Any<CancellationToken>())
             .Returns((WorkshopItemInfo?)null);
 
         var mod = await _sut.AddWorkshopModAsync(999);
@@ -224,13 +233,30 @@ public class ModServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DownloadMod_UsesConfiguredSteamWorkerCount()
+    {
+        _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings { ModsDirectory = ".KAST_DATA/mods", ParallelDownloads = 9 });
+        var mod = new SteamMod { Name = "Configured", WorkshopId = 554 };
+        _db.Mods.Add(mod);
+        await _db.SaveChangesAsync();
+        _workshopDownloads.DownloadWorkshopItemAsync(554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9)
+            .Returns(Task.FromResult(0UL));
+
+        await _sut.DownloadModAsync(mod.Id);
+
+        await _workshopDownloads.Received(1).DownloadWorkshopItemAsync(
+            554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9);
+    }
+
+    [Fact]
     public async Task DownloadMod_SetsStatusToDownloading_ThenInstalled()
     {
         var mod = new SteamMod { Name = "DL Mod", WorkshopId = 555, ExpectedSizeBytes = 1000 };
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -247,7 +273,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -263,7 +289,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("Steam CDN error"));
 
         await Assert.ThrowsAsync<Exception>(() => _sut.DownloadModAsync(mod.Id));
@@ -288,7 +314,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.GetWorkshopItemInfoAsync(111, Arg.Any<CancellationToken>())
+        _workshopCatalog.GetWorkshopItemInfoAsync(111, Arg.Any<CancellationToken>())
             .Returns(new WorkshopItemInfo
             {
                 WorkshopId = 111,
@@ -315,7 +341,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _steamService.GetWorkshopItemInfoAsync(222, Arg.Any<CancellationToken>())
+        _workshopCatalog.GetWorkshopItemInfoAsync(222, Arg.Any<CancellationToken>())
             .Returns(new WorkshopItemInfo
             {
                 WorkshopId = 222,
@@ -326,5 +352,47 @@ public class ModServiceTests : IDisposable
 
         var updated = await _db.Mods.FindAsync(mod.Id);
         Assert.Equal(ModStatus.Installed, updated!.Status);
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_UsesConfiguredConcurrentMetadataRequests()
+    {
+        _settingsService.GetSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(new KastSettings
+            {
+                ModsDirectory = ".KAST_DATA/mods",
+                BulkModDownloadConcurrency = 2
+            });
+        _db.Mods.AddRange(
+            new SteamMod { Name = "First", WorkshopId = 1, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed },
+            new SteamMod { Name = "Second", WorkshopId = 2, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed },
+            new SteamMod { Name = "Third", WorkshopId = 3, Source = ModSource.SteamWorkshop, Status = ModStatus.Installed });
+        await _db.SaveChangesAsync();
+
+        var twoRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRequestsToComplete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestCount = 0;
+        _workshopCatalog.GetWorkshopItemInfoAsync(Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref requestCount) == 2)
+                    twoRequestsStarted.TrySetResult();
+
+                await allowRequestsToComplete.Task.WaitAsync(call.Arg<CancellationToken>());
+                return (WorkshopItemInfo?)new WorkshopItemInfo
+                {
+                    WorkshopId = call.Arg<long>(),
+                    LastUpdated = DateTime.UtcNow
+                };
+            });
+
+        var checkForUpdates = _sut.CheckForUpdatesAsync();
+        await twoRequestsStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, Volatile.Read(ref requestCount));
+
+        allowRequestsToComplete.TrySetResult();
+        await checkForUpdates;
+        Assert.Equal(3, Volatile.Read(ref requestCount));
     }
 }

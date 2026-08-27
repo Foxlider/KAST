@@ -7,6 +7,7 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.x'
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
   # ── Always runs on every PR ──────────────────────────────────────────────
@@ -16,17 +17,38 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Install SonarCloud scanner
+        if: github.event.pull_request.head.repo.fork == false
+        run: dotnet tool install --global dotnet-sonarscanner
+
       - name: Restore dependencies
         run: dotnet restore
+
+      - name: Begin SonarCloud analysis
+        if: github.event.pull_request.head.repo.fork == false
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PR_KEY: ${{ github.event.pull_request.number }}
+          SONAR_PR_BRANCH: ${{ github.head_ref }}
+          SONAR_PR_BASE: ${{ github.base_ref }}
+        run: |
+          dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.pullrequest.key="$SONAR_PR_KEY" \
+            /d:sonar.pullrequest.branch="$SONAR_PR_BRANCH" \
+            /d:sonar.pullrequest.base="$SONAR_PR_BASE" \
+            /d:sonar.coverage.exclusions="**/bin/**,**/obj/**,**/Data/Migrations/**" \
+            /d:sonar.cs.opencover.reportsPaths="./coverage/**/coverage.opencover.xml"
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
@@ -34,10 +56,16 @@ jobs:
       - name: Test with coverage
         run: |
           dotnet test --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" \
+            --collect:"XPlat Code Coverage;Format=opencover" \
             --results-directory ./coverage \
             --logger "trx;LogFileName=test-results.trx" \
             --verbosity normal
+
+      - name: End SonarCloud analysis
+        if: ${{ always() && github.event.pull_request.head.repo.fork == false }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
       - name: Install ReportGenerator
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
@@ -45,7 +73,7 @@ jobs:
       - name: Generate coverage report
         run: |
           reportgenerator \
-            -reports:"./coverage/**/coverage.cobertura.xml" \
+            -reports:"./coverage/**/coverage.opencover.xml" \
             -targetdir:"./coverage/report" \
             -reporttypes:"MarkdownSummaryGithub;Html" \
             -title:"KAST Coverage — PR #${{ github.event.pull_request.number }}"
@@ -97,7 +125,7 @@ jobs:
   #     name: Conventional Commits — All commits
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v6
+  #       - uses: actions/checkout@v7
   #         with:
   #           fetch-depth: 0
   #       - uses: actions/setup-node@v4
@@ -140,7 +168,7 @@ jobs:
 #     name: Conventional Commits — All commits
 #     runs-on: ubuntu-latest
 #     steps:
-#       - uses: actions/checkout@v6
+#       - uses: actions/checkout@v7
 #         with:
 #           fetch-depth: 0
 #       - uses: actions/setup-node@v4

@@ -35,8 +35,8 @@ RUN apt-get update && \
         libcap2 && \
     rm -rf /var/lib/apt/lists/*
 
-# Create directories for data persistence
-RUN mkdir -p /app/data /app/mods /app/servers
+# Create directories for persistent data
+RUN mkdir -p /app/data /app/logs /app/mods /app/servers
 
 COPY --from=build /app/publish .
 
@@ -44,6 +44,7 @@ ENV ASPNETCORE_URLS=http://+:5000
 ENV ConnectionStrings__Default="Data Source=/app/data/kast.db"
 ENV Kast__ModsDirectory=/app/mods
 ENV Kast__ServersDirectory=/app/servers
+ENV Kast__LogsDirectory=/app/logs
 
 EXPOSE 5000
 

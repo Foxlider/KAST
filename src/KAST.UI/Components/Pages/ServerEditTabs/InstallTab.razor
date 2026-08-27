@@ -278,7 +278,7 @@
         if (_installState is not null) _installState.Changed -= OnInstallStateChangedCallback;
 
         var settings = await SettingsService.GetSettingsAsync();
-        int maxPar = Math.Max(1, settings.ParallelDownloads);
+        int maxPar = Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads);
 
         _installState = ContentOrchestrator.StartServerInstall(Instance.Id, Instance.InstallPath, Instance, maxPar);
         _installState.Changed += OnInstallStateChangedCallback;

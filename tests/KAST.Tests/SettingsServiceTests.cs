@@ -1,5 +1,9 @@
+using KAST.Core.Models;
 using KAST.Infrastructure.Services;
+using KAST.Infrastructure.Steam;
 using KAST.Tests.Helpers;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
 namespace KAST.Tests;
@@ -7,6 +11,7 @@ namespace KAST.Tests;
 public class SettingsServiceTests : IDisposable
 {
     private readonly Infrastructure.Data.KastDbContext _db;
+    private readonly SteamDownloadScheduler _downloadScheduler = new();
     private bool _disposed;
 
     public SettingsServiceTests()
@@ -42,7 +47,7 @@ public class SettingsServiceTests : IDisposable
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(configValues ?? [])
             .Build();
-        return new SettingsService(_db, config);
+        return new SettingsService(_db, config, _downloadScheduler);
     }
 
     [Fact]
@@ -57,6 +62,20 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(233780, settings.Arma3ServerAppId);
         Assert.Equal("dark", settings.ThemeMode);
         Assert.Equal(5, settings.MetricsIntervalSeconds);
+        Assert.Equal(8, settings.ParallelDownloads);
+        Assert.Equal(4, settings.BulkModDownloadConcurrency);
+    }
+
+    [Fact]
+    public async Task GetSettings_AppliesPersistedSteamWorkerLimit()
+    {
+        _db.Settings.Add(new KastSettings { ParallelDownloads = 3 });
+        await _db.SaveChangesAsync();
+        var sut = CreateService();
+
+        await sut.GetSettingsAsync();
+
+        Assert.Equal(3, _downloadScheduler.MaximumConcurrency);
     }
 
     [Fact]
@@ -126,6 +145,7 @@ public class SettingsServiceTests : IDisposable
         settings.ThemeMode = "light";
         settings.MetricsIntervalSeconds = 10;
         settings.ModsDirectory = "/updated/mods";
+        settings.BulkModDownloadConcurrency = 3;
 
         await sut.UpdateSettingsAsync(settings);
 
@@ -134,6 +154,19 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("light", updated.ThemeMode);
         Assert.Equal(10, updated.MetricsIntervalSeconds);
         Assert.Equal("/updated/mods", updated.ModsDirectory);
+        Assert.Equal(3, updated.BulkModDownloadConcurrency);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_AppliesSteamWorkerLimitAtRuntime()
+    {
+        var sut = CreateService();
+        var settings = await sut.GetSettingsAsync();
+        settings.ParallelDownloads = 3;
+
+        await sut.UpdateSettingsAsync(settings);
+
+        Assert.Equal(3, _downloadScheduler.MaximumConcurrency);
     }
 
     [Fact]
@@ -153,6 +186,23 @@ public class SettingsServiceTests : IDisposable
         await sut.UpdateSettingsAsync(newSettings);
 
         Assert.Single(_db.Settings);
+    }
+
+    [Fact]
+    public async Task DatabaseMigration_AddsBulkModDownloadConcurrencyColumn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<Infrastructure.Data.KastDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new Infrastructure.Data.KastDbContext(options);
+
+        await db.Database.MigrateAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Settings') WHERE name = 'BulkModDownloadConcurrency'";
+        Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
     }
 
     [Fact]

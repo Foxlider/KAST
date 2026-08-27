@@ -42,13 +42,20 @@ var kastLogStore = new KastLogStore();
 builder.Services.AddSingleton(kastLogStore);
 builder.Logging.AddProvider(new KastLoggerProvider(kastLogStore, outputSanitizer));
 
+var logsDirectory = ResolveConfiguredPath(
+    contentRoot,
+    builder.Configuration["Kast:LogsDirectory"] ?? "./logs");
+builder.Logging.AddProvider(new KastFileLoggerProvider(logsDirectory, outputSanitizer));
+
 // ── Health checks ────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<KastDbContext>("database");
 
 // ── Database ─────────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=kast.db";
-builder.Services.AddKastInfrastructure(connectionString);
+var steamWebApiBaseAddress = builder.Configuration.GetValue<Uri>("Steam:WebApiBaseAddress")
+    ?? throw new InvalidOperationException("Steam:WebApiBaseAddress must be configured.");
+builder.Services.AddKastInfrastructure(connectionString, steamWebApiBaseAddress);
 
 // ── MudBlazor + Blazor Server ────────────────────────────────────────────────
 builder.Services.AddMudServices(config =>
@@ -187,7 +194,7 @@ app.MapRazorComponents<App>()
 // ── Steam startup ─────────────────────────────────────────────────────────────
 _ = Task.Run(async () =>
 {
-    var steam = app.Services.GetRequiredService<ISteamService>();
+    var steam = app.Services.GetRequiredService<ISteamAuthenticationService>();
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     try
     {

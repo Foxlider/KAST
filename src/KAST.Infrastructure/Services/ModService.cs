@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using KAST.Core.Enums;
 using KAST.Core.Events;
@@ -10,7 +11,14 @@ using Microsoft.Extensions.Logging;
 
 namespace KAST.Infrastructure.Services;
 
-public class ModService(KastDbContext db, ISteamService steamService, ISettingsService settingsService, IAppEventBroadcaster broadcaster, ILogger<ModService> logger, IOutputSanitizer sanitizer) : IModService
+public class ModService(
+    KastDbContext db,
+    ISteamWorkshopCatalogService workshopCatalog,
+    ISteamWorkshopDownloadService workshopDownloads,
+    ISettingsService settingsService,
+    IAppEventBroadcaster broadcaster,
+    ILogger<ModService> logger,
+    IOutputSanitizer sanitizer) : IModService
 {
     public async Task<IReadOnlyList<SteamMod>> GetAllModsAsync(CancellationToken ct = default)
         => await db.Mods.AsNoTracking().OrderBy(m => m.Name).ToListAsync(ct);
@@ -38,7 +46,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 return existing;
             }
 
-            var info = await steamService.GetWorkshopItemInfoAsync(workshopId, ct);
+            var info = await workshopCatalog.GetWorkshopItemInfoAsync(workshopId, ct);
 
             var mod = new SteamMod
             {
@@ -171,7 +179,9 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             var settings = await settingsService.GetSettingsAsync(ct);
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
+                mod.WorkshopId, destPath, broadcastProgress, ct,
+                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
@@ -230,7 +240,9 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
                 ? Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString())
                 : mod.LocalPath;
 
-            var installedManifestId = await steamService.DownloadWorkshopItemAsync(mod.WorkshopId, destPath, broadcastProgress, ct);
+            var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
+                mod.WorkshopId, destPath, broadcastProgress, ct,
+                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);
@@ -271,10 +283,31 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
         activity?.SetTag("mods.checked", mods.Count);
         int updatesFound = 0;
 
+        var settings = await settingsService.GetSettingsAsync(ct);
+        var maxConcurrentChecks = Math.Clamp(
+            settings.BulkModDownloadConcurrency,
+            DownloadConcurrency.MinimumBulkModDownloads,
+            DownloadConcurrency.MaximumBulkModDownloads);
+        var workshopInfoByModId = new ConcurrentDictionary<int, WorkshopItemInfo>();
+
+        await Parallel.ForEachAsync(
+            mods,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxConcurrentChecks,
+                CancellationToken = ct
+            },
+            async (mod, workerCt) =>
+            {
+                var info = await workshopCatalog.GetWorkshopItemInfoAsync(mod.WorkshopId, workerCt);
+                if (info is not null)
+                    workshopInfoByModId[mod.Id] = info;
+            });
+
         foreach (var mod in mods)
         {
-            var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
-            if (info == null) continue;
+            if (!workshopInfoByModId.TryGetValue(mod.Id, out var info))
+                continue;
 
             mod.SteamManifestId = info.ManifestId;
             mod.LastUpdatedSteam = info.LastUpdated;
@@ -302,7 +335,7 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
 
         if (mod.Source != ModSource.SteamWorkshop) return;
 
-        var info = await steamService.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
+        var info = await workshopCatalog.GetWorkshopItemInfoAsync(mod.WorkshopId, ct);
         if (info == null) return;
 
         mod.SteamManifestId = info.ManifestId;
@@ -317,53 +350,6 @@ public class ModService(KastDbContext db, ISteamService steamService, ISettingsS
             mod.Status = ModStatus.UpdateAvailable;
 
         await db.SaveChangesAsync(ct);
-    }
-
-    public async Task UpdateAllOutdatedModsAsync(CancellationToken ct = default)
-    {
-        using var activity = KastActivitySources.Mods.StartActivity(
-            "kast.mod.update_all_outdated", ActivityKind.Internal);
-
-        var mods = await db.Mods
-            .Where(m => m.Source == ModSource.SteamWorkshop &&
-                        (m.Status == ModStatus.NotInstalled ||
-                         m.Status == ModStatus.UpdateAvailable ||
-                         m.Status == ModStatus.Error))
-            .ToListAsync(ct);
-
-        activity?.SetTag("mods.to_update", mods.Count);
-
-        var settings = await settingsService.GetSettingsAsync(ct);
-        int parallelism = Math.Max(1, settings.ParallelDownloads);
-        var semaphore = new SemaphoreSlim(parallelism);
-
-        var tasks = mods.Select(async mod =>
-        {
-            await semaphore.WaitAsync(ct);
-            try
-            {
-                // NotInstalled mods need a fresh download; others need an update
-                if (mod.Status == ModStatus.NotInstalled)
-                    await DownloadModAsync(mod.Id, progress: null, ct);
-                else
-                    await UpdateModFilesAsync(mod.Id, progress: null, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                // User-initiated cancel — status already reverted in DownloadModAsync/UpdateModFilesAsync
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Bulk update failed for mod {Id} ({Name})", mod.Id, mod.Name);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
-
-        await Task.WhenAll(tasks);
-        activity?.SetTag("mods.updated", mods.Count);
     }
 
     private static long GetSizeOnDisk(string path)

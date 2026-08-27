@@ -12,9 +12,7 @@ public class SteamModInstallerTests
     [Fact]
     public void PlanSteps_ReturnsDownloadThenSize()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+        var sut = CreateSut();
 
         var steps = sut.PlanSteps(new ContentInstallRequest
         {
@@ -31,12 +29,11 @@ public class SteamModInstallerTests
     [Fact]
     public async Task InstallAsync_WhenNotConnectedAndLoginFails_Throws()
     {
-        var steam = Substitute.For<ISteamService>();
-        steam.IsConnected.Returns(false);
-        steam.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+        var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
+        steamAuthentication.IsConnected.Returns(false);
+        steamAuthentication.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
 
-        var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+        var sut = CreateSut(steamAuthentication);
 
         var request = new ContentInstallRequest
         {
@@ -54,15 +51,16 @@ public class SteamModInstallerTests
         };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.InstallAsync(request, state, CancellationToken.None));
-        await steam.Received(1).LoginAnonymousAsync(Arg.Any<CancellationToken>());
+        await steamAuthentication.Received(1).LoginAnonymousAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task InstallAsync_WhenConnected_DownloadsAndCompletesSteps()
     {
-        var steam = Substitute.For<ISteamService>();
-        steam.IsConnected.Returns(true);
-        steam.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
+        steamAuthentication.IsConnected.Returns(true);
+        var workshop = Substitute.For<ISteamWorkshopDownloadService>();
+        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
@@ -72,7 +70,7 @@ public class SteamModInstallerTests
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize("/tmp/mod").Returns(8192L);
 
-        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+        var sut = CreateSut(steamAuthentication, workshop, fs);
 
         var request = new ContentInstallRequest
         {
@@ -92,17 +90,18 @@ public class SteamModInstallerTests
         await sut.InstallAsync(request, state, CancellationToken.None);
 
         Assert.All(state.Steps, s => Assert.Equal(ContentStepStatus.Completed, s.Status));
-        await steam.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
         fs.Received(1).GetDirectorySize("/tmp/mod");
     }
 
     [Fact]
     public async Task InstallAsync_WhenLoginSucceeds_ContinuesToDownload()
     {
-        var steam = Substitute.For<ISteamService>();
-        steam.IsConnected.Returns(false, true, true);
-        steam.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
-        steam.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
+        steamAuthentication.IsConnected.Returns(false, true, true);
+        steamAuthentication.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        var workshop = Substitute.For<ISteamWorkshopDownloadService>();
+        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
@@ -112,7 +111,7 @@ public class SteamModInstallerTests
         var fs = Substitute.For<IFileSystemService>();
         fs.GetDirectorySize("/tmp/mod").Returns(1234L);
 
-        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+        var sut = CreateSut(steamAuthentication, workshop, fs);
         var request = new ContentInstallRequest
         {
             Type = ContentType.SteamMod,
@@ -130,17 +129,15 @@ public class SteamModInstallerTests
 
         await sut.InstallAsync(request, state, CancellationToken.None);
 
-        await steam.Received(1).LoginAnonymousAsync(Arg.Any<CancellationToken>());
-        await steam.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        await steamAuthentication.Received(1).LoginAnonymousAsync(Arg.Any<CancellationToken>());
+        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
         Assert.All(state.Steps, s => Assert.Equal(ContentStepStatus.Completed, s.Status));
     }
 
     [Fact]
     public void Validate_ReturnsFailureWhenMissing()
     {
-        var steam = Substitute.For<ISteamService>();
-        var fs = Substitute.For<IFileSystemService>();
-        var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+        var sut = CreateSut();
 
         var results = sut.Validate(new ContentInstallRequest
         {
@@ -159,10 +156,9 @@ public class SteamModInstallerTests
         Directory.CreateDirectory(path);
         try
         {
-            var steam = Substitute.For<ISteamService>();
             var fs = Substitute.For<IFileSystemService>();
             fs.GetDirectorySize(path).Returns(5555L);
-            var sut = new SteamModInstaller(steam, fs, new OutputSanitizer());
+            var sut = CreateSut(fileSystem: fs);
 
             var results = sut.Validate(new ContentInstallRequest
             {
@@ -185,4 +181,14 @@ public class SteamModInstallerTests
             }
         }
     }
+
+    private static SteamModInstaller CreateSut(
+        ISteamAuthenticationService? steamAuthentication = null,
+        ISteamWorkshopDownloadService? workshop = null,
+        IFileSystemService? fileSystem = null) =>
+        new(
+            steamAuthentication ?? Substitute.For<ISteamAuthenticationService>(),
+            workshop ?? Substitute.For<ISteamWorkshopDownloadService>(),
+            fileSystem ?? Substitute.For<IFileSystemService>(),
+            new OutputSanitizer());
 }

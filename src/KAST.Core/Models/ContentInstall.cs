@@ -44,7 +44,7 @@ public record ContentInstallRequest
     public ServerInstance? Instance { get; init; }
 
     /// <summary>Maximum parallel chunk downloads (from user settings).</summary>
-    public int MaxParallelDownloads { get; init; } = 4;
+    public int MaxParallelDownloads { get; init; } = DownloadConcurrency.DefaultSteamWorkers;
 }
 
 /// <summary>
