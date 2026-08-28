@@ -3,14 +3,13 @@ name: CI
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    branches: [main]
 
 env:
   DOTNET_VERSION: '10.0.x'
   DOCKER_IMAGE: kast
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -19,28 +18,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Install SonarCloud scanner
-        run: dotnet tool install --global dotnet-sonarscanner
-
-      - name: Install Coverlet tool
-        run: dotnet tool install --global coverlet.console
+      - name: Restore .NET tools
+        run: dotnet tool restore
 
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Begin SonarCloud analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" \
-            /d:sonar.token="${{ env.SONAR_TOKEN }}" \
+          dotnet tool run dotnet-sonarscanner -- begin /k:"Foxlider_KAST" /o:"foxlicorp" \
+            /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.coverage.exclusions="**/bin/**,**/obj/**,**/Data/Migrations/**" \
             /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml"
@@ -50,7 +48,7 @@ jobs:
 
       - name: Test with coverage
         run: |
-          coverlet ./tests/KAST.Tests/bin/Release/net10.0/KAST.Tests.dll \
+          dotnet tool run coverlet -- ./tests/KAST.Tests/bin/Release/net10.0/KAST.Tests.dll \
             --target "dotnet" \
             --targetargs "test ./tests/KAST.Tests/KAST.Tests.csproj \
             --no-build \
@@ -62,11 +60,13 @@ jobs:
             --include-directory "./src"
 
       - name: End SonarCloud analysis
-        run: dotnet sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
         if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet tool run dotnet-sonarscanner -- end /d:sonar.token="$SONAR_TOKEN"
 
       - name: Upload test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: test-results
@@ -87,11 +87,12 @@ jobs:
     needs: build-and-test
     if: github.event_name == 'push'
     permissions:
+      contents: read
       packages: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -122,16 +123,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
 
-      - name: Build Docker image (main / PR — validate only, no push)
+      - name: Build Docker image (main — validate only, no push)
         if: github.ref != 'refs/heads/develop'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           push: false
+          load: true
           build-args: APP_VERSION=${{ steps.version.outputs.version }}
           tags: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify container health
+        if: github.ref != 'refs/heads/develop'
+        run: |
+          docker run --detach --rm --name kast-smoke --publish 5000:5000 ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          trap 'docker logs kast-smoke; docker stop kast-smoke' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://localhost:5000/alive; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
 
       - name: Build and push nightly image to GHCR
         if: github.ref == 'refs/heads/develop'
@@ -162,9 +177,11 @@ jobs:
             archive: tar
           - rid: win-x64
             archive: zip
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -179,7 +196,7 @@ jobs:
           echo "date=$DATE"       >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -208,7 +225,7 @@ jobs:
           zip -r ../../kast-${{ matrix.rid }}-nightly.zip .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nightly-${{ matrix.rid }}
           path: kast-${{ matrix.rid }}-nightly.*
@@ -221,11 +238,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: nightly-packages
     if: github.ref == 'refs/heads/develop'
+    concurrency:
+      group: nightly-release
+      cancel-in-progress: false
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -239,22 +259,20 @@ jobs:
           echo "version=${BASE_VER}-nightly.${DATE}.${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "date=$DATE" >> $GITHUB_OUTPUT
 
+      - name: Normalize repository owner
+        id: repo
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Download nightly artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: nightly-*
           merge-multiple: true
 
-      - name: Move nightly tag to current commit
-        run: |
-          git tag -f nightly "${GITHUB_SHA}"
-          git push origin refs/tags/nightly --force
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create or update nightly pre-release
         run: |
-          cat > NIGHTLY_RELEASE_BODY.md <<EOF
+          cat > NIGHTLY_RELEASE_BODY.md <<'EOF'
           🌙 **Automated nightly build** from the `develop` branch.
 
           | | |
@@ -272,27 +290,33 @@ jobs:
           | Linux x64 | `kast-linux-x64-nightly.tar.gz` |
           | Linux arm64 | `kast-linux-arm64-nightly.tar.gz` |
           | Windows x64 | `kast-win-x64-nightly.zip` |
-          | Docker | `ghcr.io/${{ github.repository_owner }}/kast:nightly` |
+          | Docker | `ghcr.io/${{ steps.repo.outputs.owner }}/kast:nightly` |
           EOF
 
           if gh release view nightly >/dev/null 2>&1; then
-            gh release edit nightly \
-              --title "Nightly - ${{ steps.version.outputs.version }}" \
-              --notes-file NIGHTLY_RELEASE_BODY.md \
-              --prerelease
             gh release upload nightly \
               kast-linux-x64-nightly.tar.gz \
               kast-linux-arm64-nightly.tar.gz \
               kast-win-x64-nightly.zip \
               --clobber
+            gh release edit nightly \
+              --title "Nightly - ${{ steps.version.outputs.version }}" \
+              --notes-file NIGHTLY_RELEASE_BODY.md \
+              --prerelease
           else
             gh release create nightly \
               kast-linux-x64-nightly.tar.gz \
               kast-linux-arm64-nightly.tar.gz \
               kast-win-x64-nightly.zip \
+              --target "${GITHUB_SHA}" \
               --title "Nightly - ${{ steps.version.outputs.version }}" \
               --notes-file NIGHTLY_RELEASE_BODY.md \
               --prerelease
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move nightly tag to current commit
+        run: |
+          git tag -f nightly "${GITHUB_SHA}"
+          git push origin refs/tags/nightly --force

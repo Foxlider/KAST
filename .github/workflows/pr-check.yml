@@ -7,7 +7,9 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.x'
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+permissions:
+  contents: read
 
 jobs:
   # ── Always runs on every PR ──────────────────────────────────────────────
@@ -17,18 +19,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Install SonarCloud scanner
-        if: github.event.pull_request.head.repo.fork == false
-        run: dotnet tool install --global dotnet-sonarscanner
+      - name: Restore .NET tools
+        run: dotnet tool restore
 
       - name: Restore dependencies
         run: dotnet restore
@@ -41,7 +42,7 @@ jobs:
           SONAR_PR_BRANCH: ${{ github.head_ref }}
           SONAR_PR_BASE: ${{ github.base_ref }}
         run: |
-          dotnet sonarscanner begin /k:"Foxlider_KAST" /o:"foxlicorp" \
+          dotnet tool run dotnet-sonarscanner -- begin /k:"Foxlider_KAST" /o:"foxlicorp" \
             /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.pullrequest.key="$SONAR_PR_KEY" \
@@ -65,14 +66,11 @@ jobs:
         if: ${{ always() && github.event.pull_request.head.repo.fork == false }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
-
-      - name: Install ReportGenerator
-        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+        run: dotnet tool run dotnet-sonarscanner -- end /d:sonar.token="$SONAR_TOKEN"
 
       - name: Generate coverage report
         run: |
-          reportgenerator \
+          dotnet tool run reportgenerator -- \
             -reports:"./coverage/**/coverage.opencover.xml" \
             -targetdir:"./coverage/report" \
             -reporttypes:"MarkdownSummaryGithub;Html" \
@@ -82,7 +80,7 @@ jobs:
         run: cat ./coverage/report/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload test results & coverage report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: test-coverage-pr-${{ github.event.pull_request.number }}
