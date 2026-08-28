@@ -60,7 +60,7 @@ public class SteamModInstallerTests
         var steamAuthentication = Substitute.For<ISteamAuthenticationService>();
         steamAuthentication.IsConnected.Returns(true);
         var workshop = Substitute.For<ISteamWorkshopDownloadService>();
-        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
@@ -90,7 +90,7 @@ public class SteamModInstallerTests
         await sut.InstallAsync(request, state, CancellationToken.None);
 
         Assert.All(state.Steps, s => Assert.Equal(ContentStepStatus.Completed, s.Status));
-        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>());
         fs.Received(1).GetDirectorySize("/tmp/mod");
     }
 
@@ -101,7 +101,7 @@ public class SteamModInstallerTests
         steamAuthentication.IsConnected.Returns(false, true, true);
         steamAuthentication.LoginAnonymousAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var workshop = Substitute.For<ISteamWorkshopDownloadService>();
-        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        workshop.DownloadWorkshopItemAsync(Arg.Any<long>(), Arg.Any<string>(), Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 call.Arg<IProgress<double>>().Report(100);
@@ -130,7 +130,7 @@ public class SteamModInstallerTests
         await sut.InstallAsync(request, state, CancellationToken.None);
 
         await steamAuthentication.Received(1).LoginAnonymousAsync(Arg.Any<CancellationToken>());
-        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>());
+        await workshop.Received(1).DownloadWorkshopItemAsync(333310405, "/tmp/mod", Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>());
         Assert.All(state.Steps, s => Assert.Equal(ContentStepStatus.Completed, s.Status));
     }
 

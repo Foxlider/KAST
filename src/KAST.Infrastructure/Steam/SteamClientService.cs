@@ -650,8 +650,9 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
     private const uint Arma3AppId = 107410;
 
     public async Task<ulong> DownloadWorkshopItemAsync(long workshopId, string destinationPath,
-        IProgress<double>? progress = null, CancellationToken ct = default,
-        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers)
+        IProgress<double>? progress = null, 
+        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers,
+        CancellationToken ct = default)
     {
         if (!_isConnected)
             throw new InvalidOperationException("Not connected to Steam");
@@ -820,7 +821,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
 
     private async Task<DepotVerificationResult> PrepareDepotFilesAsync(
         uint depotId,
-        IReadOnlyList<DepotManifest.FileData> files,
+        List<DepotManifest.FileData> files,
         string destinationPath,
         IProgress<string>? logProgress,
         CancellationToken ct)
@@ -1283,8 +1284,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                 // SteamKit can cancel its own HttpClient request concurrently with
                 // the caller's token. Neither case is a retryable CDN failure.
                 HandleCancelledRequest(downloadTask, pool, server, downloadPermit.Detach());
-                if (ct.IsCancellationRequested)
-                    throw new OperationCanceledException(ct);
+                ct.ThrowIfCancellationRequested();
 
                 throw new OperationCanceledException(
                     "Steam cancelled the CDN chunk request.", ex, ex.CancellationToken);

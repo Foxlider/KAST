@@ -44,8 +44,8 @@ public class SteamModInstaller(
 
         var progress = new Progress<double>(pct => state.SetStepProgress(0, pct));
         var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
-            request.WorkshopId, request.DestinationPath, progress, ct,
-            Math.Max(DownloadConcurrency.MinimumSteamWorkers, request.MaxParallelDownloads));
+            request.WorkshopId, request.DestinationPath, progress,
+            Math.Max(DownloadConcurrency.MinimumSteamWorkers, request.MaxParallelDownloads), ct);
         state.InstalledManifestId = installedManifestId;
 
         state.CompleteStep(0);

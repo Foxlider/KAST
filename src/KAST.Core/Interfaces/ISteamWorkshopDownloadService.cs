@@ -8,6 +8,6 @@ public interface ISteamWorkshopDownloadService
         long workshopId,
         string destinationPath,
         IProgress<double>? progress = null,
-        CancellationToken ct = default,
-        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers);
+        int maxParallelDownloads = DownloadConcurrency.DefaultSteamWorkers,
+        CancellationToken ct = default);
 }
