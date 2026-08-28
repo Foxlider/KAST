@@ -232,7 +232,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ── Rolling nightly GitHub pre-release ────────────────────────────────────
+  # ── Immutable nightly GitHub pre-releases ──────────────────────────────────
   nightly-release:
     name: Nightly Release
     runs-on: ubuntu-latest
@@ -258,6 +258,7 @@ jobs:
           BASE_VER="${LAST_TAG#v}"
           echo "version=${BASE_VER}-nightly.${DATE}.${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "tag=nightly-${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       - name: Normalize repository owner
         id: repo
@@ -272,12 +273,15 @@ jobs:
 
       - name: Create or update nightly pre-release
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
           cat > NIGHTLY_RELEASE_BODY.md <<'EOF'
           🌙 **Automated nightly build** from the `develop` branch.
 
           | | |
           |---|---|
           | **Version** | `${{ steps.version.outputs.version }}` |
+          | **Tag** | `${{ steps.version.outputs.tag }}` |
           | **Commit** | [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
           | **Date** | `${{ steps.version.outputs.date }}` |
 
@@ -293,18 +297,18 @@ jobs:
           | Docker | `ghcr.io/${{ steps.repo.outputs.owner }}/kast:nightly` |
           EOF
 
-          if gh release view nightly >/dev/null 2>&1; then
-            gh release upload nightly \
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
               kast-linux-x64-nightly.tar.gz \
               kast-linux-arm64-nightly.tar.gz \
               kast-win-x64-nightly.zip \
               --clobber
-            gh release edit nightly \
+            gh release edit "$TAG" \
               --title "Nightly - ${{ steps.version.outputs.version }}" \
               --notes-file NIGHTLY_RELEASE_BODY.md \
               --prerelease
           else
-            gh release create nightly \
+            gh release create "$TAG" \
               kast-linux-x64-nightly.tar.gz \
               kast-linux-arm64-nightly.tar.gz \
               kast-win-x64-nightly.zip \
@@ -315,8 +319,3 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Move nightly tag to current commit
-        run: |
-          git tag -f nightly "${GITHUB_SHA}"
-          git push origin refs/tags/nightly --force
