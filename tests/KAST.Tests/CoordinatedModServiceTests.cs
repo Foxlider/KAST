@@ -52,7 +52,7 @@ public class CoordinatedModServiceTests
         CancellationToken secondToken = default;
 
         ConfigureBlockingDownload(steam, first.WorkshopId, firstStarted, firstCancelled);
-        steam.DownloadWorkshopItemAsync(second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), Arg.Any<int>())
+        steam.DownloadWorkshopItemAsync(second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 secondToken = call.Arg<CancellationToken>();
@@ -93,7 +93,7 @@ public class CoordinatedModServiceTests
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         ConfigureBlockingDownload(steam, first.WorkshopId, firstStarted, firstCancelled);
-        steam.DownloadWorkshopItemAsync(second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 16)
+        steam.DownloadWorkshopItemAsync(second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), 16, Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 secondStarted.TrySetResult();
@@ -105,7 +105,7 @@ public class CoordinatedModServiceTests
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await Task.Delay(TimeSpan.FromMilliseconds(100));
         await steam.DidNotReceive().DownloadWorkshopItemAsync(
-            second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), Arg.Any<int>());
+            second.WorkshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
 
         Assert.True(registry.Cancel(first.Id));
         await firstCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -167,7 +167,7 @@ public class CoordinatedModServiceTests
         TaskCompletionSource started,
         TaskCompletionSource cancelled)
     {
-        steam.DownloadWorkshopItemAsync(workshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), Arg.Any<int>())
+        steam.DownloadWorkshopItemAsync(workshopId, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 started.TrySetResult();

@@ -861,11 +861,11 @@ else
 
     private void QueueTasks(IEnumerable<SteamMod> mods)
     {
-        foreach (var mod in mods)
+        foreach (var modId in mods.Select(mod => mod.Id))
         {
-            AddTask(mod.Id);
-            _queuedTaskIds.Add(mod.Id);
-            _taskProgress[mod.Id] = 0;
+            AddTask(modId);
+            _queuedTaskIds.Add(modId);
+            _taskProgress[modId] = 0;
         }
     }
 
@@ -1155,10 +1155,10 @@ else
         catch (Exception ex) { Snackbar.Add($"Update failed: {OutputSanitizer.SanitizeException(ex)}", Severity.Error); }
         finally
         {
-            foreach (var mod in pendingMods)
+            foreach (var modId in pendingMods.Select(mod => mod.Id))
             {
-                _queuedTaskIds.Remove(mod.Id);
-                _cancellingTaskIds.Remove(mod.Id);
+                _queuedTaskIds.Remove(modId);
+                _cancellingTaskIds.Remove(modId);
             }
             if (_bulkUpdateCts == bulkUpdateCts)
                 _bulkUpdateCts = null;
@@ -1197,10 +1197,10 @@ else
     {
         foreach (var cts in _downloadCts.Values.ToArray()) cts.Cancel();
         _bulkUpdateCts?.Cancel();
-        foreach (var mod in _mods.Where(IsTaskActive))
+        foreach (var modId in _mods.Where(IsTaskActive).Select(mod => mod.Id))
         {
-            _queuedTaskIds.Remove(mod.Id);
-            _cancellingTaskIds.Add(mod.Id);
+            _queuedTaskIds.Remove(modId);
+            _cancellingTaskIds.Add(modId);
         }
         StateHasChanged();
     }

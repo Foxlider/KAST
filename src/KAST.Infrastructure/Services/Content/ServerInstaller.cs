@@ -239,7 +239,7 @@ public class ServerInstaller(
         return results;
     }
 
-    private static IProgress<SteamDownloadProgress> CreateDownloadProgress(
+    private static Progress<SteamDownloadProgress> CreateDownloadProgress(
         ContentInstallState state,
         int stepIndex) =>
         new Progress<SteamDownloadProgress>(update =>

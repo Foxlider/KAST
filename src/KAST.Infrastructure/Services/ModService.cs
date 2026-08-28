@@ -180,8 +180,9 @@ public class ModService(
             var destPath = Path.Combine(settings.ModsDirectory, mod.WorkshopId.ToString());
 
             var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
-                mod.WorkshopId, destPath, broadcastProgress, ct,
-                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
+                mod.WorkshopId, destPath, broadcastProgress,
+                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads),
+                ct);
 
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
@@ -241,8 +242,9 @@ public class ModService(
                 : mod.LocalPath;
 
             var installedManifestId = await workshopDownloads.DownloadWorkshopItemAsync(
-                mod.WorkshopId, destPath, broadcastProgress, ct,
-                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads));
+                mod.WorkshopId, destPath, broadcastProgress,
+                Math.Max(DownloadConcurrency.MinimumSteamWorkers, settings.ParallelDownloads),
+                ct);
             mod.Status = ModStatus.Installed;
             mod.LocalPath = Path.GetFullPath(destPath);
             mod.SizeBytes = GetSizeOnDisk(mod.LocalPath);

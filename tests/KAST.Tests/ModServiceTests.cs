@@ -240,13 +240,13 @@ public class ModServiceTests : IDisposable
         var mod = new SteamMod { Name = "Configured", WorkshopId = 554 };
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
-        _workshopDownloads.DownloadWorkshopItemAsync(554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9)
+        _workshopDownloads.DownloadWorkshopItemAsync(554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), 9, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
 
         await _workshopDownloads.Received(1).DownloadWorkshopItemAsync(
-            554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>(), 9);
+            554, Arg.Any<string>(), Arg.Any<IProgress<double>>(), 9, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _workshopDownloads.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(555, Arg.Any<string>(), Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -273,7 +273,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _workshopDownloads.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(777, Arg.Any<string>(), Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0UL));
 
         await _sut.DownloadModAsync(mod.Id);
@@ -289,7 +289,7 @@ public class ModServiceTests : IDisposable
         _db.Mods.Add(mod);
         await _db.SaveChangesAsync();
 
-        _workshopDownloads.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), Arg.Any<CancellationToken>())
+        _workshopDownloads.DownloadWorkshopItemAsync(888, Arg.Any<string>(), Arg.Any<IProgress<double>>(), ct:Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("Steam CDN error"));
 
         await Assert.ThrowsAsync<Exception>(() => _sut.DownloadModAsync(mod.Id));
