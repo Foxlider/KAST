@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Foxlider/KAST/security/advisories/new
+    about: Do not open a public issue. Report it privately here. See SECURITY.md.
   - name: Discord Community
     url: https://discord.gg/2BUuZa3
     about: Ask questions, get help, and discuss ideas with the community.
