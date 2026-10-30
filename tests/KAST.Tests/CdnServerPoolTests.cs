@@ -81,4 +81,36 @@ public class CdnServerPoolTests
 
         return server;
     }
+
+    [Fact]
+    public void ReturnServer_Faulty_MarksHostBad()
+    {
+        using var parent = new CancellationTokenSource();
+        parent.Cancel();
+
+        var steamClient = new SteamClient();
+        var steamContent = steamClient.GetHandler<SteamContent>();
+        using var pool = new CdnServerPool(steamClient, steamContent!, Substitute.For<ILogger>(), new OutputSanitizer(), parent.Token);
+
+        var server = CreateServerStub();
+        pool.ReturnServer(server, isFaulty: true);
+
+        Assert.True(pool.IsBad(server.Host));
+    }
+
+    [Fact]
+    public void ReturnServer_NonFaulty_DoesNotMarkHostBad()
+    {
+        using var parent = new CancellationTokenSource();
+        parent.Cancel();
+
+        var steamClient = new SteamClient();
+        var steamContent = steamClient.GetHandler<SteamContent>();
+        using var pool = new CdnServerPool(steamClient, steamContent!, Substitute.For<ILogger>(), new OutputSanitizer(), parent.Token);
+
+        var server = CreateServerStub();
+        pool.ReturnServer(server, isFaulty: false);
+
+        Assert.False(pool.IsBad(server.Host));
+    }
 }

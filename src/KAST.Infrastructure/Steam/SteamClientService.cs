@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using KAST.Core.Interfaces;
 using KAST.Core.Models;
 using KAST.Infrastructure.Telemetry;
@@ -115,6 +116,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
 
     // CDN state — a persistent pool that discards faulty servers and auto-refills
     private CdnServerPool? _cdnPool;
+    private readonly CdnAuthTokenCache _cdnTokens;
 
     // Token cache
     private static readonly string TokenCachePath = Path.Combine(
@@ -146,6 +148,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
         _steamFriends = _steamClient.GetHandler<SteamFriends>()!;
         _steamUnifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()!;
         _cdnClient = new Client(_steamClient);
+        _cdnTokens = new CdnAuthTokenCache(_steamContent, _logger);
 
         _callbackManager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
         _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
@@ -726,6 +729,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                 new FileDownloadRequest
                 {
                     Files = files,
+                    AppId = appId,
                     DepotId = depotId,
                     DepotKey = depotKey,
                     Pool = pool,
@@ -987,6 +991,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                     new FileDownloadRequest
                     {
                         Files = toDownload,
+                        AppId = request.AppId,
                         DepotId = depotId,
                         DepotKey = depotKey,
                         Pool = pool,
@@ -1132,6 +1137,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
         DownloadFilesInParallelAsync(FileDownloadRequest request)
     {
         var files = request.Files;
+        var appId = request.AppId;
         var depotId = request.DepotId;
         var depotKey = request.DepotKey;
         var pool = request.Pool;
@@ -1198,7 +1204,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                     {
                         fileCt.ThrowIfCancellationRequested();
                         var buf = new byte[chunk.UncompressedLength];
-                        var written = await DownloadChunkWithRetryAsync(depotId, chunk, pool, buf, depotKey, fileCt);
+                        var written = await DownloadChunkWithRetryAsync(appId, depotId, chunk, pool, buf, depotKey, fileCt);
                         fs.Position = (long)chunk.Offset;
                         await fs.WriteAsync(buf.AsMemory(0, written), fileCt);
 
@@ -1254,7 +1260,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
     }
 
     private async Task<int> DownloadChunkWithRetryAsync(
-        uint depotId, DepotManifest.ChunkData chunk, CdnServerPool pool,
+        uint appId, uint depotId, DepotManifest.ChunkData chunk, CdnServerPool pool,
         byte[] buf, byte[]? depotKey, CancellationToken ct,
         bool useGlobalDownloadScheduler = true)
     {
@@ -1274,7 +1280,10 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
             {
                 // SteamKit does not expose a cancellation token for this request. WaitAsync
                 // lets KAST stop the owning worker promptly while the HTTP request drains.
-                downloadTask = _cdnClient.DownloadDepotChunkAsync(depotId, chunk, server, buf, depotKey);
+                var cdnToken = await _cdnTokens.GetAsync(appId, depotId, server, CancellationToken.None);
+
+                downloadTask = _cdnClient.DownloadDepotChunkAsync(
+                    depotId, chunk, server, buf, depotKey, proxyServer: null, cdnAuthToken: cdnToken);
                 var written = await downloadTask.WaitAsync(ct);
                 pool.ReturnServer(server, false); // proven good — reuse it
                 return written;
@@ -1288,6 +1297,17 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
 
                 throw new OperationCanceledException(
                     "Steam cancelled the CDN chunk request.", ex, ex.CancellationToken);
+            }
+            catch (SteamKitWebRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                lastEx = ex;
+                _logger.LogWarning(
+                    "CDN {Server} returned 403 for depot {DepotId} (attempt {Attempt}/{Max}) — refreshing token and rotating server",
+                    server.Host, depotId, attempt + 1, MaxChunkRetries);
+
+                _cdnTokens.Invalidate(depotId, server.Host); // next use fetches a fresh token
+                pool.ReturnServer(server, true);             // host goes on the bad list
+                // No back-off: the next attempt uses a different host
             }
             catch (Exception ex)
             {
@@ -1519,6 +1539,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                 var (newTotal, verified, downloaded) = await DownloadDepotFilesAsync(
                     new DepotDownloadRequest
                     {
+                        AppId = appId,
                         DepotId = depotId,
                         DepotKey = depotKey,
                         Manifest = manifest,
@@ -1712,7 +1733,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
                         ct.ThrowIfCancellationRequested();
                         var buf = new byte[chunk.UncompressedLength];
                         var written = await DownloadChunkWithRetryAsync(
-                            BenchmarkDepotId, chunk, pool, buf, depotKey, ct,
+                            BenchmarkAppId, BenchmarkDepotId, chunk, pool, buf, depotKey, ct,
                             useGlobalDownloadScheduler: false);
                         Interlocked.Add(ref bytesDown, written);
                     }
@@ -1808,6 +1829,7 @@ public class SteamClientService : ISteamAuthenticationService, ISteamWorkshopCat
         // ReturnServer(faulty=true) calls during the disconnect may have already drained it.
         _cdnPool?.Dispose();
         _cdnPool = null;
+        _cdnTokens.Clear();
 
         if (_isReconnecting)
         {
