@@ -5,6 +5,7 @@ namespace KAST.Infrastructure.Steam;
 
 internal sealed class DepotDownloadRequest
 {
+    public required uint AppId { get; init; }
     public required uint DepotId { get; init; }
     public byte[]? DepotKey { get; init; }
     public required DepotManifest Manifest { get; init; }
@@ -21,6 +22,7 @@ internal sealed class DepotDownloadRequest
 internal sealed class FileDownloadRequest
 {
     public required IList<DepotManifest.FileData> Files { get; init; }
+    public required uint AppId { get; init; }
     public required uint DepotId { get; init; }
     public byte[]? DepotKey { get; init; }
     public required CdnServerPool Pool { get; init; }

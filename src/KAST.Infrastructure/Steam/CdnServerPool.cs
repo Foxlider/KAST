@@ -26,6 +26,15 @@ namespace KAST.Infrastructure.Steam;
 internal sealed class CdnServerPool : IDisposable
 {
     private const int MinimumPoolSize = 10;
+    private static readonly TimeSpan BadHostCooldown = TimeSpan.FromMinutes(5);
+
+    // Hosts that failed recently. Refills skip these so a dropped server stays dropped.
+    private readonly ConcurrentDictionary<string, DateTime> _badHosts = new(StringComparer.OrdinalIgnoreCase);
+
+    internal bool IsBad(string? host) =>
+        !string.IsNullOrEmpty(host)
+        && _badHosts.TryGetValue(host, out var until)
+        && until > DateTime.UtcNow;
 
     private readonly SteamClient _steamClient;
     private readonly SteamContent _steamContent;
@@ -74,16 +83,21 @@ internal sealed class CdnServerPool : IDisposable
     /// </summary>
     public Server GetServer(CancellationToken ct)
     {
-        // Fast path: take a proven-good server from the current session
-        if (_proven.TryPop(out var proven))
-            return proven;
+        while (true)
+        {
+            // Fast path: take a proven-good server from the current session
+            if (_proven.TryPop(out var proven) && !IsBad(proven.Host))
+                return proven;
 
-        // Signal the monitor we are running low
-        if (_available.Count < MinimumPoolSize)
-            _refillNeeded.Set();
+            // Signal the monitor we are running low
+            if (_available.Count < MinimumPoolSize)
+                _refillNeeded.Set();
 
-        // Block until the monitor delivers a fresh server
-        return _available.Take(ct);
+            // Block until the monitor delivers a fresh server
+            var candidate = _available.Take(ct);
+            if (!IsBad(candidate.Host))
+                return candidate;
+        }
     }
 
     /// <summary>
@@ -98,8 +112,11 @@ internal sealed class CdnServerPool : IDisposable
     {
         if (isFaulty)
         {
+            if (!string.IsNullOrEmpty(server.Host))
+                _badHosts[server.Host] = DateTime.UtcNow + BadHostCooldown;
+
             _logger.LogDebug("Discarding faulty CDN server: {Host}", server.Host);
-            // Do not return it — it stays out of the pool permanently
+            // Do not return it — the host stays on the bad list until the cooldown ends
             return;
         }
 
@@ -191,6 +208,7 @@ internal sealed class CdnServerPool : IDisposable
 
             var sorted = servers
                 .Where(s => s.Type is "CDN" or "SteamCache")
+                .Where(s => !IsBad(s.Host))
                 .OrderBy(s => s.WeightedLoad)
                 .ToList();
 
